@@ -1,0 +1,149 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root,
+  .light {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+    --radius: 0.75rem;
+  }
+
+  .royal {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 225 73% 30%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 225 73% 57%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 225 73% 57%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 225 73% 30%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  .font-poppins {
+    font-family: var(--font-poppins);
+  }
+}
+
+/* Royal blue gradients */
+.gradient-primary {
+  @apply bg-gradient-to-r from-blue-900 to-primary;
+}
+
+.gradient-secondary {
+  @apply bg-gradient-to-r from-blue-700 to-secondary;
+}
+
+.gradient-accent {
+  @apply bg-gradient-to-r from-blue-600 to-accent;
+}
+
+.gradient-hero {
+  @apply bg-gradient-to-b from-blue-50 via-blue-100/50 to-white dark:from-blue-950 dark:via-blue-900/50 dark:to-gray-950;
+}
+
+.gradient-card {
+  @apply bg-gradient-to-br from-white to-blue-50/50 dark:from-gray-900 dark:to-blue-950/50;
+}
+
+.gradient-cta {
+  @apply bg-gradient-to-r from-blue-900 via-primary to-blue-800;
+}
+
+.gradient-feature {
+  @apply bg-gradient-to-br from-blue-50 to-blue-100/30 dark:from-blue-950 dark:to-blue-900/30;
+}
+
+.gradient-testimonial {
+  @apply bg-gradient-to-br from-blue-50 to-white dark:from-blue-950 dark:to-gray-950;
+}
+
+/* Royal blue shadows */
+.shadow-primary {
+  @apply shadow-md shadow-primary/10;
+}
+
+.shadow-secondary {
+  @apply shadow-md shadow-secondary/10;
+}
+
+.shadow-accent {
+  @apply shadow-md shadow-accent/10;
+}
+
+/* Royal blue borders */
+.border-gradient {
+  border-width: 2px;
+  border-style: solid;
+  border-image: linear-gradient(to right, theme("colors.blue.800"), theme("colors.primary.DEFAULT")) 1;
+}
+
+/* Royal blue text gradients */
+.text-gradient-royal {
+  @apply bg-gradient-to-r from-blue-800 to-primary bg-clip-text text-transparent dark:from-blue-500 dark:to-blue-400;
+}
+
+.text-gradient-royal-light {
+  @apply bg-gradient-to-r from-blue-600 to-secondary bg-clip-text text-transparent dark:from-blue-400 dark:to-blue-300;
+}
