@@ -7,6 +7,21 @@ export function middleware(req: NextRequest) {
 
   // If hitting API without a session -> 401 JSON
   if (isApi) {
+    // Allow CORS preflight to pass through
+    if (req.method === 'OPTIONS') {
+      return NextResponse.next()
+    }
+
+    // Support non-expiring API key via header
+    const configuredKey = process.env.API_KEY?.trim()
+    const providedKey = req.headers.get('x-api-key')?.trim()
+    if (configuredKey && providedKey && providedKey === configuredKey) {
+      // Attach a service identifier for downstream logging
+      const newHeaders = new Headers(req.headers)
+      newHeaders.set('x-user-id', 'api-key')
+      return NextResponse.next({ request: { headers: newHeaders } })
+    }
+
     if (!session) {
       return new NextResponse(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
