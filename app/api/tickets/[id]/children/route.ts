@@ -2,7 +2,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { logTicketAction } from "@/lib/ticket-logs";
+import { hasTableColumn } from "@/lib/db-helpers";
 import type { PoolConnection } from "mysql2/promise";
+
+const TICKETS_TABLE = "tickets_nh";
+
+
+async function markFastagAsUsed(conn: PoolConnection, fastagSerial: string | null, vehicleRegNo?: string | null) {
+  const serial = fastagSerial ? String(fastagSerial).trim() : "";
+  if (!serial) return;
+
+  try {
+    const updates: string[] = ["status = 'sold'"];
+    const values: (string | number | null)[] = [];
+
+    if (await hasTableColumn('fastags', 'assigned_to', conn)) {
+      updates.push("assigned_to = NULL");
+    }
+    if (await hasTableColumn('fastags', 'assigned_to_agent_id', conn)) {
+      updates.push("assigned_to_agent_id = NULL");
+    }
+
+    const trimmedVehicle = vehicleRegNo ? String(vehicleRegNo).trim() : "";
+    if (trimmedVehicle && await hasTableColumn('fastags', 'vehicle_reg_no', conn)) {
+      updates.push("vehicle_reg_no = ?");
+      values.push(trimmedVehicle);
+    }
+
+    const query = `UPDATE fastags SET ${updates.join(', ')} WHERE tag_serial = ? LIMIT 1`;
+    values.push(serial);
+    await conn.query(query, values);
+  } catch (error) {
+    console.error("Failed to update FASTag inventory for serial", serial, error);
+  }
+}
 
 // Generate daily ticket number: NH360-YYYYMMDD-###
 async function generateTicketNo(conn: PoolConnection): Promise<string> {
@@ -88,6 +121,9 @@ export async function POST(
 
     await conn.beginTransaction();
 
+    const hasCommissionColumn = await hasTableColumn(TICKETS_TABLE, "commission_amount", conn);
+    const hasFastagSerialColumn = await hasTableColumn(TICKETS_TABLE, "fastag_serial", conn);
+
     const ticket_no = await generateTicketNo(conn);
 
     // Inherit/override fields
@@ -102,6 +138,7 @@ export async function POST(
     const kyv_status = body.kyv_status ?? parent.kyv_status ?? null;
     const customer_name = body.customer_name ?? parent.customer_name ?? null;
     const comments = body.comments ?? null;
+    const fastag_serial = body.fastag_serial ?? parent.fastag_serial ?? null;
 
     // derive payment values for this child
     const b_ptc_raw = body.payment_to_collect;
@@ -113,34 +150,71 @@ export async function POST(
         ? null
         : Number((((b_ptc ?? 0) + (b_pts ?? 0)).toFixed?.(2) ?? (b_ptc ?? 0) + (b_pts ?? 0)));
 
-    const [r]: any = await conn.query(
-      `INSERT INTO tickets_nh
-        (ticket_no, vehicle_reg_no, subject, details, phone, alt_phone, assigned_to,
-         lead_received_from, lead_by, status, kyv_status, customer_name, comments,
-         payment_to_collect, payment_to_send, net_value, pickup_point_name,
-         parent_ticket_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-      [
-        ticket_no,
-        vehicle_reg_no,
-        subject,
-        details,
-        phone,
-        alt_phone,
-        assigned_to,
-        lead_received_from,
-        lead_by,
-        status,
-        kyv_status,
-        customer_name,
-        comments,
-        isNaN(b_ptc as any) ? null : b_ptc,
-        isNaN(b_pts as any) ? null : b_pts,
-        isNaN(b_net as any) ? null : b_net,
-        body.pickup_point_name ?? null,
-        parentId,
-      ]
-    );
+    const commissionRaw = body.commission_amount ?? parent.commission_amount ?? 0;
+    const commissionValue =
+      commissionRaw === undefined || commissionRaw === null ? 0 : Number(commissionRaw);
+
+    const columns = [
+      "ticket_no",
+      "vehicle_reg_no",
+      "subject",
+      "details",
+      "phone",
+      "alt_phone",
+      "assigned_to",
+      "lead_received_from",
+      "lead_by",
+      "status",
+      "kyv_status",
+      "customer_name",
+      "comments",
+      "payment_to_collect",
+      "payment_to_send",
+      "net_value",
+    ];
+    const placeholders = Array(columns.length).fill("?");
+    const insertValues: (string | number | null)[] = [
+      ticket_no,
+      vehicle_reg_no,
+      subject,
+      details,
+      phone,
+      alt_phone,
+      assigned_to,
+      lead_received_from,
+      lead_by,
+      status,
+      kyv_status,
+      customer_name,
+      comments,
+      isNaN(b_ptc as any) ? null : b_ptc,
+      isNaN(b_pts as any) ? null : b_pts,
+      isNaN(b_net as any) ? null : b_net,
+    ];
+    if (hasCommissionColumn) {
+      columns.push("commission_amount");
+      placeholders.push("?");
+      insertValues.push(isNaN(commissionValue as any) ? 0 : commissionValue);
+    }
+    columns.push("pickup_point_name");
+    placeholders.push("?");
+    insertValues.push(body.pickup_point_name ?? null);
+
+    if (hasFastagSerialColumn) {
+      columns.push("fastag_serial");
+      placeholders.push("?");
+      insertValues.push(fastag_serial ?? null);
+    }
+
+    columns.push("parent_ticket_id");
+    placeholders.push("?");
+    insertValues.push(parentId);
+
+    const insertQuery = `INSERT INTO ${TICKETS_TABLE} (${columns.join(", ")}, created_at, updated_at) VALUES (${placeholders.join(", ")}, NOW(), NOW())`;
+
+    const [r]: any = await conn.query(insertQuery, insertValues);
+
+    await markFastagAsUsed(conn, fastag_serial, vehicle_reg_no);
 
     const newId = Number(r.insertId);
 
@@ -165,3 +239,4 @@ export async function POST(
     conn.release();
   }
 }
+

@@ -30,6 +30,8 @@ export default function TicketDetailPage() {
           <Detail label="Customer" value={ticket.customer_name} />
           <Detail label="Mobile" value={ticket.phone || ticket.mobile} />
           <Detail label="Vehicle Number" value={ticket.vehicle_reg_no || ticket.vehicle_number} />
+          <Detail label="FASTag Barcode" value={ticket.fastag_serial} />
+          <Detail label="Commission Amount" value={typeof ticket.commission_amount !== 'undefined' ? ticket.commission_amount : 0} />
           <Detail label="Source" value={ticket.lead_received_from || ticket.source} />
           <Detail label="Status" value={ticket.status} />
           <Detail label="Created At" value={ticket.created_at ? new Date(ticket.created_at).toLocaleString() : "-"} />
