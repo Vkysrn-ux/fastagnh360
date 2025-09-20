@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, Fragment } from "react";
+import { useState, useEffect, useMemo, useRef, Fragment } from "react";
 import Link from "next/link";
 import ShopAutocomplete from "@/components/ShopAutocomplete"; // adjust path if needed
 import PickupPointAutocomplete from "@/components/PickupPointAutocomplete";
@@ -261,6 +261,8 @@ export default function TicketListPage() {
   const activeFastagBank = (showCreateModal ? fcForm.fastag_bank : editTicket ? editForm.fastag_bank || "" : "").trim();
   const activeFastagClass = (showCreateModal ? fcForm.fastag_class : editTicket ? editForm.fastag_class || "" : "").trim();
 
+  const fastagPrefetchedRef = useRef(false);
+
 
   const fastagBanks = useMemo(() => {
     const values = fastagInventory
@@ -344,6 +346,13 @@ export default function TicketListPage() {
     });
   }, [fastagInventory]);
 
+
+  useEffect(() => {
+    if (!showCreateModal && !editTicket) {
+      fastagPrefetchedRef.current = false;
+    }
+  }, [showCreateModal, editTicket]);
+
   const [fcSubIssues, setFcSubIssues] = useState<SubIssue[]>([
     {
       vehicle_reg_no: "",
@@ -373,10 +382,10 @@ export default function TicketListPage() {
     const bankFilter = activeFastagBank;
     const classFilter = activeFastagClass;
 
-    if (term.length < 2 && !bankFilter && !classFilter) {
-      setFastagInventory([]);
-      setFastagError(null);
-      setFastagLoading(false);
+    const shouldPrefetch = term.length < 2 && !bankFilter && !classFilter;
+    if (!shouldPrefetch) {
+      fastagPrefetchedRef.current = false;
+    } else if (fastagPrefetchedRef.current) {
       return;
     }
 
@@ -387,11 +396,13 @@ export default function TicketListPage() {
         setFastagError(null);
 
         const params = new URLSearchParams();
-        if (term) params.set("query", term);
+        if (!shouldPrefetch && term) params.set("query", term);
         if (bankFilter) params.set("bank", bankFilter);
         if (classFilter) params.set("class", classFilter);
 
-        const res = await fetch(`/api/fastags?${params.toString()}`, { signal: controller.signal });
+        const url = params.toString() ? `/api/fastags?${params.toString()}` : "/api/fastags";
+
+        const res = await fetch(url, { signal: controller.signal });
         if (!res.ok) {
           const message = await res.text();
           throw new Error(message || "Failed to load FASTag inventory");
@@ -428,21 +439,28 @@ export default function TicketListPage() {
               .filter((row) => row.tag_serial.length > 0 && row.status.toLowerCase() !== "sold")
           : [];
         setFastagInventory(rows);
+        if (shouldPrefetch) {
+          fastagPrefetchedRef.current = true;
+        }
       } catch (err: any) {
         if (controller.signal.aborted) return;
-        setFastagInventory([]);
+        if (!shouldPrefetch) {
+          setFastagInventory([]);
+        }
         setFastagError(err?.message || "Failed to load FASTag inventory");
       } finally {
         if (!controller.signal.aborted) {
           setFastagLoading(false);
         }
       }
-    }, 300);
+    }, shouldPrefetch ? 0 : 300);
 
     return () => {
       controller.abort();
       clearTimeout(debounce);
-      setFastagLoading(false);
+      if (shouldPrefetch) {
+        setFastagLoading(false);
+      }
     };
   }, [activeFastagSearchTerm, activeFastagBank, activeFastagClass, showCreateModal, editTicket]);
 
