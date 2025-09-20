@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Fragment } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import Link from "next/link";
 import ShopAutocomplete from "@/components/ShopAutocomplete"; // adjust path if needed
 import PickupPointAutocomplete from "@/components/PickupPointAutocomplete";
@@ -119,6 +119,20 @@ type SubIssue = {
   loadingUsers?: boolean;
 };
 
+type FastagInventoryRow = {
+  id: number;
+  tag_serial: string;
+  bank_name: string;
+  fastag_class: string;
+  batch_number: string;
+  status: string;
+  holder: string;
+  assigned_to_agent_id: number | null;
+  assigned_to: number | null;
+  assigned_to_name?: string | null;
+};
+
+
 export default function TicketListPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   // child counts map
@@ -181,6 +195,9 @@ export default function TicketListPage() {
   const [fcError, setFcError] = useState("");
   const [selectedPickup, setSelectedPickup] = useState<{ id: number; name: string; type: string } | null>(null);
   const [draftId, setDraftId] = useState<number | null>(null);
+  const [fastagInventory, setFastagInventory] = useState<FastagInventoryRow[]>([]);
+  const [fastagLoading, setFastagLoading] = useState(false);
+  const [fastagError, setFastagError] = useState<string | null>(null);
 
   // Options for simple autocompletes
   const SUBJECT_OPTIONS = [
@@ -231,8 +248,72 @@ export default function TicketListPage() {
     payment_to_collect: "",
     payment_to_send: "",
     net_value: "",
+    fastag_bank: "",
+    fastag_class: "",
+    fastag_serial: "",
+    commission_amount: "0",
     pickup_point_name: "",
   });
+
+  const createFastagSearchTerm = fcForm.fastag_serial.trim();
+  const editFastagSearchTerm = (editForm.fastag_serial || "").trim();
+  const activeFastagSearchTerm = (showCreateModal ? createFastagSearchTerm : editTicket ? editFastagSearchTerm : "").trim();
+  const activeFastagBank = (showCreateModal ? fcForm.fastag_bank : editTicket ? editForm.fastag_bank || "" : "").trim();
+  const activeFastagClass = (showCreateModal ? fcForm.fastag_class : editTicket ? editForm.fastag_class || "" : "").trim();
+
+
+  const fastagBanks = useMemo(() => {
+    const values = fastagInventory
+      .map((item) => item.bank_name)
+      .filter((bank) => bank);
+    return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
+  }, [fastagInventory, showCreateModal]);
+
+  const fastagClassesForBank = useMemo(() => {
+    if (!fcForm.fastag_bank) return [];
+    const values = fastagInventory
+      .filter((item) => item.bank_name === fcForm.fastag_bank)
+      .map((item) => item.fastag_class)
+      .filter((cls) => cls);
+    return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
+  }, [fastagInventory, fcForm.fastag_bank]);
+
+  const filteredFastagSerials = useMemo(() => {
+    if (!fcForm.fastag_bank || !fcForm.fastag_class) return [];
+    return fastagInventory.filter(
+      (item) =>
+        item.bank_name === fcForm.fastag_bank && item.fastag_class === fcForm.fastag_class,
+    );
+  }, [fastagInventory, fcForm.fastag_bank, fcForm.fastag_class]);
+
+  const allFastagSerialNumbers = useMemo(
+    () => Array.from(new Set(fastagInventory.map((item) => item.tag_serial))),
+    [fastagInventory],
+  );
+
+  const selectedFastagRecord = useMemo(
+    () => fastagInventory.find((item) => item.tag_serial === fcForm.fastag_serial) || null,
+    [fastagInventory, fcForm.fastag_serial],
+  );
+
+  const fastagOwnerLabel = useMemo(() => {
+    if (!selectedFastagRecord) return "";
+    const holder = (selectedFastagRecord.holder || "").toLowerCase();
+    const name = selectedFastagRecord.assigned_to_name || "";
+    if (holder === "agent") {
+      if (name) return `Agent: ${name}`;
+      const id = selectedFastagRecord.assigned_to_agent_id ?? selectedFastagRecord.assigned_to;
+      return id ? `Agent ID ${id}` : "Agent";
+    }
+    if (holder === "user") {
+      if (name) return `User: ${name}`;
+      return "End Customer";
+    }
+    if (holder === "admin") {
+      return "Admin Warehouse";
+    }
+    return selectedFastagRecord.holder || "";
+  }, [selectedFastagRecord]);
 
   // Auto-calc net_value = payment_to_collect + payment_to_send
   useEffect(() => {
@@ -247,6 +328,22 @@ export default function TicketListPage() {
     }
     setFcForm((f) => (f.net_value === sumStr ? f : { ...f, net_value: sumStr }));
   }, [fcForm.payment_to_collect, fcForm.payment_to_send]);
+
+  useEffect(() => {
+    if (!showCreateModal || !fastagInventory.length) return;
+    setFcForm((prev) => {
+      if (!prev.fastag_serial) return prev;
+      const match = fastagInventory.find((item) => item.tag_serial === prev.fastag_serial);
+      if (!match) return prev;
+      const nextBank = match.bank_name || "";
+      const nextClass = match.fastag_class || "";
+      if (prev.fastag_bank === nextBank && prev.fastag_class === nextClass) {
+        return prev;
+      }
+      return { ...prev, fastag_bank: nextBank, fastag_class: nextClass };
+    });
+  }, [fastagInventory]);
+
   const [fcSubIssues, setFcSubIssues] = useState<SubIssue[]>([
     {
       vehicle_reg_no: "",
@@ -269,6 +366,85 @@ export default function TicketListPage() {
 
   // TODO: replace with real session user id
   const currentUserId = 1;
+  useEffect(() => {
+    if (!showCreateModal && !editTicket) return;
+
+    const term = activeFastagSearchTerm;
+    const bankFilter = activeFastagBank;
+    const classFilter = activeFastagClass;
+
+    if (term.length < 2 && !bankFilter && !classFilter) {
+      setFastagInventory([]);
+      setFastagError(null);
+      setFastagLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const debounce = setTimeout(async () => {
+      try {
+        setFastagLoading(true);
+        setFastagError(null);
+
+        const params = new URLSearchParams();
+        if (term) params.set("query", term);
+        if (bankFilter) params.set("bank", bankFilter);
+        if (classFilter) params.set("class", classFilter);
+
+        const res = await fetch(`/api/fastags?${params.toString()}`, { signal: controller.signal });
+        if (!res.ok) {
+          const message = await res.text();
+          throw new Error(message || "Failed to load FASTag inventory");
+        }
+
+        const data = await res.json();
+        if (controller.signal.aborted) return;
+
+        const rows: FastagInventoryRow[] = Array.isArray(data)
+          ? data
+              .filter((row: any) => row && typeof row.tag_serial === "string")
+              .map((row: any): FastagInventoryRow => {
+                const agentId =
+                  row.assigned_to_agent_id !== undefined && row.assigned_to_agent_id !== null
+                    ? Number(row.assigned_to_agent_id)
+                    : null;
+                const assignedToId =
+                  row.assigned_to !== undefined && row.assigned_to !== null ? Number(row.assigned_to) : null;
+
+                return {
+                  id: Number(row.id ?? 0),
+                  tag_serial: String(row.tag_serial).trim(),
+                  bank_name: row.bank_name ? String(row.bank_name).trim() : "",
+                  fastag_class: row.fastag_class ? String(row.fastag_class).trim() : "",
+                  batch_number: row.batch_number ? String(row.batch_number).trim() : "",
+                  status: row.status ? String(row.status).trim() : "",
+                  holder: row.holder ? String(row.holder).trim() : "",
+                  assigned_to_agent_id:
+                    agentId !== null && !Number.isNaN(agentId) ? agentId : null,
+                  assigned_to: assignedToId !== null && !Number.isNaN(assignedToId) ? assignedToId : null,
+                  assigned_to_name: row.assigned_to_name ? String(row.assigned_to_name).trim() : null,
+                };
+              })
+              .filter((row) => row.tag_serial.length > 0 && row.status.toLowerCase() !== "sold")
+          : [];
+        setFastagInventory(rows);
+      } catch (err: any) {
+        if (controller.signal.aborted) return;
+        setFastagInventory([]);
+        setFastagError(err?.message || "Failed to load FASTag inventory");
+      } finally {
+        if (!controller.signal.aborted) {
+          setFastagLoading(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      controller.abort();
+      clearTimeout(debounce);
+      setFastagLoading(false);
+    };
+  }, [activeFastagSearchTerm, activeFastagBank, activeFastagClass, showCreateModal, editTicket]);
 
   // ---- Fetch tickets
   const fetchTickets = () => {
@@ -437,6 +613,11 @@ export default function TicketListPage() {
       comments: editForm.comments ?? null,
       details: editForm.details ?? null,
       pickup_point_name: editForm.pickup_point_name ?? null,
+      commission_amount:
+        editForm.commission_amount !== undefined && editForm.commission_amount !== ""
+          ? Number(editForm.commission_amount)
+          : 0,
+      fastag_serial: editForm.fastag_serial ?? null,
       payment_to_collect:
         editForm.payment_to_collect !== undefined && editForm.payment_to_collect !== ""
           ? Number(editForm.payment_to_collect)
@@ -686,6 +867,30 @@ export default function TicketListPage() {
     const { name, value } = e.target;
     setFcForm((f) => ({ ...f, [name]: value }));
   };
+
+  const handleFastagBankChange = (value: string) => {
+    setFcForm((f) => ({
+      ...f,
+      fastag_bank: value,
+      fastag_class: "",
+      fastag_serial: "",
+    }));
+  };
+
+  const handleFastagClassChange = (value: string) => {
+    setFcForm((f) => ({
+      ...f,
+      fastag_class: value,
+      fastag_serial: "",
+    }));
+  };
+
+  const handleFastagSerialChange = (value: string) => {
+    setFcForm((f) => ({
+      ...f,
+      fastag_serial: value,
+    }));
+  };
   function fcAddRow() {
     setFcSubIssues((s) => [
       ...s,
@@ -777,6 +982,11 @@ export default function TicketListPage() {
       customer_name: fcForm.customer_name,
       comments: fcForm.comments,
       pickup_point_name: fcForm.pickup_point_name || null,
+      commission_amount:
+        fcForm.commission_amount !== "" && !Number.isNaN(Number(fcForm.commission_amount))
+          ? Number(fcForm.commission_amount)
+          : 0,
+      fastag_serial: fcForm.fastag_serial || null,
       payment_to_collect: fcForm.payment_to_collect !== "" ? Number(fcForm.payment_to_collect) : null,
       payment_to_send: fcForm.payment_to_send !== "" ? Number(fcForm.payment_to_send) : null,
       net_value: fcForm.net_value !== "" ? Number(fcForm.net_value) : null,
@@ -824,6 +1034,10 @@ export default function TicketListPage() {
         payment_to_collect: "",
         payment_to_send: "",
         net_value: "",
+        fastag_bank: "",
+        fastag_class: "",
+        fastag_serial: "",
+        commission_amount: "0",
         pickup_point_name: "",
       });
       setFcSelectedShop(null);
@@ -917,6 +1131,11 @@ export default function TicketListPage() {
           customer_name: fcForm.customer_name,
           comments: fcForm.comments,
           pickup_point_name: fcForm.pickup_point_name || null,
+          commission_amount:
+            fcForm.commission_amount !== "" && !Number.isNaN(Number(fcForm.commission_amount))
+              ? Number(fcForm.commission_amount)
+              : 0,
+          fastag_serial: fcForm.fastag_serial || null,
           payment_to_collect: fcForm.payment_to_collect !== "" ? Number(fcForm.payment_to_collect) : null,
           payment_to_send: fcForm.payment_to_send !== "" ? Number(fcForm.payment_to_send) : null,
           net_value: fcForm.net_value !== "" ? Number(fcForm.net_value) : null,
@@ -1130,6 +1349,7 @@ export default function TicketListPage() {
               <Detail label="Customer" value={selectedTicket.customer_name} />
               <Detail label="Mobile" value={selectedTicket.phone} />
               <Detail label="Vehicle" value={selectedTicket.vehicle_reg_no} />
+              <Detail label="FASTag Barcode" value={selectedTicket.fastag_serial} />
               <Detail
                 label="Source"
                 value={
@@ -1238,23 +1458,56 @@ export default function TicketListPage() {
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">Status</label>
+                <label className="block font-semibold mb-1">FASTag Barcode</label>
                 <AutocompleteInput
-                  value={editForm.status || ""}
-                  onChange={(v) => setEditForm((f: any) => ({ ...f, status: v }))}
-                  options={STATUS_OPTIONS}
-                  placeholder="Type status"
+                  value={editForm.fastag_serial || ""}
+                  onChange={(v) => setEditForm((f: any) => ({ ...f, fastag_serial: v }))}
+                  options={allFastagSerialNumbers}
+                  placeholder={fastagLoading ? "Searching..." : "Type FASTag barcode"}
+                  minChars={2}
                 />
+                <div className="text-xs mt-1">
+                  {fastagError ? (
+                    <span className="text-red-600">{fastagError}</span>
+                  ) : fastagLoading ? (
+                    <span className="text-gray-500">Fetching inventory...</span>
+                  ) : (
+                    <span className="text-gray-500">Type to search FASTag inventory</span>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold mb-1">Status</label>
+                <select
+                  className="border rounded w-full p-2"
+                  name="status"
+                  value={editForm.status || ""}
+                  onChange={(e) => setEditForm((f: any) => ({ ...f, status: e.target.value }))}
+                >
+                  {STATUS_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
                 <label className="block font-semibold mb-1">Subject</label>
-                <AutocompleteInput
+                <select
+                  className="border rounded w-full p-2"
+                  name="subject"
                   value={editForm.subject || ""}
-                  onChange={(v) => setEditForm((f: any) => ({ ...f, subject: v }))}
-                  options={SUBJECT_OPTIONS}
-                  placeholder="Type subject"
-                />
+                  onChange={(e) => setEditForm((f: any) => ({ ...f, subject: e.target.value }))}
+                >
+                  <option value="" disabled>Choose subject</option>
+                  {SUBJECT_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -1327,12 +1580,19 @@ export default function TicketListPage() {
 
               <div>
                 <label className="block font-semibold mb-1">KYV Status</label>
-                <AutocompleteInput
+                <select
+                  className="border rounded w-full p-2"
+                  name="kyv_status"
                   value={editForm.kyv_status || ""}
-                  onChange={(v) => setEditForm((f: any) => ({ ...f, kyv_status: v }))}
-                  options={["kyv_pending","kyv_pending_approval","kyv_success","kyv_hotlisted"]}
-                  placeholder="Type KYV status"
-                />
+                  onChange={(e) => setEditForm((f: any) => ({ ...f, kyv_status: e.target.value }))}
+                >
+                  <option value="" hidden>Select KYV status</option>
+                  {["kyv_pending","kyv_pending_approval","kyv_success","kyv_hotlisted"].map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Payment fields */}
@@ -1387,14 +1647,19 @@ export default function TicketListPage() {
                 <div className="text-xs text-gray-500 mt-1">Type to search (Agent, Shop, Warehouse)</div>
               </div>
 
-              <div className="lg:col-span-4">
-                <label className="block font-semibold mb-1">Comments</label>
+              <div className="lg:col-span-1 md:col-span-1">
+                <label className="block font-semibold mb-1">Commission Amount</label>
                 <input
                   className="border rounded w-full p-2"
-                  name="comments"
-                  value={editForm.comments || ""}
+                  name="commission_amount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editForm.commission_amount ?? ""}
                   onChange={handleEditChange}
+                  placeholder="0"
                 />
+                <div className="text-xs text-gray-500 mt-1">Set to 0 if no commission is due.</div>
               </div>
 
               <div className="lg:col-span-4">
@@ -1710,12 +1975,19 @@ export default function TicketListPage() {
               </div>
               <div>
                 <label className="block font-semibold mb-1">Subject</label>
-                <AutocompleteInput
+                <select
+                  className="w-full border p-2 rounded"
                   value={fcForm.subject}
-                  onChange={(v) => setFcForm((f) => ({ ...f, subject: v }))}
-                  options={SUBJECT_OPTIONS}
-                  placeholder="Type subject"
-                />
+                  onChange={(e) => setFcForm((f) => ({ ...f, subject: e.target.value }))}
+                  required
+                >
+                  <option value="" hidden>Choose subject</option>
+                  {SUBJECT_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -1741,27 +2013,39 @@ export default function TicketListPage() {
 
               <div>
                 <label className="block font-semibold mb-1">Status</label>
-                <AutocompleteInput
+                <select
+                  className="w-full border p-2 rounded"
                   value={fcForm.status}
-                  onChange={(v) => setFcForm((f) => ({ ...f, status: v }))}
-                  options={STATUS_OPTIONS}
-                  placeholder="Type status"
-                />
+                  onChange={(e) => setFcForm((f) => ({ ...f, status: e.target.value }))}
+                  required
+                >
+                  {STATUS_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
                 <label className="block font-semibold mb-1">KYV Status</label>
-                <AutocompleteInput
+                <select
+                  className="w-full border p-2 rounded"
                   value={fcForm.kyv_status}
-                  onChange={(v) => setFcForm((f) => ({ ...f, kyv_status: v }))}
-                  options={[
+                  onChange={(e) => setFcForm((f) => ({ ...f, kyv_status: e.target.value }))}
+                >
+                  <option value="" hidden>Select KYV status</option>
+                  {[
                     "kyv_pending",
                     "kyv_pending_approval",
                     "kyv_success",
                     "kyv_hotlisted",
-                  ]}
-                  placeholder="Type KYV status"
-                />
+                  ].map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               {/* Payment fields */}
@@ -1856,6 +2140,91 @@ export default function TicketListPage() {
                 <div className="text-xs text-gray-500 mt-1">Type to search (Agent, Shop, Warehouse)</div>
               </div>
 
+              <div className="lg:col-span-1 md:col-span-1">
+                <label className="block font-semibold mb-1">Commission Amount</label>
+                <input
+                  name="commission_amount"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={fcForm.commission_amount}
+                  onChange={fcHandleChange}
+                  className="w-full border p-2 rounded"
+                  placeholder="0"
+                />
+                <div className="text-xs text-gray-500 mt-1">Defaults to 0 if no commission is due.</div>
+              </div>
+
+              <div className="lg:col-span-1 md:col-span-1">
+                <label className="block font-semibold mb-1">FASTag Bank</label>
+                <select
+                  className="w-full border p-2 rounded"
+                  value={fcForm.fastag_bank}
+                  onChange={(e) => handleFastagBankChange(e.target.value)}
+                  disabled={fastagLoading}
+                >
+                  <option value="">
+                    {fastagLoading ? "Loading..." : "Select bank"}
+                  </option>
+                  {fastagBanks.map((bank) => (
+                    <option key={bank} value={bank}>
+                      {bank}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="lg:col-span-1 md:col-span-1">
+                <label className="block font-semibold mb-1">FASTag Class</label>
+                <select
+                  className="w-full border p-2 rounded"
+                  value={fcForm.fastag_class}
+                  onChange={(e) => handleFastagClassChange(e.target.value)}
+                  disabled={fastagLoading || !fcForm.fastag_bank}
+                >
+                  <option value="">
+                    {fcForm.fastag_bank ? "Select class" : "Select bank first"}
+                  </option>
+                  {fastagClassesForBank.map((cls) => (
+                    <option key={cls} value={cls}>
+                      {cls}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="lg:col-span-1 md:col-span-1">
+                <label className="block font-semibold mb-1">FASTag Barcode</label>
+                <AutocompleteInput
+                  value={fcForm.fastag_serial}
+                  onChange={handleFastagSerialChange}
+                  options={fastagInventory.map((item) => item.tag_serial)}
+                  placeholder="Type FASTag barcode"
+                  minChars={2}
+                />
+                <div className="text-xs text-gray-500 mt-1">Type at least two characters to search for a FASTag barcode.</div>
+              </div>
+              <div className="lg:col-span-1 md:col-span-1">
+                <label className="block font-semibold mb-1">FASTag Owner</label>
+                <input
+                  className="w-full border p-2 rounded bg-gray-50"
+                  value={fastagOwnerLabel}
+                  readOnly
+                  placeholder={fastagLoading ? "Searching..." : fcForm.fastag_serial ? "Owner will display after selection" : "Owner appears after picking a barcode"}
+                />
+              </div>
+              <div className="lg:col-span-4 text-xs">
+                {fastagError ? (
+                  <span className="text-red-600">{fastagError}</span>
+                ) : fastagLoading ? (
+                  <span className="text-gray-500">Searching FASTag inventory...</span>
+                ) : fastagInventory.length ? (
+                  <span className="text-gray-500">Select a result to fill the barcode and owner details.</span>
+                ) : createFastagSearchTerm || fcForm.fastag_bank || fcForm.fastag_class ? (
+                  <span className="text-gray-500">No FASTag matches found for the current search.</span>
+                ) : (
+                  <span className="text-gray-500">Type a FASTag barcode to search available inventory.</span>
+                )}
+              </div>
+
               <div className="lg:col-span-4 md:col-span-2">
                 <label className="block font-semibold mb-1">Details</label>
                 <textarea
@@ -1864,16 +2233,6 @@ export default function TicketListPage() {
                   onChange={fcHandleChange}
                   className="w-full border p-2 rounded"
                   rows={3}
-                />
-              </div>
-
-              <div className="lg:col-span-4 md:col-span-2">
-                <label className="block font-semibold mb-1">Comments</label>
-                <input
-                  name="comments"
-                  value={fcForm.comments}
-                  onChange={fcHandleChange}
-                  className="w-full border p-2 rounded"
                 />
               </div>
 

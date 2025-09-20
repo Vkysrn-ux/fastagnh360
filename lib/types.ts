@@ -43,10 +43,40 @@ export interface FastagItem {
   tag_serial: string;
   status: FastagStatus;
   purchase_price: number;
-  assigned_to_user_id: number | null;         // Assigned to any user (agent, shop, etc.)
+  assigned_to_agent_id?: number | null;
+  assigned_to_user_id?: number | null;         // Assigned to any user (agent, shop, etc.)
   assigned_to_user_name?: string | null;      // For UI
   assigned_to_role?: UserRole | null;         // For logic/UI
   assigned_date?: string | null;              // ISO date string
   current_holder?: string | null;             // Optional for UI: who currently holds this tag
 }
 
+export interface CommissionSummaryData {
+  fastagType: string;
+  unitsSold: number;
+  totalRevenue: number;
+  agentCommission: number;
+  userCommission: number;
+  netProfit: number;
+}
+
+export interface AgentPerformanceData {
+  id: number;
+  name: string;
+  fastagsSold: number;
+  revenue: number;
+  commission: number;
+  performance: "Excellent" | "Good" | "Average" | "Needs Attention";
+}
+
+export interface CommissionRate {
+  fastagType: string;
+  rate: number;
+}
+
+export interface CommissionSettings {
+  defaultAgentCommission: number;
+  defaultUserCommission: number;
+  agentCommissions: CommissionRate[];
+  userCommissions: CommissionRate[];
+}

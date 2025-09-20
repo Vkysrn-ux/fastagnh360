@@ -2,6 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { logTicketAction } from "@/lib/ticket-logs";
+import { hasTableColumn } from "@/lib/db-helpers";
+
+const TICKETS_TABLE = "tickets_nh";
 
 // GET: fetch a single ticket by id
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -24,6 +27,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!id) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
 
   const data = await req.json();
+  const includeCommissionColumn = await hasTableColumn(TICKETS_TABLE, "commission_amount");
+  const includeFastagColumn = await hasTableColumn(TICKETS_TABLE, "fastag_serial");
   const allowedFields = [
     "vehicle_reg_no",
     "subject",
@@ -40,8 +45,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     "payment_to_collect",
     "payment_to_send",
     "net_value",
-    "pickup_point_name",
   ];
+  if (includeCommissionColumn) {
+    allowedFields.push("commission_amount");
+  }
+  allowedFields.push("pickup_point_name");
+  if (includeFastagColumn) {
+    allowedFields.push("fastag_serial");
+  }
 
   const updates: string[] = [];
   const values: any[] = [];

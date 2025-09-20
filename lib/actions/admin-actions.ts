@@ -1,6 +1,8 @@
 "use server";
 
 import { pool } from "@/lib/db";
+import type { AgentPerformanceData, CommissionSettings, CommissionSummaryData } from "@/lib/types";
+
 
 // Type for dashboard stats
 export type AdminStats = {
@@ -47,5 +49,109 @@ export async function getAdminStats(): Promise<AdminStats> {
     totalEmployees: employeeRows[0].totalEmployees,
     totalSuppliers: supplierRows[0].totalSuppliers,
     monthlyRevenue: revenueRows[0].monthlyRevenue,
+  };
+}
+
+
+const commissionSummaryData: CommissionSummaryData[] = [
+  {
+    fastagType: "Class 4 (Car/Jeep/Van)",
+    unitsSold: 132,
+    totalRevenue: 548000,
+    agentCommission: 38400,
+    userCommission: 19200,
+    netProfit: 490400,
+  },
+  {
+    fastagType: "Class 5 (LCV)",
+    unitsSold: 84,
+    totalRevenue: 436800,
+    agentCommission: 30576,
+    userCommission: 15360,
+    netProfit: 390864,
+  },
+  {
+    fastagType: "Class 6 (Bus/Truck)",
+    unitsSold: 58,
+    totalRevenue: 417600,
+    agentCommission: 33408,
+    userCommission: 20880,
+    netProfit: 363312,
+  },
+];
+
+const agentPerformanceData: AgentPerformanceData[] = [
+  {
+    id: 1,
+    name: "Sandeep Kumar",
+    fastagsSold: 56,
+    revenue: 224000,
+    commission: 16800,
+    performance: "Excellent",
+  },
+  {
+    id: 2,
+    name: "Priya Shah",
+    fastagsSold: 42,
+    revenue: 168000,
+    commission: 11760,
+    performance: "Good",
+  },
+  {
+    id: 3,
+    name: "Mohit Reddy",
+    fastagsSold: 31,
+    revenue: 124000,
+    commission: 8680,
+    performance: "Average",
+  },
+  {
+    id: 4,
+    name: "Anita Dsouza",
+    fastagsSold: 28,
+    revenue: 117600,
+    commission: 9408,
+    performance: "Needs Attention",
+  },
+];
+
+let commissionSettingsState: CommissionSettings = {
+  defaultAgentCommission: 7.5,
+  defaultUserCommission: 3,
+  agentCommissions: [
+    { fastagType: "Class 4 (Car/Jeep/Van)", rate: 7.5 },
+    { fastagType: "Class 5 (LCV)", rate: 7.0 },
+    { fastagType: "Class 6 (Bus/Truck)", rate: 8.0 },
+    { fastagType: "Class 7 (Multi-Axle)", rate: 8.5 },
+  ],
+  userCommissions: [
+    { fastagType: "Class 4 (Car/Jeep/Van)", rate: 3.0 },
+    { fastagType: "Class 5 (LCV)", rate: 2.5 },
+    { fastagType: "Class 6 (Bus/Truck)", rate: 2.75 },
+    { fastagType: "Class 7 (Multi-Axle)", rate: 3.25 },
+  ],
+};
+
+export async function getCommissionSummary(): Promise<CommissionSummaryData[]> {
+  return commissionSummaryData.map((row) => ({ ...row }));
+}
+
+export async function getAgentPerformance(): Promise<AgentPerformanceData[]> {
+  return agentPerformanceData.map((row) => ({ ...row }));
+}
+
+export async function getCommissionSettings(): Promise<CommissionSettings> {
+  return {
+    ...commissionSettingsState,
+    agentCommissions: commissionSettingsState.agentCommissions.map((row) => ({ ...row })),
+    userCommissions: commissionSettingsState.userCommissions.map((row) => ({ ...row })),
+  };
+}
+
+export async function updateCommissionSettings(settings: CommissionSettings): Promise<void> {
+  commissionSettingsState = {
+    ...settings,
+    agentCommissions: settings.agentCommissions.map((row) => ({ ...row })),
+    userCommissions: settings.userCommissions.map((row) => ({ ...row })),
   };
 }
