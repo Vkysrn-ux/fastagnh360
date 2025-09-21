@@ -38,9 +38,14 @@ type Bank = {
   name: string;
 };
 
-export default function RegisterAgentModal() {
+interface RegisterAgentModalProps {
+  onSuccess?: () => void;
+}
+
+export default function RegisterAgentModal({ onSuccess }: RegisterAgentModalProps) {
   const [form, setForm] = useState({
     name: "",
+    email: "",
     phone: "",
     pincode: "",
     role: "asm",
@@ -138,47 +143,55 @@ export default function RegisterAgentModal() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    let parent_user_id = null;
-    if (form.parent_team_leader) parent_user_id = Number(form.parent_team_leader);
-    else if (form.parent_manager) parent_user_id = Number(form.parent_manager);
-    else if (form.parent_asm) parent_user_id = Number(form.parent_asm);
+    let parent_id = null;
+    if (form.parent_team_leader) parent_id = Number(form.parent_team_leader);
+    else if (form.parent_manager) parent_id = Number(form.parent_manager);
+    else if (form.parent_asm) parent_id = Number(form.parent_asm);
 
-    const payload: any = {
-      ...form,
-      parent_user_id,
-    };
-
-    if (form.role !== "asm") delete payload.area;
-    if (form.role !== "toll-agent") delete payload.bank_ids;
-    // Remove extra parent fields
-    delete payload.parent_asm;
-    delete payload.parent_manager;
-    delete payload.parent_team_leader;
-    if (!parent_user_id) payload.parent_user_id = null;
-
-    const res = await fetch("/api/agents/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    setMessage(data.success ? `✅ Registered! ID: ${data.userId}` : `❌ ${data.error || "Registration failed"}`);
-    if (data.success) {
-      setForm({
-        name: "",
-        phone: "",
-        pincode: "",
-        role: "asm",
-        area: "",
-        parent_asm: "",
-        parent_manager: "",
-        parent_team_leader: "",
-        bank_ids: [{ supplier_name: "", bank_name: "", bank_reference_id: "" }],
+    try {
+      const response = await fetch("/api/agents/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+          role: form.role,
+          status: "active",
+          parent_id: parent_id,
+          area: form.role === "asm" ? form.area : undefined,
+          bank_ids: form.role === "toll-agent" ? form.bank_ids : undefined
+        }),
       });
-      // Optionally refetch agents
-      fetch("/api/agents/all")
-        .then(res => res.json())
-        .then(data => setAgents(data));
+      
+      const data = await response.json();
+      setMessage(data.success ? `✅ Registered! ID: ${data.userId}` : `❌ ${data.error || "Registration failed"}`);
+      
+      if (data.success) {
+        setForm({
+          name: "",
+          email: "",
+          phone: "",
+          pincode: "",
+          role: "asm",
+          area: "",
+          parent_asm: "",
+          parent_manager: "",
+          parent_team_leader: "",
+          bank_ids: [{ supplier_name: "", bank_name: "", bank_reference_id: "" }],
+        });
+        
+        // Refetch agents to update the list
+        const updatedAgents = await fetch("/api/agents/all").then(res => res.json());
+        setAgents(updatedAgents);
+        
+        // Call onSuccess callback if provided
+        if (onSuccess) {
+          onSuccess();
+        }
+      }
+    } catch (error) {
+      setMessage(`❌ Error: ${error instanceof Error ? error.message : "Registration failed"}`);
     }
   };
 
@@ -187,13 +200,24 @@ export default function RegisterAgentModal() {
   return (
     <form onSubmit={handleSubmit} className="grid gap-4 max-w-xl p-6 bg-white rounded shadow">
       <h2 className="text-xl font-bold">Register Agent/Shop</h2>
+      
       <input
         name="name"
         placeholder="Name"
         value={form.name}
         onChange={handleChange}
         required
-        className="border rounded px-3 py-2"
+        className="border rounded px-3 py-2 w-full"
+      />
+      
+      <input
+        name="email"
+        type="email"
+        placeholder="Email Address"
+        value={form.email}
+        onChange={handleChange}
+        required
+        className="border rounded px-3 py-2 w-full"
       />
       <input
         name="phone"
@@ -270,8 +294,8 @@ export default function RegisterAgentModal() {
                   className="border rounded px-3 py-2"
                 >
                   <option value="">Select Bank</option>
-                  {banks.map((name: string) => (
-                    <option key={name} value={name}>{name}</option>
+                  {banks.map((bank) => (
+                    <option key={bank.id} value={bank.name}>{bank.name}</option>
                   ))}
                 </select>
               {/* Reference ID */}

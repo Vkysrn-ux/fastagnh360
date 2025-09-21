@@ -1,72 +1,84 @@
 import { NextRequest, NextResponse } from "next/server";
-import { pool } from "@/lib/db";
+import { createPortalUser } from "@/lib/actions/admin-actions";
 import bcrypt from "bcryptjs";
+import { pool } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    let {
-      name, phone, pincode, role,
-      parent_user_id, area, bank_ids,
-      email,
+    const {
+      name, phone, role,
+      parent_id, area, bank_ids,
+      email, pincode
     } = body;
 
-    name = (name ?? "").trim();
-    phone = (phone ?? "").trim();
-    pincode = (pincode ?? "").trim();
-    role = (role ?? "").trim();
-    area = (area ?? "").trim();
-    email = (email ?? "").trim().toLowerCase();
+    // Create portal user first
+    const result = await createPortalUser({
+      name,
+      email,
+      phone,
+      role,
+      status: "active",
+      parent_id: parent_id ?? null,
+    });
 
-    // Insert user with all nullable/optional fields
-    const query = `
-      INSERT INTO users (name, phone, pincode, role, area, parent_user_id)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `;
-    const params = [
-      name || null,
-      phone || null,
-      pincode || null,
-      role || null,
-      area || null,
-      parent_user_id ?? null,
-    ];
-
-    const [result] = await pool.query(query, params);
-    const userId = (result as any).insertId;
-
-    // Insert bank_ids (only if valid entries)
-    if (Array.isArray(bank_ids) && bank_ids.length > 0) {
-      for (const entry of bank_ids) {
-  const bankName = (entry.bank_name ?? "").trim();
-  const refId = (entry.bank_reference_id ?? "").trim();
-
-  if (!bankName || !refId) continue;
-
-  await pool.query(
-    "INSERT INTO agent_bank_ids (agent_id, bank_name, bank_reference_id) VALUES (?, ?, ?)",
-    [userId, bankName, refId]
-  );
-}
-
+    if (!result.success) {
+      return NextResponse.json(result, { status: 400 });
     }
 
-    // Optionally set email/username/password if columns exist
-    if (email) {
-      const defaultPass = "Agent@123#";
-      const hash = await bcrypt.hash(defaultPass, 10);
-      try {
-        // Your users table uses `password` column and unique email
-        await pool.query(
-          "UPDATE users SET email = ?, password = ? WHERE id = ?",
-          [email, hash, userId]
-        );
-      } catch (e) {
-        // Ignore if column mismatch; ensure schema matches provided DDL
+    const userId = result.user.id;
+
+    // Update agent specific fields
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      // Update pincode and area
+      await conn.query(
+        "UPDATE users SET pincode = ?, area = ? WHERE id = ?",
+        [pincode || null, area || null, userId]
+      );
+
+      // Insert bank_ids if provided (only for toll agents)
+      if (role === "toll-agent" && Array.isArray(bank_ids) && bank_ids.length > 0) {
+        for (const entry of bank_ids) {
+          const bankName = (entry.bank_name ?? "").trim();
+          const refId = (entry.bank_reference_id ?? "").trim();
+
+          if (!bankName || !refId) continue;
+
+          await conn.query(
+            "INSERT INTO agent_bank_ids (agent_id, bank_name, bank_reference_id) VALUES (?, ?, ?)",
+            [userId, bankName, refId]
+          );
+        }
       }
+
+      // If email is provided, set password
+      if (email) {
+        const defaultPass = "Agent@123#";
+        const hash = await bcrypt.hash(defaultPass, 10);
+        await conn.query(
+          "UPDATE users SET password = ? WHERE id = ?",
+          [hash, userId]
+        );
+      }
+
+      await conn.commit();
+
+      return NextResponse.json({
+        success: true,
+        userId,
+        generatedPassword: result.generatedPassword
+      });
+
+    } catch (error) {
+      await conn.rollback();
+      throw error;
+    } finally {
+      conn.release();
     }
 
-    return NextResponse.json({ success: true, userId });
   } catch (error: any) {
     if (error?.code === "ER_DUP_ENTRY") {
       return NextResponse.json(
