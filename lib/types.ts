@@ -3,14 +3,20 @@
 // User roles in the system
 export type UserRole =
   | "admin"
-  | "manager"
-  | "employee"
   | "agent"
-  | "shop_owner"
-  | "toll-agent"
-  | "team-leader"
+  | "asm"
+  | "channel-partner"
+  | "employee"
   | "executive"
-  | "shop";
+  | "fse"
+  | "manager"
+  | "office"
+  | "shop"
+  | "shop_owner"
+  | "showroom"
+  | "team-leader"
+  | "tl"
+  | "toll-agent";
 
 // Status options for users
 export type UserStatus = "active" | "inactive";
@@ -80,3 +86,16 @@ export interface CommissionSettings {
   agentCommissions: CommissionRate[];
   userCommissions: CommissionRate[];
 }
+export type PortalDashboard = "admin" | "agent" | "employee";
+
+export interface PortalUser {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  role: string;
+  status: string | null;
+  dashboard: PortalDashboard;
+  created_at?: string | null;
+}
+

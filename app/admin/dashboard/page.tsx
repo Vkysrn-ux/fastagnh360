@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { InfoIcon, ShoppingCart, TrendingUp, Users, CreditCard, Building, UserCircle } from "lucide-react"
-import { getAdminStats } from "@/lib/actions/admin-actions"
+import { getScopedStats } from "@/lib/actions/admin-actions"
 import { useRouter } from "next/navigation"
 import { getAdminSession } from "@/lib/actions/auth-actions"
 import { RecentTransactions } from "@/components/agent/recent-transactions"
@@ -36,7 +36,7 @@ export default function AdminDashboardPage() {
       }
 
       try {
-        const adminStats = await getAdminStats()
+        const adminStats = await getScopedStats(session.id, "admin")
         setStats(adminStats)
       } catch (error) {
         console.error("Failed to fetch admin stats:", error)
