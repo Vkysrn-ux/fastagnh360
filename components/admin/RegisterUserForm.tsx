@@ -1,23 +1,18 @@
-"use client";
+﻿"use client";
 import { useState } from "react";
 
 const ROLES = [
-  { label: "Administrator", value: "admin" },
-  { label: "Employee", value: "employee" },
-  { label: "Regional Manager (ASM)", value: "asm" },
+  { label: "Super Admin", value: "admin" },
+  { label: "Accountant / HR", value: "employee" },
   { label: "Manager", value: "manager" },
-  { label: "Team Leader (TL)", value: "team-leader" },
-  { label: "Shop", value: "shop" },
-  { label: "FSE", value: "fse" },
-  { label: "Showroom", value: "showroom" },
-  { label: "Toll Agent", value: "toll-agent" },
-  { label: "Channel Partner", value: "channel-partner" },
+  { label: "Team Lead", value: "team-leader" },
+  { label: "Agent", value: "agent" },
 ];
 
 const DASHBOARDS = [
-  { label: "Admin Dashboard", value: "admin" },
-  { label: "Employee Dashboard", value: "employee" },
-  { label: "Agent Dashboard", value: "agent" },
+  { label: "Admin Dashboard - Super Admin sees everything", value: "admin" },
+  { label: "Employee Dashboard - Accountant/HR sees financial data", value: "employee" },
+  { label: "Agent Dashboard - Manager/TeamLead/Agents see operations", value: "agent" },
 ];
 
 interface RegisterUserFormProps {
@@ -39,10 +34,20 @@ export default function RegisterUserForm({ onSuccess }: RegisterUserFormProps) {
   // Field change handler
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setForm(prev => ({
-      ...prev,
-      [name]: value,
-    }));
+    setForm((prev) => {
+      const next = { ...prev, [name]: value } as typeof prev;
+      if (name === "role") {
+        if (value === "admin") next.dashboard = "admin";
+        else if (value === "employee") next.dashboard = "employee";
+        else next.dashboard = "agent";
+      }
+      if (name === "dashboard") {
+        if (value === "admin") next.role = "admin";
+        else if (value === "employee") next.role = "employee";
+        else if (value === "agent" && (prev.role === "admin" || prev.role === "employee")) next.role = "agent";
+      }
+      return next;
+    });
   };
 
   // Submit handler
@@ -51,17 +56,17 @@ export default function RegisterUserForm({ onSuccess }: RegisterUserFormProps) {
 
     // Basic validation
     if (form.password !== form.confirmPassword) {
-      setMessage("❌ Passwords do not match");
+      setMessage("Error: Passwords do not match");
       return;
     }
 
     if (form.password.length < 8) {
-      setMessage("❌ Password must be at least 8 characters long");
+      setMessage("Error: Password must be at least 8 characters long");
       return;
     }
 
     try {
-      const response = await fetch("/api/agents/register", {
+      const response = await fetch("/api/portal-users/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -71,14 +76,13 @@ export default function RegisterUserForm({ onSuccess }: RegisterUserFormProps) {
           role: form.role,
           password: form.password,
           status: "active",
-          dashboard: form.dashboard,
         }),
       });
       
       const data = await response.json();
       
       if (data.success) {
-        setMessage(`✅ User registered successfully! ID: ${data.userId}`);
+        setMessage(`Success: User registered successfully! ID: ${data.userId}`);
         setForm({
           name: "",
           email: "",
@@ -93,10 +97,10 @@ export default function RegisterUserForm({ onSuccess }: RegisterUserFormProps) {
           onSuccess();
         }
       } else {
-        setMessage(`❌ ${data.error || "Registration failed"}`);
+        setMessage(`Error: ${data.error || "Registration failed"}`);
       }
     } catch (error) {
-      setMessage(`❌ Error: ${error instanceof Error ? error.message : "Registration failed"}`);
+      setMessage(`Error: ${error instanceof Error ? error.message : "Registration failed"}`);
     }
   };
 
@@ -186,7 +190,7 @@ export default function RegisterUserForm({ onSuccess }: RegisterUserFormProps) {
       </button>
 
       {message && (
-        <p className={`text-sm mt-2 ${message.startsWith('✅') ? 'text-green-600' : 'text-red-600'}`}>
+        <p className={`text-sm mt-2 ${message.startsWith('Success:') ? 'text-green-600' : 'text-red-600'}`}>
           {message}
         </p>
       )}

@@ -1,45 +1,47 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { InfoIcon, Package, ShoppingCart, TrendingUp, Users } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { InfoIcon } from "lucide-react"
 import { getEmployeeStats } from "@/lib/actions/employee-actions"
 import { useRouter } from "next/navigation"
 import { getEmployeeSession } from "@/lib/actions/auth-actions"
-import { RecentTransactions } from "@/components/agent/recent-transactions"
-import { CustomerSummary } from "@/components/employee/customer-summary"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { DailySales } from "@/components/dashboard/DailySales"
+import { PendingAmount } from "@/components/dashboard/PendingAmount"
 
 export default function EmployeeDashboardPage() {
   const router = useRouter()
-  const [stats, setStats] = useState({
-    assignedFastags: 0,
-    availableFastags: 0,
-    totalCustomers: 0,
-    monthlySales: 0,
-  })
+  const [session, setSession] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [hrUsers, setHrUsers] = useState<any[]>([])
+  const [loadingActivity, setLoadingActivity] = useState(false)
 
   useEffect(() => {
-    const checkSession = async () => {
-      const session = await getEmployeeSession()
-      if (!session) {
-        router.push("/employee/login")
+    const init = async () => {
+      const s = await getEmployeeSession()
+      if (!s) {
+        router.push("/login")
         return
       }
-
+      setSession(s)
+    if ((s.displayRole || '').toLowerCase() === 'accountant/hr') {
       try {
-        const employeeStats = await getEmployeeStats()
-        setStats(employeeStats)
-      } catch (error) {
-        console.error("Failed to fetch employee stats:", error)
+        setLoadingActivity(true)
+        const res = await fetch('/api/hr/users-activity')
+        const data = await res.json()
+        setHrUsers(Array.isArray(data) ? data : [])
+      } catch {}
+      finally { setLoadingActivity(false) }
+    }
+      try {
+        await getEmployeeStats()
       } finally {
         setIsLoading(false)
       }
     }
-
-    checkSession()
+    init()
   }, [router])
 
   if (isLoading) {
@@ -63,65 +65,46 @@ export default function EmployeeDashboardPage() {
         <Alert>
           <InfoIcon className="h-4 w-4" />
           <AlertTitle>Welcome to the employee dashboard!</AlertTitle>
-          <AlertDescription>You can manage FASTags, customers, and orders assigned to you from here.</AlertDescription>
+          <AlertDescription>
+            You can manage FASTags, customers, and orders assigned to you from here.
+          </AlertDescription>
         </Alert>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Assigned FASTags</CardTitle>
-              <Package className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.assignedFastags}</div>
-              <p className="text-xs text-muted-foreground">Total FASTags assigned</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Available FASTags</CardTitle>
-              <ShoppingCart className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.availableFastags}</div>
-              <p className="text-xs text-muted-foreground">FASTags available for sale</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Customers</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalCustomers}</div>
-              <p className="text-xs text-muted-foreground">Customers served</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Monthly Sales</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">₹{stats.monthlySales.toLocaleString()}</div>
-              <p className="text-xs text-muted-foreground">Sales this month</p>
-            </CardContent>
-          </Card>
+        <div className="grid gap-4 md:grid-cols-2">
+          <DailySales />
+          <PendingAmount />
         </div>
-
-        <Tabs defaultValue="transactions" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="transactions">Recent Transactions</TabsTrigger>
-            <TabsTrigger value="customers">Customer Summary</TabsTrigger>
-          </TabsList>
-          <TabsContent value="transactions" className="space-y-4">
-            <RecentTransactions />
-          </TabsContent>
-          <TabsContent value="customers" className="space-y-4">
-            <CustomerSummary />
-          </TabsContent>
-        </Tabs>
       </div>
+        {String(session?.displayRole || '').toLowerCase() === 'accountant/hr' && (
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>User Details</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1 text-sm">
+                  <div><span className="text-muted-foreground">Name:</span> {session?.name || '-'}</div>
+                  <div><span className="text-muted-foreground">Email:</span> {session?.email || '-'}</div>
+                  <div><span className="text-muted-foreground">Role:</span> {session?.displayRole || session?.role || '-'}</div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle>Last Login</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm">
+                  {session?.lastLogin ? new Date(session.lastLogin).toLocaleString() : '�'}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
     </div>
   )
 }
+
+
+
+

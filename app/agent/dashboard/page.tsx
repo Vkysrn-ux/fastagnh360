@@ -10,9 +10,11 @@ import { InventorySummary } from "@/components/agent/inventory-summary"
 import { RecentTransactions } from "@/components/agent/recent-transactions"
 import { useRouter } from "next/navigation"
 import { getAgentSession } from "@/lib/actions/auth-actions"
+import RoleDashboard from "@/components/dashboard/RoleDashboard"
 
 export default function AgentDashboardPage() {
   const router = useRouter()
+  const [session, setSession] = useState<any>(null)
   const [stats, setStats] = useState({
     totalInventory: 0,
     availableFastags: 0,
@@ -23,11 +25,12 @@ export default function AgentDashboardPage() {
 
   useEffect(() => {
     const checkSession = async () => {
-      const session = await getAgentSession()
-      if (!session) {
+      const userSession = await getAgentSession()
+      if (!userSession) {
         router.push("/agent/login")
         return
       }
+      setSession(userSession)
 
       try {
         const agentStats = await getAgentStats()
@@ -123,6 +126,12 @@ export default function AgentDashboardPage() {
             <RecentTransactions />
           </TabsContent>
         </Tabs>
+
+        {session?.displayRole && (
+          <div className="mt-8">
+            <RoleDashboard userRole={session.displayRole} />
+          </div>
+        )}
       </div>
     </div>
   )

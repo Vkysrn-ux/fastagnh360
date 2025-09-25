@@ -20,8 +20,18 @@ export async function POST(req: NextRequest) {
 
     const userId = result.insertId as number;
 
-    // If email provided, set username=email and default password
+    // If email provided, verify it's unique and set credentials
     if (email) {
+      // Check if email already exists
+      const [existingUsers]: any = await pool.query(
+        "SELECT id FROM users WHERE email = ? AND id != ?",
+        [email, userId]
+      );
+
+      if (existingUsers && existingUsers.length > 0) {
+        return NextResponse.json({ error: "Email already exists." }, { status: 400 });
+      }
+
       const defaultPass = "Agent@123#"; // default for all role-based registrations
       const hash = await bcrypt.hash(defaultPass, 10);
       try {

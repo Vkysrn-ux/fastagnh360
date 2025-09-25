@@ -26,10 +26,12 @@ export default function LoginPage() {
     setError(null)
 
     try {
+      console.log('Attempting login with:', email)
       const result = await loginUser(email, password)
-      if (result.success) {
-        // Redirect based on user role
-        switch (result.userType) {
+      console.log('Login result:', result)
+      if (result.success && result.user) {
+        // Redirect based on user type
+        switch (result.user.userType) {
           case "admin":
             router.push("/admin/dashboard")
             break
@@ -39,11 +41,8 @@ export default function LoginPage() {
           case "employee":
             router.push("/employee/dashboard")
             break
-          case "user":
-            router.push("/user/dashboard")
-            break
           default:
-            router.push("/")
+            router.push("/user/dashboard")
         }
       } else {
         setError(result.message || "Login failed. Please check your credentials.")
