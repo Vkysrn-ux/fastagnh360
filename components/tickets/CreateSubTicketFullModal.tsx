@@ -46,25 +46,27 @@ export default function CreateSubTicketFullModal({
 }) {
   const [open, setOpen] = useState(false);
 
-  const [form, setForm] = useState({
-    vehicle_reg_no: parent.vehicle_reg_no || "",
-    phone: parent.phone || "",
-    alt_phone: parent.alt_phone || "",
+  const initialForm = useMemo(() => ({
+    vehicle_reg_no: parent?.vehicle_reg_no || "",
+    phone: parent?.phone || "",
+    alt_phone: parent?.alt_phone || "",
     subject: "",
     details: "",
     status: "open",
     kyv_status: "",
-    assigned_to: String(parent.assigned_to ?? ""),
-    lead_received_from: parent.lead_received_from || "",
+    assigned_to: parent?.assigned_to ? String(parent.assigned_to) : "",
+    lead_received_from: parent?.lead_received_from || "",
     role_user_id: "",
-    lead_by: parent.lead_by ? String(parent.lead_by) : "",
-    customer_name: parent.customer_name || "",
+    lead_by: parent?.lead_by ? String(parent.lead_by) : "",
+    customer_name: parent?.customer_name || "",
     comments: "",
     payment_to_collect: "",
     payment_to_send: "",
     net_value: "",
     pickup_point_name: "",
-  });
+  }), [parent]);
+
+  const [form, setForm] = useState(initialForm);
 
   const [selectedShop, setSelectedShop] = useState<any>(null);
   const [selectedPickup, setSelectedPickup] = useState<{ id: number; name: string; type: string } | null>(null);

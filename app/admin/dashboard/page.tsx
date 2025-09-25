@@ -12,11 +12,13 @@ import { RecentTransactions } from "@/components/agent/recent-transactions"
 import { AgentPerformance } from "@/components/admin/agent-performance"
 import { CommissionSummary } from "@/components/admin/commission-summary"
 import RegisterAgentForm from "@/components/admin/RegisterAgentForm";
+import RoleDashboard from "@/components/dashboard/RoleDashboard";
 
 
 
 export default function AdminDashboardPage() {
   const router = useRouter()
+  const [session, setSession] = useState<any>(null)
   const [stats, setStats] = useState({
     totalFastags: 0,
     activeFastags: 0,
@@ -29,11 +31,12 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     const checkSession = async () => {
-      const session = await getAdminSession()
-      if (!session) {
+      const userSession = await getAdminSession()
+      if (!userSession) {
         router.push("/admin/login")
         return
       }
+      setSession(userSession)
 
       try {
         const adminStats = await getScopedStats(session.id, "admin")
@@ -153,6 +156,12 @@ export default function AdminDashboardPage() {
             <CommissionSummary />
           </TabsContent>
         </Tabs>
+
+        {session?.displayRole && (
+          <div className="mt-8">
+            <RoleDashboard userRole={session.displayRole} />
+          </div>
+        )}
       </div>
     </div>
   )

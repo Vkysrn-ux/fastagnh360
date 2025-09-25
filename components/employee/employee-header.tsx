@@ -6,20 +6,15 @@ import { Button } from "@/components/ui/button"
 import { ThemeSwitcher } from "@/components/theme-switcher"
 import { LogOut, Menu, Package, Users, CreditCard, BarChart3, HelpCircle, X } from "lucide-react"
 import { useState, useEffect } from "react"
-import { logoutUser, getUserSession } from "@/lib/actions/auth-actions"
+import { logoutUser } from "@/lib/actions/auth-actions"
 
 export function EmployeeHeader() {
   const pathname = usePathname()
   const router = useRouter()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
 
   useEffect(() => {
-    const checkSession = async () => {
-      const session = await getUserSession()
-      setIsAuthenticated(!!session && session.userType === "employee")
-    }
-    checkSession()
+    // Auth is enforced by middleware; no client session fetch here
   }, [])
 
   const handleLogout = async () => {
@@ -33,17 +28,10 @@ export function EmployeeHeader() {
   }
 
   // If not authenticated and not on login page, redirect to login
-  if (!isAuthenticated && typeof window !== "undefined") {
-    router.push("/employee/login")
-    return null
-  }
+  // Middleware guards access; header renders without client session lookup
 
   const navItems = [
     { href: "/employee/dashboard", label: "Dashboard", icon: <BarChart3 className="mr-2 h-4 w-4" /> },
-    { href: "/employee/fastags", label: "FASTags", icon: <CreditCard className="mr-2 h-4 w-4" /> },
-    { href: "/employee/customers", label: "Customers", icon: <Users className="mr-2 h-4 w-4" /> },
-    { href: "/employee/orders", label: "Orders", icon: <Package className="mr-2 h-4 w-4" /> },
-    { href: "/employee/support", label: "Support", icon: <HelpCircle className="mr-2 h-4 w-4" /> },
   ]
 
   return (
