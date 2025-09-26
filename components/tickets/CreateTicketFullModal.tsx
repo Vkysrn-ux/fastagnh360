@@ -15,63 +15,46 @@ import AutocompleteInput from "@/components/AutocompleteInput";
 import UsersAutocomplete from "@/components/UsersAutocomplete";
 import PickupPointAutocomplete from "@/components/PickupPointAutocomplete";
 
-type User = { id: number; name: string };
-type Ticket = {
-  id: number;
-  vehicle_reg_no?: string;
-  phone?: string;
-  alt_phone?: string | null;
-  subject?: string;
-  details?: string;
-  status?: string;
-  assigned_to?: string | number | null;
-  lead_received_from?: string | null;
-  lead_by?: string | number | null;
-  customer_name?: string | null;
-  comments?: string | null;
-};
-
-export default function CreateSubTicketFullModal({
-  parent,
-  currentUserId = 1,
+export default function CreateTicketFullModal({
   onCreated,
   asButtonClassName,
-  label = "Create Sub Ticket",
+  label = "Create New Ticket",
 }: {
-  parent: Ticket;
-  currentUserId?: number;
-  onCreated?: (child: { id: number; ticket_no: string }) => void;
+  onCreated?: (parent: { id: number; ticket_no?: string }) => void;
   asButtonClassName?: string;
   label?: string;
 }) {
   const [open, setOpen] = useState(false);
 
   const initialForm = useMemo(() => ({
-    vehicle_reg_no: parent?.vehicle_reg_no || "",
-    phone: parent?.phone || "",
-    alt_phone: parent?.alt_phone || "",
+    vehicle_reg_no: "",
+    phone: "",
+    alt_phone: "",
     subject: "",
     details: "",
     status: "open",
     kyv_status: "",
-    assigned_to: parent?.assigned_to ? String(parent.assigned_to) : "",
-    lead_received_from: parent?.lead_received_from || "",
+    assigned_to: "",
+    lead_received_from: "",
     role_user_id: "",
-    lead_by: parent?.lead_by ? String(parent.lead_by) : "",
-    customer_name: parent?.customer_name || "",
+    lead_by: "",
+    customer_name: "",
     comments: "",
     payment_to_collect: "",
     payment_to_send: "",
     net_value: "",
     pickup_point_name: "",
-  }), [parent]);
+    bank_name: "",
+    fastag_serial: "",
+  }), []);
 
   const [form, setForm] = useState(initialForm);
-
   const [selectedShop, setSelectedShop] = useState<any>(null);
   const [selectedPickup, setSelectedPickup] = useState<{ id: number; name: string; type: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: number; name: string } | null>(null);
+  const [assignedUser, setAssignedUser] = useState<{ id: number; name: string } | null>(null);
   const [banks, setBanks] = useState<string[]>([]);
   const [fastagClass, setFastagClass] = useState<string>("");
   const [fastagSerialInput, setFastagSerialInput] = useState("");
@@ -82,29 +65,22 @@ export default function CreateSubTicketFullModal({
   // Reset when modal opens
   useEffect(() => {
     if (!open) return;
-    setForm({
-      vehicle_reg_no: parent.vehicle_reg_no || "",
-      phone: parent.phone || "",
-      alt_phone: parent.alt_phone || "",
-      subject: "",
-      details: "",
-      status: "open",
-      kyv_status: "",
-      assigned_to: String(parent.assigned_to ?? ""),
-      lead_received_from: parent.lead_received_from || "",
-      role_user_id: "",
-      lead_by: parent.lead_by ? String(parent.lead_by) : "",
-      customer_name: parent.customer_name || "",
-      comments: "",
-      payment_to_collect: "",
-      payment_to_send: "",
-      net_value: "",
-      pickup_point_name: "",
-    });
+    setForm(initialForm);
     setSelectedShop(null);
     setSelectedPickup(null);
     setError(null);
-  }, [open, parent]);
+  }, [open, initialForm]);
+
+  // load session for Self id/name
+  useEffect(() => {
+    fetch('/api/auth/session', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => {
+        const s = data?.session;
+        if (s?.id) setCurrentUser({ id: Number(s.id), name: s.name || 'Me' });
+      })
+      .catch(() => {});
+  }, []);
 
   // keep role user id in sync with selected shop
   useEffect(() => {
@@ -125,7 +101,12 @@ export default function CreateSubTicketFullModal({
     setForm((f) => (f.net_value === sumStr ? f : { ...f, net_value: sumStr }));
   }, [form.payment_to_collect, form.payment_to_send]);
 
-  // Load banks list on mount
+  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
+    const { name, value } = e.target as any;
+    setForm((f) => ({ ...f, [name]: value }));
+  }
+
+  // Load banks
   useEffect(() => {
     fetch('/api/banks')
       .then(r => r.json())
@@ -139,45 +120,40 @@ export default function CreateSubTicketFullModal({
     if (term.length < 2) { setFastagOptions([]); return; }
     const q = new URLSearchParams();
     q.set('query', term);
-    // bank/class filters are optional for narrowing results
-    // @ts-ignore - keep local filter only
-    if ((form as any).bank_name) q.set('bank', (form as any).bank_name);
+    if (form.bank_name) q.set('bank', form.bank_name);
     if (fastagClass) q.set('class', fastagClass);
     fetch(`/api/fastags?${q.toString()}`)
       .then(r => r.json())
       .then(rows => setFastagOptions(Array.isArray(rows) ? rows : []))
       .catch(() => setFastagOptions([]));
-  }, [fastagSerialInput, (form as any).bank_name, fastagClass]);
+  }, [fastagSerialInput, form.bank_name, fastagClass]);
 
   function pickFastag(row: any) {
     setFastagSerialInput(row.tag_serial || "");
     setFastagOwner(row.holder ? String(row.holder) : (row.assigned_to_name || ""));
-    setForm((f) => ({ ...f, fastag_serial: row.tag_serial || "" } as any));
+    setForm((f) => ({ ...f, fastag_serial: row.tag_serial || "" }));
     setFastagOptions([]);
   }
 
-  function handleChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) {
-    const { name, value } = e.target as any;
-    setForm((f) => ({ ...f, [name]: value }));
-  }
-
   function normalizeAssignedTo(val: string) {
-    if (val === "" || val === "self") return String(currentUserId);
+    if (val === "" || val === "self") return currentUser ? String(currentUser.id) : "";
     if (!isNaN(Number(val))) return String(parseInt(val, 10));
     return "";
   }
 
-  const canSubmit = useMemo(() => form.subject.trim().length > 0, [form.subject]);
+  const canSubmit = useMemo(
+    () => form.subject.trim().length > 0 && form.vehicle_reg_no.trim().length > 0 && form.phone.trim().length > 0,
+    [form.subject, form.vehicle_reg_no, form.phone]
+  );
 
   async function submit() {
     if (!canSubmit) {
-      setError("Subject is required");
+      setError("Please fill VRN, Phone and Subject");
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      // If Shop selected, place its id in role_user_id for lead_by mapping
       const effectiveLeadBy =
         form.lead_received_from === "Shop"
           ? selectedShop?.id || form.lead_by || form.role_user_id || ""
@@ -202,19 +178,18 @@ export default function CreateSubTicketFullModal({
         net_value: form.net_value !== "" ? Number(form.net_value) : null,
       };
       if (commissionAmount !== "") payload.commission_amount = Number(commissionAmount) || 0;
-      // @ts-ignore
-      if (form.fastag_serial) payload.fastag_serial = (form as any).fastag_serial;
+      if (form.fastag_serial) payload.fastag_serial = form.fastag_serial;
 
-      // Use children endpoint to ensure parenting and inheritance behavior
-      const res = await fetch(`/api/tickets/${parent.id}/children`, {
+      const res = await fetch(`/api/tickets`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Failed to create sub-ticket");
-
-      onCreated?.({ id: data.id, ticket_no: data.ticket_no });
+      if (!res.ok) throw new Error(data?.error || "Failed to create ticket");
+      const id = Number(data.parent_id || data.id || 0);
+      const ticket_no = data.parent_ticket_no || data.ticket_no;
+      onCreated?.({ id, ticket_no });
       setOpen(false);
     } catch (e: any) {
       setError(e.message);
@@ -226,11 +201,11 @@ export default function CreateSubTicketFullModal({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <button className={asButtonClassName || "text-green-600 hover:underline"}>{label}</button>
+        <button className={asButtonClassName || "text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded"}>{label}</button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create Sub Ticket for #{parent.id}</DialogTitle>
+          <DialogTitle>Create New Ticket</DialogTitle>
         </DialogHeader>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -269,12 +244,12 @@ export default function CreateSubTicketFullModal({
             <div className="flex gap-2">
               <div className="flex-1">
                 <UsersAutocomplete
-                  value={form.assigned_to ? { id: Number(form.assigned_to), name: "" } : null}
-                  onSelect={(u) => setForm((f) => ({ ...f, assigned_to: u ? String(u.id) : "" }))}
+                  value={assignedUser}
+                  onSelect={(u) => { setAssignedUser(u as any); setForm((f) => ({ ...f, assigned_to: u ? String(u.id) : "" })); }}
                   placeholder="Type user name"
                 />
               </div>
-              <button type="button" className="px-3 py-2 border rounded" onClick={() => setForm((f) => ({ ...f, assigned_to: String(currentUserId) }))}>Self</button>
+              <button type="button" className="px-3 py-2 border rounded" onClick={() => { if (currentUser) { setAssignedUser(currentUser); setForm((f) => ({ ...f, assigned_to: String(currentUser.id) })); } }}>Self</button>
             </div>
           </div>
 
@@ -298,7 +273,20 @@ export default function CreateSubTicketFullModal({
             />
           </div>
 
-          <div className="lg:col-span-4 md:col-span-2">
+          {/* Row 2 */}
+          <div>
+            <label className="block font-semibold mb-1">Payment To Be Collected</label>
+            <input name="payment_to_collect" type="number" step="0.01" value={form.payment_to_collect} onChange={handleChange} className="w-full border p-2 rounded" placeholder="0.00" />
+          </div>
+          <div>
+            <label className="block font-semibold mb-1">Payment To Be Sent</label>
+            <input name="payment_to_send" type="number" step="0.01" value={form.payment_to_send} onChange={handleChange} className="w-full border p-2 rounded" placeholder="0.00" />
+          </div>
+          <div>
+            <label className="block font-semibold mb-1">Net Value</label>
+            <input name="net_value" type="number" step="0.01" value={form.net_value} onChange={handleChange} readOnly className="w-full border p-2 rounded bg-gray-50" placeholder="0.00" />
+          </div>
+          <div>
             <label className="block font-semibold mb-1">Lead Received From</label>
             <AutocompleteInput
               value={form.lead_received_from}
@@ -306,74 +294,18 @@ export default function CreateSubTicketFullModal({
               options={["WhatsApp","Facebook","Social Media","Google Map","Other","Toll-agent","ASM","Shop","Showroom","TL","Manager"]}
               placeholder="Type source"
             />
-
-            {form.lead_received_from === "Shop" && (
-              <div className="mt-2">
-                <ShopAutocomplete
-                  value={selectedShop}
-                  onSelect={(shop) => {
-                    setSelectedShop(shop);
-                  }}
-                />
-              </div>
-            )}
-            {["Toll-agent", "ASM", "TL", "Manager"].includes(form.lead_received_from) && (
-              <div className="mt-2">
-                <UsersAutocomplete
-                  role={form.lead_received_from}
-                  value={form.role_user_id ? { id: Number(form.role_user_id), name: "" } : null}
-                  onSelect={(u) => setForm((f) => ({ ...f, role_user_id: u ? String(u.id) : "" }))}
-                  placeholder={`Type ${form.lead_received_from} name`}
-                />
-              </div>
-            )}
           </div>
 
+          {/* Row 3 */}
           <div>
             <label className="block font-semibold mb-1">Customer Name</label>
             <input name="customer_name" value={form.customer_name} onChange={handleChange} className="w-full border p-2 rounded" />
           </div>
-
-          {/* Payment fields */}
           <div>
-            <label className="block font-semibold mb-1">Payment To Be Collected</label>
-            <input
-              name="payment_to_collect"
-              type="number"
-              step="0.01"
-              value={form.payment_to_collect}
-              onChange={handleChange}
-              className="w-full border p-2 rounded"
-              placeholder="0.00"
-            />
+            <label className="block font-semibold mb-1">Pick-up Point</label>
+            <PickupPointAutocomplete value={selectedPickup} onSelect={(p) => { setSelectedPickup(p); setForm((f) => ({ ...f, pickup_point_name: p ? p.name : "" })); }} />
+            <div className="text-xs text-gray-500 mt-1">Type to search (Agent, Shop, Warehouse)</div>
           </div>
-          <div>
-            <label className="block font-semibold mb-1">Payment To Be Sent</label>
-            <input
-              name="payment_to_send"
-              type="number"
-              step="0.01"
-              value={form.payment_to_send}
-              onChange={handleChange}
-              className="w-full border p-2 rounded"
-              placeholder="0.00"
-            />
-          </div>
-          <div>
-            <label className="block font-semibold mb-1">Net Value</label>
-            <input
-              name="net_value"
-              type="number"
-              step="0.01"
-              value={form.net_value}
-              onChange={handleChange}
-              readOnly
-              className="w-full border p-2 rounded bg-gray-50"
-              placeholder="0.00"
-            />
-          </div>
-
-          {/* Bank / Commission */}
           <div>
             <label className="block font-semibold mb-1">Commission Amount</label>
             <input type="number" step="0.01" value={commissionAmount} onChange={(e) => setCommissionAmount(e.target.value)} className="w-full border p-2 rounded" placeholder="0" />
@@ -381,13 +313,13 @@ export default function CreateSubTicketFullModal({
           </div>
           <div>
             <label className="block font-semibold mb-1">FASTag Bank</label>
-            <select className="w-full border rounded p-2" value={(form as any).bank_name || ""} onChange={(e) => setForm((f) => ({ ...f, bank_name: e.target.value } as any))}>
+            <select className="w-full border rounded p-2" value={form.bank_name} onChange={(e) => setForm((f) => ({ ...f, bank_name: e.target.value }))}>
               <option value="">Select bank</option>
-              {banks.map((b) => (
-                <option key={b} value={b}>{b}</option>
-              ))}
+              {banks.map((b) => (<option key={b} value={b}>{b}</option>))}
             </select>
           </div>
+
+          {/* Row 4 */}
           <div>
             <label className="block font-semibold mb-1">FASTag Class</label>
             <select className="w-full border rounded p-2" value={fastagClass} onChange={(e) => setFastagClass(e.target.value)}>
@@ -399,16 +331,9 @@ export default function CreateSubTicketFullModal({
               <option value="class12">Class 12 (Oversize)</option>
             </select>
           </div>
-
-          {/* FASTag barcode + owner */}
           <div className="lg:col-span-2">
             <label className="block font-semibold mb-1">FASTag Barcode</label>
-            <input
-              value={fastagSerialInput}
-              onChange={(e) => setFastagSerialInput(e.target.value)}
-              className="w-full border p-2 rounded"
-              placeholder="Type FASTag barcode"
-            />
+            <input value={fastagSerialInput} onChange={(e) => setFastagSerialInput(e.target.value)} className="w-full border p-2 rounded" placeholder="Type FASTag barcode" />
             <div className="text-xs text-gray-500 mt-1">Type at least two characters to search for a FASTag barcode.</div>
             {fastagOptions.length > 0 && (
               <div className="mt-1 max-h-40 overflow-auto border rounded">
@@ -426,24 +351,10 @@ export default function CreateSubTicketFullModal({
             <div className="text-xs text-gray-500 mt-1">Select a result to fill the barcode and owner details.</div>
           </div>
 
-          {/* Pickup Point */}
-          <div className="lg:col-span-2">
-            <label className="block font-semibold mb-1">Pick-up Point</label>
-            <PickupPointAutocomplete value={selectedPickup} onSelect={(p) => {
-              setSelectedPickup(p);
-              setForm((f) => ({ ...f, pickup_point_name: p ? p.name : "" }));
-            }} />
-            <div className="text-xs text-gray-500 mt-1">Type to search (Agent, Shop, Warehouse)</div>
-          </div>
-
+          {/* Details full width */}
           <div className="lg:col-span-4 md:col-span-2">
             <label className="block font-semibold mb-1">Details</label>
             <textarea name="details" value={form.details} onChange={handleChange} className="w-full border p-2 rounded" rows={3} />
-          </div>
-
-          <div className="lg:col-span-4 md:col-span-2">
-            <label className="block font-semibold mb-1">Comments</label>
-            <input name="comments" value={form.comments} onChange={handleChange} className="w-full border p-2 rounded" />
           </div>
         </div>
 

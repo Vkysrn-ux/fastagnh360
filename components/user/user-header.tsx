@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { ThemeSwitcher } from "@/components/theme-switcher"
 import { LogOut, Menu, CreditCard, ReceiptText, User, Bell, X } from "lucide-react"
 import { useState, useEffect } from "react"
-import { logoutUser, getUserSession } from "@/lib/actions/auth-actions"
+// use client-side API routes for session + logout
 
 export function UserHeader() {
   const pathname = usePathname()
@@ -17,17 +17,19 @@ export function UserHeader() {
 
   useEffect(() => {
     const checkSession = async () => {
-      const session = await getUserSession()
-      setIsAuthenticated(!!session && session.userType === "user")
-      if (session && session.userType === "user") {
-        setUserName(session.name)
-      }
-    }
-    checkSession()
+      try {
+        const res = await fetch('/api/auth/session', { cache: 'no-store' });
+        const data = await res.json();
+        const session = data?.session;
+        setIsAuthenticated(!!session && session.userType === 'user');
+        if (session && session.userType === 'user') setUserName(session.name || '');
+      } catch {}
+    };
+    checkSession();
   }, [])
 
   const handleLogout = async () => {
-    await logoutUser()
+    try { await fetch('/api/auth/logout', { method: 'POST' }) } catch {}
     router.push("/login")
   }
 
