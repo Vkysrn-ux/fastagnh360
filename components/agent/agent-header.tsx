@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { ThemeSwitcher } from "@/components/theme-switcher"
 import { LogOut, Menu, Package, ShoppingCart, Users, X } from "lucide-react"
 import { useState } from "react"
-import { logoutUser } from "@/lib/actions/auth-actions"
+// call API route for logout to avoid importing server actions in client
 
 export function AgentHeader() {
   const pathname = usePathname()
@@ -14,7 +14,7 @@ export function AgentHeader() {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
 
   const handleLogout = async () => {
-    await logoutUser()
+    try { await fetch('/api/auth/logout', { method: 'POST' }) } catch {}
     router.push("/login")
   }
 

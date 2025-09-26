@@ -173,7 +173,12 @@ export async function POST(req: NextRequest) {
         throw new Error("Subject is required for sub-ticket");
       }
 
-      const fastag_serial = body.fastag_serial ?? parent.fastag_serial ?? null;
+      // Load parent to inherit missing fields
+      const [prow] = await conn.query(`SELECT * FROM ${TICKETS_TABLE} WHERE id = ?`, [parent_ticket_id]);
+      // @ts-ignore RowDataPacket
+      const parent: any = (prow as any)?.[0] || {};
+
+      const effectiveFastagSerial = (typeof fastag_serial !== "undefined" ? fastag_serial : null) ?? parent.fastag_serial ?? null;
 
       // derive payment values for this sub-ticket
       const c_ptc_raw = payment_to_collect;
@@ -185,12 +190,22 @@ export async function POST(req: NextRequest) {
           ? null
           : Number((((c_ptc ?? 0) + (c_pts ?? 0)).toFixed?.(2) ?? (c_ptc ?? 0) + (c_pts ?? 0)));
 
-      const childCommissionRaw =
-        commission_amount ?? parent.commission_amount ?? 0;
+      const childCommissionRaw = commission_amount ?? parent.commission_amount ?? 0;
       const childCommission =
         childCommissionRaw === undefined || childCommissionRaw === null
           ? 0
           : Number(childCommissionRaw);
+
+      const effectiveVehicle = (typeof vehicle_reg_no !== "undefined" ? vehicle_reg_no : null) ?? parent.vehicle_reg_no ?? "";
+      const effectivePhone = (typeof phone !== "undefined" ? phone : null) ?? parent.phone ?? "";
+      const effectiveAltPhone = (typeof alt_phone !== "undefined" ? alt_phone : null) ?? parent.alt_phone ?? null;
+      const effectiveAssignedTo = (typeof assigned_to !== "undefined" ? assigned_to : null) ?? parent.assigned_to ?? null;
+      const effectiveLeadFrom = (typeof lead_received_from !== "undefined" ? lead_received_from : null) ?? parent.lead_received_from ?? null;
+      const effectiveLeadBy = (typeof lead_by !== "undefined" ? lead_by : null) ?? parent.lead_by ?? null;
+      const effectiveStatus = (typeof status !== "undefined" ? status : null) ?? "open";
+      const effectiveKyvStatus = (typeof kyv_status !== "undefined" ? kyv_status : null) ?? parent.kyv_status ?? null;
+      const effectiveCustomer = (typeof customer_name !== "undefined" ? customer_name : null) ?? parent.customer_name ?? null;
+      const effectiveComments = (typeof comments !== "undefined" ? comments : null) ?? null;
 
       const childColumns = [
         "ticket_no",
@@ -213,18 +228,18 @@ export async function POST(req: NextRequest) {
       const childPlaceholders = Array(childColumns.length).fill("?");
       const childValues: (string | number | null)[] = [
         childTicketNo,
-        vehicle_reg_no ?? "",
+        effectiveVehicle,
         subject,
         details ?? "",
-        phone ?? "",
-        alt_phone ?? null,
-        assigned_to ?? null,
-        lead_received_from ?? null,
-        lead_by ?? null,
-        status ?? "open",
-        kyv_status ?? null,
-        customer_name ?? null,
-        comments ?? null,
+        effectivePhone,
+        effectiveAltPhone,
+        effectiveAssignedTo,
+        effectiveLeadFrom,
+        effectiveLeadBy,
+        effectiveStatus,
+        effectiveKyvStatus,
+        effectiveCustomer,
+        effectiveComments,
         isNaN(c_ptc as any) ? null : c_ptc,
         isNaN(c_pts as any) ? null : c_pts,
         isNaN(c_net as any) ? null : c_net,
@@ -243,7 +258,7 @@ export async function POST(req: NextRequest) {
       if (hasFastagSerialColumn) {
         childColumns.push("fastag_serial");
         childPlaceholders.push("?");
-        childValues.push(fastag_serial ?? null);
+        childValues.push(effectiveFastagSerial ?? null);
       }
 
       childColumns.push("parent_ticket_id");
@@ -254,7 +269,7 @@ export async function POST(req: NextRequest) {
 
       const [r]: any = await conn.query(childInsert, childValues);
 
-      await markFastagAsUsed(conn, fastag_serial, vehicle_reg_no);
+      await markFastagAsUsed(conn, effectiveFastagSerial, effectiveVehicle);
 
       await conn.commit();
       try {

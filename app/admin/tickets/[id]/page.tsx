@@ -263,12 +263,5 @@ export default function TicketDetailPage() {
         )}
       </div>
     </div>
-  
-      <style jsx global>{`
-        @media print {
-          @page { size: landscape; }
-          html, body { width: 100%; height: auto; }
-        }
-      `}</style>
   );
 }

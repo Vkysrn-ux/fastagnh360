@@ -5,6 +5,17 @@ export function middleware(req: NextRequest) {
   const url = req.nextUrl.clone()
   const isApi = url.pathname.startsWith('/api')
 
+  // Always allow Next internals and static assets
+  if (
+    url.pathname.startsWith('/_next') ||
+    url.pathname.startsWith('/static') ||
+    url.pathname.startsWith('/favicon.ico') ||
+    url.pathname.startsWith('/robots.txt') ||
+    url.pathname.startsWith('/sitemap.xml')
+  ) {
+    return NextResponse.next()
+  }
+
   // If hitting API without a session -> 401 JSON
   if (isApi) {
     // Allow CORS preflight to pass through

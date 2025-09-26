@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { ThemeSwitcher } from "@/components/theme-switcher"
 import { LogOut, Menu, Package, Users, CreditCard, BarChart3, HelpCircle, X } from "lucide-react"
 import { useState, useEffect } from "react"
-import { logoutUser } from "@/lib/actions/auth-actions"
+// use API route for logout; avoid server action in client
 
 export function EmployeeHeader() {
   const pathname = usePathname()
@@ -18,7 +18,7 @@ export function EmployeeHeader() {
   }, [])
 
   const handleLogout = async () => {
-    await logoutUser()
+    try { await fetch('/api/auth/logout', { method: 'POST' }) } catch {}
     router.push("/login")
   }
 

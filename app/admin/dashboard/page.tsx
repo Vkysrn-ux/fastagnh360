@@ -39,7 +39,7 @@ export default function AdminDashboardPage() {
       setSession(userSession)
 
       try {
-        const adminStats = await getScopedStats(session.id, "admin")
+        const adminStats = await getScopedStats(userSession.id, "admin")
         setStats(adminStats)
       } catch (error) {
         console.error("Failed to fetch admin stats:", error)
@@ -134,7 +134,7 @@ export default function AdminDashboardPage() {
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">₹{stats.monthlyRevenue.toLocaleString()}</div>
+              <div className="text-2xl font-bold">Rs. {stats.monthlyRevenue.toLocaleString()}</div>
               <p className="text-xs text-muted-foreground">Revenue this month</p>
             </CardContent>
           </Card>

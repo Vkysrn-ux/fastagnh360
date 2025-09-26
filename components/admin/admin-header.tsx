@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { ThemeSwitcher } from "@/components/theme-switcher"
 import { LogOut, Menu, Package, Users, Settings, CreditCard, UserCircle, UserCog, BarChart3, X, Ticket } from "lucide-react"
 import { useState, useEffect } from "react"
-import { logoutUser, getUserSession } from "@/lib/actions/auth-actions"
+// use client-side API calls instead of server actions
 
 export function AdminHeader() {
   const pathname = usePathname()
@@ -15,21 +15,24 @@ export function AdminHeader() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
 
   useEffect(() => {
-  const checkSession = async () => {
-    const session = await getUserSession()
-    const isAdmin = !!session && session.userType === "admin"
-    setIsAuthenticated(isAdmin)
-
-    if (!isAdmin) {
-      router.push("/admin/login")
-    }
-  }
-  checkSession()
-}, [router])
+    const checkSession = async () => {
+      try {
+        const res = await fetch('/api/auth/session', { cache: 'no-store' });
+        const data = await res.json();
+        const session = data?.session;
+        const isAdmin = !!session && session.userType === 'admin';
+        setIsAuthenticated(isAdmin);
+        if (!isAdmin) router.push('/admin/login');
+      } catch {
+        router.push('/admin/login');
+      }
+    };
+    checkSession();
+  }, [router])
 
 
   const handleLogout = async () => {
-    await logoutUser()
+    try { await fetch('/api/auth/logout', { method: 'POST' }) } catch {}
     router.push("/login")
   }
 
