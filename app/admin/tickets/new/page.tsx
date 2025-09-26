@@ -14,10 +14,10 @@ export default function NewTicketPage() {
     vehicle_reg_no: "",
     phone: "",
     alt_phone: "",
-    subject: "",
+    subject: "ADD new fastag",
     details: "",
-    status: "open",
-    kyv_status: "",
+    status: "ACTIVATION PENDING",
+    kyv_status: "pending",
     assigned_to: "",
     lead_received_from: "",
     role_user_id: "",
@@ -49,7 +49,12 @@ export default function NewTicketPage() {
       .then(r => r.json())
       .then(data => {
         const s = data?.session;
-        if (s?.id) setCurrentUser({ id: Number(s.id), name: s.name || 'Me' });
+        if (s?.id) {
+          const me = { id: Number(s.id), name: s.name || 'Me' };
+          setCurrentUser(me);
+          setAssignedUser(me as any);
+          setForm((f) => ({ ...f, assigned_to: String(me.id) }));
+        }
       })
       .catch(() => {});
   }, []);
@@ -153,7 +158,24 @@ export default function NewTicketPage() {
           <AutocompleteInput
             value={form.subject}
             onChange={(v) => setForm((f) => ({ ...f, subject: v }))}
-            options={["New FASTag","Replacement FASTag","Hotlisted FASTag","KYC Related","Mobile Number Updation","Other"]}
+            options={[
+              "ADD new fastag",
+              "New FASTag",
+              "ADD-ON NEWTAG",
+              "Replacement FASTag",
+              "Hotlisted FASTag",
+              "KYC PROCESS",
+              "ONLY KYV",
+              "ANNUAL PASS",
+              "PHONE UPDATE",
+              "TAG CLOSING",
+              "VRN UPDATE",
+              "HOLDER",
+              "HOTLIST REMOVING",
+              "LOWBALANCE CLEARING",
+              "ONLY RECHARGE",
+              "OTHER",
+            ]}
             placeholder="Type subject"
           />
         </div>
@@ -191,7 +213,7 @@ export default function NewTicketPage() {
           <AutocompleteInput
             value={form.status}
             onChange={(v) => setForm((f) => ({ ...f, status: v }))}
-            options={["open","processing","kyc_pending","done","waiting","closed","completed"]}
+            options={["ACTIVATION PENDING","ACTIVATED","CUST CANCELLED","CLOSED"]}
             placeholder="Type status"
           />
         </div>
@@ -201,7 +223,7 @@ export default function NewTicketPage() {
           <AutocompleteInput
             value={form.kyv_status}
             onChange={(v) => setForm((f) => ({ ...f, kyv_status: v }))}
-            options={["kyv_pending","kyv_pending_approval","kyv_success","kyv_hotlisted"]}
+            options={["pending","kyv_pending_approval","kyv_success","kyv_hotlisted"]}
             placeholder="Type KYV status"
           />
         </div>

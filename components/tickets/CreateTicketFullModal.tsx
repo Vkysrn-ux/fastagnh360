@@ -14,6 +14,7 @@ import ShopAutocomplete from "@/components/ShopAutocomplete";
 import AutocompleteInput from "@/components/AutocompleteInput";
 import UsersAutocomplete from "@/components/UsersAutocomplete";
 import PickupPointAutocomplete from "@/components/PickupPointAutocomplete";
+import { parseIndianMobile } from "@/lib/validators";
 
 export default function CreateTicketFullModal({
   onCreated,
@@ -30,10 +31,10 @@ export default function CreateTicketFullModal({
     vehicle_reg_no: "",
     phone: "",
     alt_phone: "",
-    subject: "",
+    subject: "ADD new fastag",
     details: "",
-    status: "open",
-    kyv_status: "",
+    status: "ACTIVATION PENDING",
+    kyv_status: "pending",
     assigned_to: "",
     lead_received_from: "",
     role_user_id: "",
@@ -56,11 +57,14 @@ export default function CreateTicketFullModal({
   const [currentUser, setCurrentUser] = useState<{ id: number; name: string } | null>(null);
   const [assignedUser, setAssignedUser] = useState<{ id: number; name: string } | null>(null);
   const [banks, setBanks] = useState<string[]>([]);
-  const [fastagClass, setFastagClass] = useState<string>("");
+  const [fastagClass, setFastagClass] = useState<string>("class4");
   const [fastagSerialInput, setFastagSerialInput] = useState("");
   const [fastagOptions, setFastagOptions] = useState<any[]>([]);
   const [fastagOwner, setFastagOwner] = useState<string>("");
   const [commissionAmount, setCommissionAmount] = useState<string>("0");
+  const [paymentReceived, setPaymentReceived] = useState<boolean>(false);
+  const [deliveryDone, setDeliveryDone] = useState<boolean>(false);
+  const [commissionDone, setCommissionDone] = useState<boolean>(false);
 
   // Reset when modal opens
   useEffect(() => {
@@ -77,7 +81,13 @@ export default function CreateTicketFullModal({
       .then(r => r.json())
       .then(data => {
         const s = data?.session;
-        if (s?.id) setCurrentUser({ id: Number(s.id), name: s.name || 'Me' });
+        if (s?.id) {
+          const me = { id: Number(s.id), name: s.name || 'Me' };
+          setCurrentUser(me);
+          // default Assigned To = current user
+          setAssignedUser(me as any);
+          setForm((f) => ({ ...f, assigned_to: String(me.id) }));
+        }
       })
       .catch(() => {});
   }, []);
@@ -131,9 +141,16 @@ export default function CreateTicketFullModal({
   function pickFastag(row: any) {
     setFastagSerialInput(row.tag_serial || "");
     setFastagOwner(row.holder ? String(row.holder) : (row.assigned_to_name || ""));
-    setForm((f) => ({ ...f, fastag_serial: row.tag_serial || "" }));
+    setForm((f) => ({ ...f, fastag_serial: row.tag_serial || "", bank_name: row.bank_name || f.bank_name }));
+    if (row.fastag_class) setFastagClass(String(row.fastag_class));
     setFastagOptions([]);
   }
+
+  // If user types a full barcode that exactly matches, auto-pick to fill bank/class/owner
+  useEffect(() => {
+    const exact = (fastagOptions || []).find((r: any) => String(r.tag_serial) === fastagSerialInput.trim());
+    if (exact) pickFastag(exact);
+  }, [fastagOptions, fastagSerialInput]);
 
   function normalizeAssignedTo(val: string) {
     if (val === "" || val === "self") return currentUser ? String(currentUser.id) : "";
@@ -151,6 +168,14 @@ export default function CreateTicketFullModal({
       setError("Please fill VRN, Phone and Subject");
       return;
     }
+    const main = parseIndianMobile(form.phone);
+    if (!main.ok) { setError(main.error); return; }
+    let altNorm: string | null = null;
+    if ((form.alt_phone || "").trim() !== "") {
+      const alt = parseIndianMobile(form.alt_phone);
+      if (!alt.ok) { setError(alt.error); return; }
+      altNorm = alt.value;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -161,8 +186,8 @@ export default function CreateTicketFullModal({
 
       const payload: any = {
         vehicle_reg_no: form.vehicle_reg_no,
-        phone: form.phone,
-        alt_phone: form.alt_phone,
+        phone: main.value,
+        alt_phone: altNorm,
         subject: form.subject,
         details: form.details,
         status: form.status,
@@ -178,6 +203,9 @@ export default function CreateTicketFullModal({
         net_value: form.net_value !== "" ? Number(form.net_value) : null,
       };
       if (commissionAmount !== "") payload.commission_amount = Number(commissionAmount) || 0;
+      payload.payment_received = !!paymentReceived;
+      payload.delivery_done = !!deliveryDone;
+      payload.commission_done = !!commissionDone;
       if (form.fastag_serial) payload.fastag_serial = form.fastag_serial;
 
       const res = await fetch(`/api/tickets`, {
@@ -210,7 +238,33 @@ export default function CreateTicketFullModal({
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
-            <label className="block font-semibold mb-1">Vehicle No</label>
+            <label className="block font-semibold mb-1">Subject *</label>
+            <AutocompleteInput
+              value={form.subject}
+              onChange={(v) => setForm((f) => ({ ...f, subject: v }))}
+              options={[
+                "ADD new fastag",
+                "New FASTag",
+                "ADD-ON NEWTAG",
+                "Replacement FASTag",
+                "Hotlisted FASTag",
+                "KYC PROCESS",
+                "ONLY KYV",
+                "ANNUAL PASS",
+                "PHONE UPDATE",
+                "TAG CLOSING",
+                "VRN UPDATE",
+                "HOLDER",
+                "HOTLIST REMOVING",
+                "LOWBALANCE CLEARING",
+                "ONLY RECHARGE",
+                "OTHER",
+              ]}
+              placeholder="Type subject"
+            />
+          </div>
+          <div>
+            <label className="block font-semibold mb-1">Vehicle Reg. No (VRN)</label>
             <input
               name="vehicle_reg_no"
               value={form.vehicle_reg_no}
@@ -218,25 +272,13 @@ export default function CreateTicketFullModal({
               className="w-full border p-2 rounded"
             />
           </div>
-
           <div>
             <label className="block font-semibold mb-1">Mobile</label>
             <input name="phone" value={form.phone} onChange={handleChange} className="w-full border p-2 rounded" />
           </div>
-
           <div>
             <label className="block font-semibold mb-1">Alt Phone</label>
             <input name="alt_phone" value={form.alt_phone} onChange={handleChange} className="w-full border p-2 rounded" />
-          </div>
-
-          <div>
-            <label className="block font-semibold mb-1">Subject *</label>
-            <AutocompleteInput
-              value={form.subject}
-              onChange={(v) => setForm((f) => ({ ...f, subject: v }))}
-              options={["New FASTag","Replacement FASTag","Hotlisted FASTag","KYC Related","Mobile Number Updation","Other"]}
-              placeholder="Type subject"
-            />
           </div>
 
           <div>
@@ -258,7 +300,12 @@ export default function CreateTicketFullModal({
             <AutocompleteInput
               value={form.status}
               onChange={(v) => setForm((f) => ({ ...f, status: v }))}
-              options={["open","processing","kyc_pending","done","waiting","closed","completed"]}
+              options={[
+                "ACTIVATION PENDING",
+                "ACTIVATED",
+                "CUST CANCELLED",
+                "CLOSED",
+              ]}
               placeholder="Type status"
             />
           </div>
@@ -268,7 +315,7 @@ export default function CreateTicketFullModal({
             <AutocompleteInput
               value={form.kyv_status}
               onChange={(v) => setForm((f) => ({ ...f, kyv_status: v }))}
-              options={["kyv_pending","kyv_pending_approval","kyv_success","kyv_hotlisted"]}
+              options={["pending","kyv_pending_approval","kyv_success","kyv_hotlisted"]}
               placeholder="Type KYV status"
             />
           </div>
@@ -311,44 +358,57 @@ export default function CreateTicketFullModal({
             <input type="number" step="0.01" value={commissionAmount} onChange={(e) => setCommissionAmount(e.target.value)} className="w-full border p-2 rounded" placeholder="0" />
             <div className="text-xs text-gray-500 mt-1">Defaults to 0 if no commission is due.</div>
           </div>
-          <div>
-            <label className="block font-semibold mb-1">FASTag Bank</label>
-            <select className="w-full border rounded p-2" value={form.bank_name} onChange={(e) => setForm((f) => ({ ...f, bank_name: e.target.value }))}>
-              <option value="">Select bank</option>
-              {banks.map((b) => (<option key={b} value={b}>{b}</option>))}
-            </select>
+          <div className="flex items-center gap-6">
+            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+              <input type="checkbox" checked={paymentReceived} onChange={(e) => setPaymentReceived(e.target.checked)} />
+              Payment Received
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+              <input type="checkbox" checked={deliveryDone} onChange={(e) => setDeliveryDone(e.target.checked)} />
+              Delivery Done
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+              <input type="checkbox" checked={commissionDone} onChange={(e) => setCommissionDone(e.target.checked)} />
+              Commission Done
+            </label>
           </div>
-
-          {/* Row 4 */}
-          <div>
-            <label className="block font-semibold mb-1">FASTag Class</label>
-            <select className="w-full border rounded p-2" value={fastagClass} onChange={(e) => setFastagClass(e.target.value)}>
-              <option value="">Select bank first</option>
-              <option value="class4">Class 4 (Car/Jeep/Van)</option>
-              <option value="class5">Class 5 (LCV)</option>
-              <option value="class6">Class 6 (Bus/Truck)</option>
-              <option value="class7">Class 7 (Multi-Axle)</option>
-              <option value="class12">Class 12 (Oversize)</option>
-            </select>
-          </div>
-          <div className="lg:col-span-2">
-            <label className="block font-semibold mb-1">FASTag Barcode</label>
-            <input value={fastagSerialInput} onChange={(e) => setFastagSerialInput(e.target.value)} className="w-full border p-2 rounded" placeholder="Type FASTag barcode" />
-            <div className="text-xs text-gray-500 mt-1">Type at least two characters to search for a FASTag barcode.</div>
-            {fastagOptions.length > 0 && (
-              <div className="mt-1 max-h-40 overflow-auto border rounded">
-                {fastagOptions.map((row) => (
-                  <div key={row.id} className="px-3 py-2 cursor-pointer hover:bg-orange-50 border-b last:border-b-0" onMouseDown={() => pickFastag(row)}>
-                    {row.tag_serial} — {row.bank_name} / {row.fastag_class}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div>
-            <label className="block font-semibold mb-1">FASTag Owner</label>
-            <input value={fastagOwner} readOnly className="w-full border p-2 rounded bg-gray-50" placeholder="Owner appears after picking" />
-            <div className="text-xs text-gray-500 mt-1">Select a result to fill the barcode and owner details.</div>
+          {/* One row: Bank, Class, Barcode, Owner */}
+          <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="block font-semibold mb-1">FASTag Bank</label>
+              <select className="w-full border rounded p-2" value={form.bank_name} onChange={(e) => setForm((f) => ({ ...f, bank_name: e.target.value }))}>
+                <option value="">Select bank</option>
+                {banks.map((b) => (<option key={b} value={b}>{b}</option>))}
+              </select>
+            </div>
+            <div>
+              <label className="block font-semibold mb-1">FASTag Class</label>
+              <select className="w-full border rounded p-2" value={fastagClass} onChange={(e) => setFastagClass(e.target.value)}>
+                <option value="">Select bank first</option>
+                <option value="class4">Class 4 (Car/Jeep/Van)</option>
+                <option value="class5">Class 5 (LCV)</option>
+                <option value="class6">Class 6 (Bus/Truck)</option>
+                <option value="class7">Class 7 (Multi-Axle)</option>
+                <option value="class12">Class 12 (Oversize)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block font-semibold mb-1">FASTag Barcode</label>
+              <input value={fastagSerialInput} onChange={(e) => setFastagSerialInput(e.target.value)} className="w-full border p-2 rounded" placeholder="Type FASTag barcode" />
+              {fastagOptions.length > 0 && (
+                <div className="mt-1 max-h-40 overflow-auto border rounded">
+                  {fastagOptions.map((row) => (
+                    <div key={row.id} className="px-3 py-2 cursor-pointer hover:bg-orange-50 border-b last:border-b-0" onMouseDown={() => pickFastag(row)}>
+                      {row.tag_serial} — {row.bank_name} / {row.fastag_class}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="block font-semibold mb-1">FASTag Owner</label>
+              <input value={fastagOwner} readOnly className="w-full border p-2 rounded bg-gray-50" placeholder="Owner appears after picking" />
+            </div>
           </div>
 
           {/* Details full width */}
