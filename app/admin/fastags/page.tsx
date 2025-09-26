@@ -185,30 +185,39 @@ export default function AdminFastagsPage() {
   }, []);
 
   // Filter logic for table
-  const filtered = useMemo(() => fastags.filter((fastag) => {
-    const matchesSearch =
-      fastag.tag_serial?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      fastag.bank_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      fastag.fastag_class?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      fastag.batch_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      fastag.assigned_to?.toLowerCase().includes(searchQuery.toLowerCase());
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return fastags.filter((fastag) => {
+      const serial = String(fastag.tag_serial || "").toLowerCase();
+      const bank = String(fastag.bank_name || "").toLowerCase();
+      const fclass = String(fastag.fastag_class || "").toLowerCase();
+      const batch = String(fastag.batch_number || "").toLowerCase();
+      const agentName = String(fastag.agent_name || "").toLowerCase();
+      const assignedStr = String(fastag.assigned_to ?? "").toLowerCase();
 
-    const matchesBank = filterBank === "all" || fastag.bank_name === filterBank;
-    const matchesType = filterType === "all" || fastag.fastag_class === filterType;
-    const matchesStatus =
-      filterStatus === "all" ||
-      (filterStatus === "assigned" && fastag.assigned_to) ||
-      (filterStatus === "unassigned" && !fastag.assigned_to);
+      const matchesSearch =
+        q === "" ||
+        serial.includes(q) ||
+        bank.includes(q) ||
+        fclass.includes(q) ||
+        batch.includes(q) ||
+        agentName.includes(q) ||
+        assignedStr.includes(q);
 
-    const matchesAgent =
-      agentNameFilter === "all" ||
-      (
-        fastag.agent_name &&
-        fastag.agent_name.trim().toLowerCase() === agentNameFilter.trim().toLowerCase()
-      );
+      const matchesBank = filterBank === "all" || fastag.bank_name === filterBank;
+      const matchesType = filterType === "all" || fastag.fastag_class === filterType;
+      const matchesStatus =
+        filterStatus === "all" ||
+        (filterStatus === "assigned" && !!fastag.assigned_to) ||
+        (filterStatus === "unassigned" && !fastag.assigned_to);
 
-    return matchesSearch && matchesBank && matchesType && matchesStatus && matchesAgent;
-  }), [fastags, searchQuery, filterBank, filterType, filterStatus, agentNameFilter]);
+      const matchesAgent =
+        agentNameFilter === "all" ||
+        (agentName !== "" && agentName === agentNameFilter.trim().toLowerCase());
+
+      return matchesSearch && matchesBank && matchesType && matchesStatus && matchesAgent;
+    });
+  }, [fastags, searchQuery, filterBank, filterType, filterStatus, agentNameFilter]);
 
   const uniqueBanks = useMemo(() => Array.from(new Set(fastags.map((f) => f.bank_name))).filter(Boolean), [fastags]);
   const uniqueTypes = useMemo(() => Array.from(new Set(fastags.map((f) => f.fastag_class))).filter(Boolean), [fastags]);

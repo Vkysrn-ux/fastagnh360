@@ -25,11 +25,16 @@ export async function GET(
     // 5. List all FASTags assigned to this agent
     const [serialRows] = await pool.query(
       `SELECT 
-          tag_serial, assigned_date, status, 
-          (SELECT name FROM users WHERE id = f.assigned_to) as current_holder
+          f.tag_serial,
+          f.assigned_date,
+          f.status,
+          f.bank_name,
+          f.fastag_class,
+          SUBSTRING_INDEX(f.tag_serial, '-', 2) AS serial_prefix,
+          (SELECT name FROM users WHERE id = f.assigned_to) AS current_holder
        FROM fastags f
        WHERE f.assigned_to = ?
-       ORDER BY assigned_date DESC`, [agentId]
+       ORDER BY f.assigned_date DESC`, [agentId]
     );
 
     return NextResponse.json({

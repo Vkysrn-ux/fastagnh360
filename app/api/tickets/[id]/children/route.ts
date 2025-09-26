@@ -85,6 +85,50 @@ async function generateTicketNo(conn: PoolConnection): Promise<string> {
   return `NH360-${todayStr}-${seq}`;
 }
 
+async function recordFastagSale(opts: {
+  conn: PoolConnection;
+  tagSerial: string | null | undefined;
+  ticketId: number;
+  vehicleRegNo?: string | null;
+  assignedToUserId?: number | null;
+  payment_to_collect?: number | null;
+  payment_to_send?: number | null;
+  net_value?: number | null;
+  commission_amount?: number | null;
+}) {
+  const { conn } = opts;
+  const serial = opts.tagSerial ? String(opts.tagSerial).trim() : "";
+  if (!serial) return;
+  try {
+    const [rows]: any = await conn.query(
+      `SELECT supplier_id, bank_name, fastag_class, assigned_to_agent_id FROM fastags WHERE tag_serial = ? LIMIT 1`,
+      [serial]
+    );
+    const f = rows?.[0] || {};
+    await conn.query(
+      `INSERT INTO fastag_sales (
+         tag_serial, ticket_id, vehicle_reg_no, bank_name, fastag_class, supplier_id,
+         sold_by_user_id, sold_by_agent_id, payment_to_collect, payment_to_send, net_value,
+         commission_amount, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        serial,
+        opts.ticketId,
+        opts.vehicleRegNo ?? null,
+        f.bank_name ?? null,
+        f.fastag_class ?? null,
+        f.supplier_id ?? null,
+        opts.assignedToUserId ?? null,
+        f.assigned_to_agent_id ?? null,
+        opts.payment_to_collect ?? null,
+        opts.payment_to_send ?? null,
+        opts.net_value ?? null,
+        opts.commission_amount ?? null,
+      ]
+    );
+  } catch {}
+}
+
 // GET: list all child sub-tickets for a parent ticket
 export async function GET(
   _req: NextRequest,
@@ -246,6 +290,17 @@ export async function POST(
     const [r]: any = await conn.query(insertQuery, insertValues);
 
     await markFastagAsUsed(conn, fastag_serial, vehicle_reg_no);
+    await recordFastagSale({
+      conn,
+      tagSerial: fastag_serial,
+      ticketId: newId,
+      vehicleRegNo: vehicle_reg_no,
+      assignedToUserId: assigned_to ? Number(assigned_to) : null,
+      payment_to_collect: b_ptc,
+      payment_to_send: b_pts,
+      net_value: b_net,
+      commission_amount: commissionValue,
+    });
 
     const newId = Number(r.insertId);
 
