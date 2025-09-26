@@ -7,6 +7,37 @@ import type { PoolConnection } from "mysql2/promise";
 
 const TICKETS_TABLE = "tickets_nh";
 
+function normalizeIndianMobile(val: any): string | null {
+  if (val === null || val === undefined) return null;
+  const s = String(val).trim();
+  const m = s.match(/^(?:\+?91[\-\s]?|0)?([6-9]\d{9})$/);
+  return m ? m[1] : null;
+}
+
+function normalizeStatus(val: any): string | null {
+  if (val === null || val === undefined) return null;
+  const s = String(val).trim().toLowerCase();
+  const map: Record<string, string> = {
+    "activation pending": "open",
+    "activated": "completed",
+    "cust cancelled": "closed",
+    "closed": "closed",
+  };
+  return map[s] || s || null;
+}
+
+function normalizeKyv(val: any): string | null {
+  if (val === null || val === undefined) return null;
+  const s = String(val).trim().toLowerCase();
+  const map: Record<string, string> = {
+    "pending": "kyv_pending",
+    "kyv pending": "kyv_pending",
+    "kyv pending approval": "kyv_pending_approval",
+    "kyv success": "kyv_success",
+    "kyv hotlisted": "kyv_hotlisted",
+  };
+  return map[s] || s || null;
+}
 
 async function markFastagAsUsed(conn: PoolConnection, fastagSerial: string | null, vehicleRegNo?: string | null) {
   const serial = fastagSerial ? String(fastagSerial).trim() : "";
@@ -129,13 +160,13 @@ export async function POST(
     // Inherit/override fields
     const vehicle_reg_no = body.vehicle_reg_no ?? parent.vehicle_reg_no ?? "";
     const details = body.details ?? "";
-    const phone = body.phone ?? parent.phone ?? "";
-    const alt_phone = body.alt_phone ?? parent.alt_phone ?? null;
+    const phone = normalizeIndianMobile(body.phone ?? parent.phone) ?? null;
+    const alt_phone = normalizeIndianMobile(body.alt_phone ?? parent.alt_phone);
     const assigned_to = body.assigned_to ?? parent.assigned_to ?? null;
     const lead_received_from = body.lead_received_from ?? parent.lead_received_from ?? null;
     const lead_by = body.lead_by ?? parent.lead_by ?? null;
-    const status = body.status ?? "open";
-    const kyv_status = body.kyv_status ?? parent.kyv_status ?? null;
+    const status = normalizeStatus(body.status) || "open";
+    const kyv_status = normalizeKyv(body.kyv_status) || parent.kyv_status || null;
     const customer_name = body.customer_name ?? parent.customer_name ?? null;
     const comments = body.comments ?? null;
     const fastag_serial = body.fastag_serial ?? parent.fastag_serial ?? null;

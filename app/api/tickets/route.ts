@@ -6,6 +6,31 @@ import type { PoolConnection } from "mysql2/promise";
 
 const TICKETS_TABLE = "tickets_nh";
 
+function normalizeStatus(val: any): string | null {
+  if (val === null || val === undefined) return null;
+  const s = String(val).trim().toLowerCase();
+  const map: Record<string, string> = {
+    "activation pending": "open",
+    "activated": "completed",
+    "cust cancelled": "closed",
+    "closed": "closed",
+  };
+  return map[s] || s || null;
+}
+
+function normalizeKyv(val: any): string | null {
+  if (val === null || val === undefined) return null;
+  const s = String(val).trim().toLowerCase();
+  const map: Record<string, string> = {
+    "pending": "kyv_pending",
+    "kyv pending": "kyv_pending",
+    "kyv pending approval": "kyv_pending_approval",
+    "kyv success": "kyv_success",
+    "kyv hotlisted": "kyv_hotlisted",
+  };
+  return map[s] || s || null;
+}
+
 // --- utility: make a ticket_no like NH360-YYYYMMDD-###, inside a txn ---
 
 async function markFastagAsUsed(conn: PoolConnection, fastagSerial: string | null, vehicleRegNo?: string | null) {
@@ -53,6 +78,13 @@ async function generateTicketNo(conn: PoolConnection): Promise<string> {
   return `NH360-${todayStr}-${seq}`;
 }
 
+function normalizeIndianMobile(val: any): string | null {
+  if (val === null || val === undefined) return null;
+  const s = String(val).trim();
+  const m = s.match(/^(?:\+?91[\-\s]?|0)?([6-9]\d{9})$/);
+  return m ? m[1] : null;
+}
+
 // GET:
 // - default: ONLY parent tickets (sub-tickets excluded)
 // - ?parent_id=### -> only that parent's sub-tickets
@@ -65,58 +97,139 @@ export async function GET(req: NextRequest) {
   try {
     if (parentId) {
       // Children of one parent
-      const [rows] = await pool.query(
-        `
-        SELECT
-          t.id, t.ticket_no, t.subject, t.status, t.details, t.assigned_to,
-          t.created_at, t.updated_at
-        FROM tickets_nh t
-        WHERE t.parent_ticket_id = ?
-        ORDER BY t.created_at DESC
-        `,
-        [parentId]
-      );
-      return NextResponse.json(rows || []);
+      // Try rich join (FASTag info). Fallback to basic if join fails.
+      try {
+        const [rows] = await pool.query(
+          `
+          SELECT
+            t.id, t.ticket_no, t.subject, t.status, t.details, t.assigned_to,
+            t.created_at, t.updated_at,
+            t.fastag_serial,
+            f.bank_name AS fastag_bank,
+            f.fastag_class,
+            CASE
+              WHEN f.status = 'sold' THEN 'User'
+              WHEN f.assigned_to_agent_id IS NOT NULL THEN 'Agent'
+              ELSE 'Admin'
+            END AS fastag_owner
+          FROM tickets_nh t
+          LEFT JOIN fastags f ON f.tag_serial = t.fastag_serial
+          WHERE t.parent_ticket_id = ?
+          ORDER BY t.created_at DESC
+          `,
+          [parentId]
+        );
+        return NextResponse.json(rows || []);
+      } catch {
+        const [rows] = await pool.query(
+          `
+          SELECT
+            t.id, t.ticket_no, t.subject, t.status, t.details, t.assigned_to,
+            t.created_at, t.updated_at
+          FROM tickets_nh t
+          WHERE t.parent_ticket_id = ?
+          ORDER BY t.created_at DESC
+          `,
+          [parentId]
+        );
+        return NextResponse.json(rows || []);
+      }
     }
 
     if (scope === "all") {
+      try {
+        const [rows] = await pool.query(`
+          SELECT
+            t.*,
+            CASE
+              WHEN t.lead_received_from = 'Shop' AND u.role = 'shop' THEN u.name
+              ELSE NULL
+            END AS shop_name,
+            f.bank_name AS fastag_bank,
+            f.fastag_class,
+            CASE
+              WHEN f.status = 'sold' THEN 'User'
+              WHEN f.assigned_to_agent_id IS NOT NULL THEN 'Agent'
+              ELSE 'Admin'
+            END AS fastag_owner
+          FROM tickets_nh t
+          LEFT JOIN users u ON t.assigned_to = u.id
+          LEFT JOIN fastags f ON f.tag_serial = t.fastag_serial
+          WHERE COALESCE(t.status, '') <> 'draft'
+          ORDER BY t.created_at DESC
+        `);
+        return NextResponse.json(rows || []);
+      } catch {
+        const [rows] = await pool.query(`
+          SELECT
+            t.*,
+            CASE
+              WHEN t.lead_received_from = 'Shop' AND u.role = 'shop' THEN u.name
+              ELSE NULL
+            END AS shop_name
+          FROM tickets_nh t
+          LEFT JOIN users u ON t.assigned_to = u.id
+          WHERE COALESCE(t.status, '') <> 'draft'
+          ORDER BY t.created_at DESC
+        `);
+        return NextResponse.json(rows || []);
+      }
+    }
+
+    // ROOTS ONLY (keep subs out of the main list)
+    try {
       const [rows] = await pool.query(`
         SELECT
           t.*,
           CASE
             WHEN t.lead_received_from = 'Shop' AND u.role = 'shop' THEN u.name
             ELSE NULL
-          END AS shop_name
+          END AS shop_name,
+          f.bank_name AS fastag_bank,
+          f.fastag_class,
+          CASE
+            WHEN f.status = 'sold' THEN 'User'
+            WHEN f.assigned_to_agent_id IS NOT NULL THEN 'Agent'
+            ELSE 'Admin'
+          END AS fastag_owner,
+          COALESCE(s.cnt, 0) AS subs_count
         FROM tickets_nh t
         LEFT JOIN users u ON t.assigned_to = u.id
-        WHERE COALESCE(t.status, '') <> 'draft'
+        LEFT JOIN fastags f ON f.tag_serial = t.fastag_serial
+        LEFT JOIN (
+          SELECT parent_ticket_id, COUNT(*) AS cnt
+          FROM tickets_nh
+          WHERE parent_ticket_id IS NOT NULL
+          GROUP BY parent_ticket_id
+        ) s ON s.parent_ticket_id = t.id
+        WHERE t.parent_ticket_id IS NULL
+          AND COALESCE(t.status, '') <> 'draft'
+        ORDER BY t.created_at DESC
+      `);
+      return NextResponse.json(rows || []);
+    } catch {
+      const [rows] = await pool.query(`
+        SELECT
+          t.*,
+          CASE
+            WHEN t.lead_received_from = 'Shop' AND u.role = 'shop' THEN u.name
+            ELSE NULL
+          END AS shop_name,
+          COALESCE(s.cnt, 0) AS subs_count
+        FROM tickets_nh t
+        LEFT JOIN users u ON t.assigned_to = u.id
+        LEFT JOIN (
+          SELECT parent_ticket_id, COUNT(*) AS cnt
+          FROM tickets_nh
+          WHERE parent_ticket_id IS NOT NULL
+          GROUP BY parent_ticket_id
+        ) s ON s.parent_ticket_id = t.id
+        WHERE t.parent_ticket_id IS NULL
+          AND COALESCE(t.status, '') <> 'draft'
         ORDER BY t.created_at DESC
       `);
       return NextResponse.json(rows || []);
     }
-
-    // ROOTS ONLY (keep subs out of the main list)
-    const [rows] = await pool.query(`
-      SELECT
-        t.*,
-        CASE
-          WHEN t.lead_received_from = 'Shop' AND u.role = 'shop' THEN u.name
-          ELSE NULL
-        END AS shop_name,
-        COALESCE(s.cnt, 0) AS subs_count
-      FROM tickets_nh t
-      LEFT JOIN users u ON t.assigned_to = u.id
-      LEFT JOIN (
-        SELECT parent_ticket_id, COUNT(*) AS cnt
-        FROM tickets_nh
-        WHERE parent_ticket_id IS NOT NULL
-        GROUP BY parent_ticket_id
-      ) s ON s.parent_ticket_id = t.id
-      WHERE t.parent_ticket_id IS NULL
-        AND COALESCE(t.status, '') <> 'draft'
-      ORDER BY t.created_at DESC
-    `);
-    return NextResponse.json(rows || []);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
@@ -164,6 +277,9 @@ export async function POST(req: NextRequest) {
 
     const hasCommissionColumn = await hasTableColumn(TICKETS_TABLE, "commission_amount", conn);
     const hasFastagSerialColumn = await hasTableColumn(TICKETS_TABLE, "fastag_serial", conn);
+    const hasPaymentReceived = await hasTableColumn(TICKETS_TABLE, "payment_received", conn);
+    const hasDeliveryDone = await hasTableColumn(TICKETS_TABLE, "delivery_done", conn);
+    const hasCommissionDone = await hasTableColumn(TICKETS_TABLE, "commission_done", conn);
 
     // --- CASE A: create only a sub-ticket (no new parent) ---
     if (parent_ticket_id) {
@@ -202,8 +318,8 @@ export async function POST(req: NextRequest) {
       const effectiveAssignedTo = (typeof assigned_to !== "undefined" ? assigned_to : null) ?? parent.assigned_to ?? null;
       const effectiveLeadFrom = (typeof lead_received_from !== "undefined" ? lead_received_from : null) ?? parent.lead_received_from ?? null;
       const effectiveLeadBy = (typeof lead_by !== "undefined" ? lead_by : null) ?? parent.lead_by ?? null;
-      const effectiveStatus = (typeof status !== "undefined" ? status : null) ?? "open";
-      const effectiveKyvStatus = (typeof kyv_status !== "undefined" ? kyv_status : null) ?? parent.kyv_status ?? null;
+      const effectiveStatus = normalizeStatus(typeof status !== "undefined" ? status : null) || "open";
+      const effectiveKyvStatus = normalizeKyv(typeof kyv_status !== "undefined" ? kyv_status : null) || parent.kyv_status || null;
       const effectiveCustomer = (typeof customer_name !== "undefined" ? customer_name : null) ?? parent.customer_name ?? null;
       const effectiveComments = (typeof comments !== "undefined" ? comments : null) ?? null;
 
@@ -231,8 +347,8 @@ export async function POST(req: NextRequest) {
         effectiveVehicle,
         subject,
         details ?? "",
-        effectivePhone,
-        effectiveAltPhone,
+        normalizeIndianMobile(effectivePhone) ?? null,
+        normalizeIndianMobile(effectiveAltPhone),
         effectiveAssignedTo,
         effectiveLeadFrom,
         effectiveLeadBy,
@@ -244,6 +360,22 @@ export async function POST(req: NextRequest) {
         isNaN(c_pts as any) ? null : c_pts,
         isNaN(c_net as any) ? null : c_net,
       ];
+
+      if (hasPaymentReceived) {
+        childColumns.push("payment_received");
+        childPlaceholders.push("?");
+        childValues.push(data?.payment_received ? 1 : 0);
+      }
+      if (hasDeliveryDone) {
+        childColumns.push("delivery_done");
+        childPlaceholders.push("?");
+        childValues.push(data?.delivery_done ? 1 : 0);
+      }
+      if (hasCommissionDone) {
+        childColumns.push("commission_done");
+        childPlaceholders.push("?");
+        childValues.push(data?.commission_done ? 1 : 0);
+      }
 
       if (hasCommissionColumn) {
         childColumns.push("commission_amount");
@@ -326,19 +458,34 @@ export async function POST(req: NextRequest) {
       vehicle_reg_no ?? "",
       subject ?? "",
       details ?? "",
-      phone ?? "",
-      alt_phone ?? null,
+      normalizeIndianMobile(phone) ?? null,
+      normalizeIndianMobile(alt_phone),
       assigned_to ?? null,
       lead_received_from ?? null,
       lead_by ?? null,
-      status ?? "open",
-      kyv_status ?? null,
+      normalizeStatus(status) || "open",
+      normalizeKyv(kyv_status) || null,
       customer_name ?? null,
       comments ?? null,
       isNaN(p_ptc as any) ? null : p_ptc,
       isNaN(p_pts as any) ? null : p_pts,
       isNaN(p_net as any) ? null : p_net,
     ];
+    if (hasPaymentReceived) {
+      parentColumns.push("payment_received");
+      parentPlaceholders.push("?");
+      parentValues.push(data?.payment_received ? 1 : 0);
+    }
+    if (hasDeliveryDone) {
+      parentColumns.push("delivery_done");
+      parentPlaceholders.push("?");
+      parentValues.push(data?.delivery_done ? 1 : 0);
+    }
+    if (hasCommissionDone) {
+      parentColumns.push("commission_done");
+      parentPlaceholders.push("?");
+      parentValues.push(data?.commission_done ? 1 : 0);
+    }
     if (hasCommissionColumn) {
       parentColumns.push("commission_amount");
       parentPlaceholders.push("?");
@@ -412,19 +559,38 @@ export async function POST(req: NextRequest) {
           row.vehicle_reg_no ?? vehicle_reg_no ?? "",
           c_subject,
           row.details ?? "",
-          row.phone ?? phone ?? "",
-          row.alt_phone ?? alt_phone ?? null,
+          normalizeIndianMobile(row.phone ?? phone) ?? null,
+          normalizeIndianMobile(row.alt_phone ?? alt_phone),
           row.assigned_to ?? assigned_to ?? null,
           row.lead_received_from ?? lead_received_from ?? null,
           row.lead_by ?? lead_by ?? null,
-          row.status ?? "open",
-          row.kyv_status ?? kyv_status ?? null,
+          normalizeStatus(row.status) || "open",
+          normalizeKyv(row.kyv_status) || normalizeKyv(kyv_status) || null,
           row.customer_name ?? customer_name ?? null,
           row.comments ?? null,
           isNaN(r_ptc as any) ? null : r_ptc,
           isNaN(r_pts as any) ? null : r_pts,
           isNaN(r_net as any) ? null : r_net,
         ];
+
+        if (hasPaymentReceived) {
+          subColumns.push("payment_received");
+          subPlaceholders.push("?");
+          // @ts-ignore
+          subValues.push(row.payment_received ?? data?.payment_received ? 1 : 0);
+        }
+        if (hasDeliveryDone) {
+          subColumns.push("delivery_done");
+          subPlaceholders.push("?");
+          // @ts-ignore
+          subValues.push(row.delivery_done ?? data?.delivery_done ? 1 : 0);
+        }
+        if (hasCommissionDone) {
+          subColumns.push("commission_done");
+          subPlaceholders.push("?");
+          // @ts-ignore
+          subValues.push(row.commission_done ?? data?.commission_done ? 1 : 0);
+        }
 
         if (hasCommissionColumn) {
           subColumns.push("commission_amount");
@@ -485,6 +651,9 @@ export async function PATCH(req: NextRequest) {
 
     const includeCommissionColumn = await hasTableColumn(TICKETS_TABLE, "commission_amount");
     const includeFastagColumn = await hasTableColumn(TICKETS_TABLE, "fastag_serial");
+    const includePaymentReceived = await hasTableColumn(TICKETS_TABLE, "payment_received");
+    const includeDeliveryDone = await hasTableColumn(TICKETS_TABLE, "delivery_done");
+    const includeCommissionDone = await hasTableColumn(TICKETS_TABLE, "commission_done");
     const allowedFields = [
       "vehicle_reg_no",
       "subject",
@@ -508,6 +677,15 @@ export async function PATCH(req: NextRequest) {
     if (includeFastagColumn) {
       allowedFields.push("fastag_serial");
     }
+    if (includePaymentReceived) {
+      allowedFields.push("payment_received");
+    }
+    if (includeDeliveryDone) {
+      allowedFields.push("delivery_done");
+    }
+    if (includeCommissionDone) {
+      allowedFields.push("commission_done");
+    }
     allowedFields.push("pickup_point_name");
 
     const updates: string[] = [];
@@ -515,7 +693,15 @@ export async function PATCH(req: NextRequest) {
     for (const field of allowedFields) {
       if (typeof data[field] !== "undefined") {
         updates.push(`${field} = ?`);
-        values.push(data[field]);
+        if (field === "status") {
+          values.push(normalizeStatus(data[field]) || "open");
+        } else if (field === "kyv_status") {
+          values.push(normalizeKyv(data[field]) || null);
+        } else if (field === "phone" || field === "alt_phone") {
+          values.push(normalizeIndianMobile(data[field]));
+        } else {
+          values.push(data[field]);
+        }
       }
     }
 

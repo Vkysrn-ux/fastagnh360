@@ -328,7 +328,17 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     payment_to_send: ticket?.payment_to_send ?? "",
     net_value: ticket?.net_value ?? "",
     pickup_point_name: ticket?.pickup_point_name || "",
+    commission_amount: (ticket as any)?.commission_amount ?? "",
+    payment_received: !!(ticket as any)?.payment_received,
+    delivery_done: !!(ticket as any)?.delivery_done,
+    commission_done: !!(ticket as any)?.commission_done,
+    fastag_serial: (ticket as any)?.fastag_serial || "",
+    fastag_bank: (ticket as any)?.fastag_bank || "",
+    fastag_class: (ticket as any)?.fastag_class || "",
+    fastag_owner: (ticket as any)?.fastag_owner || "",
   });
+  const [fastagQuery, setFastagQuery] = React.useState<string>(String((ticket as any)?.fastag_serial || ""));
+  const [fastagOptions, setFastagOptions] = React.useState<any[]>([]);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [currentUser, setCurrentUser] = React.useState<{ id: number; name: string } | null>(null);
@@ -367,15 +377,53 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.payment_to_collect, form.payment_to_send]);
 
+  // Load FASTag info from DB when user types a barcode (>= 2 chars) and fill bank/class/owner
+  React.useEffect(() => {
+    const term = (fastagQuery || form.fastag_serial || "").toString().trim();
+    if (term.length < 2) { setFastagOptions([]); return; }
+    const params = new URLSearchParams();
+    params.set('query', term);
+    fetch(`/api/fastags?${params.toString()}`)
+      .then(r => r.json())
+      .then(rows => {
+        const list = Array.isArray(rows) ? rows : [];
+        setFastagOptions(list);
+        const exact = list.find((r: any) => String(r.tag_serial) === term);
+        if (exact) {
+          setForm((f) => ({
+            ...f,
+            fastag_serial: exact.tag_serial || f.fastag_serial,
+            fastag_bank: exact.bank_name || (f as any).fastag_bank,
+            fastag_class: exact.fastag_class || (f as any).fastag_class,
+            fastag_owner: exact.holder ? String(exact.holder) : (exact.assigned_to_name || (f as any).fastag_owner || ""),
+          } as any));
+        }
+      })
+      .catch(() => setFastagOptions([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fastagQuery]);
+
   async function save() {
     try {
       setSaving(true);
       setError(null);
+      // Validate mobile numbers
+      const phoneStr = String(form.phone || "");
+      const altStr = String(form.alt_phone || "");
+      const re = /^(?:\+?91[\-\s]?|0)?([6-9]\d{9})$/;
+      const m = phoneStr.match(re);
+      if (!m) { setError("Enter a valid 10-digit mobile (starts 6–9)"); setSaving(false); return; }
+      let altNorm: string | null = null;
+      if (altStr.trim() !== "") {
+        const ma = altStr.match(re);
+        if (!ma) { setError("Enter a valid 10-digit alt mobile (starts 6–9)"); setSaving(false); return; }
+        altNorm = ma[1];
+      }
       const payload: any = {
         id: Number(ticket.id),
         vehicle_reg_no: form.vehicle_reg_no,
-        phone: form.phone,
-        alt_phone: form.alt_phone,
+        phone: m[1],
+        alt_phone: altNorm,
         subject: form.subject,
         details: form.details,
         status: form.status,
@@ -389,6 +437,11 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
         payment_to_collect: form.payment_to_collect === "" ? null : Number(form.payment_to_collect),
         payment_to_send: form.payment_to_send === "" ? null : Number(form.payment_to_send),
         net_value: form.net_value === "" ? null : Number(form.net_value),
+        commission_amount: form.commission_amount === "" ? null : Number(form.commission_amount),
+        fastag_serial: form.fastag_serial || null,
+        payment_received: !!form.payment_received,
+        delivery_done: !!form.delivery_done,
+        commission_done: !!form.commission_done,
       };
       const res = await fetch("/api/tickets", {
         method: "PATCH",
@@ -544,6 +597,46 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
         <div className="py-2">
           <label className="block text-sm font-medium mb-1">Comments</label>
           <Input value={form.comments} onChange={(e) => setForm({ ...form, comments: e.target.value })} />
+        </div>
+        {/* Row 5: Commission + Flags */}
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 py-2">
+          <div>
+            <label className="block text-sm font-medium mb-1">Commission Amount</label>
+            <Input type="number" step="0.01" value={form.commission_amount as any} onChange={(e) => setForm({ ...form, commission_amount: e.target.value })} placeholder="0" />
+          </div>
+          <div className="col-span-2 lg:col-span-3 flex items-center gap-6">
+            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+              <input type="checkbox" checked={!!form.payment_received} onChange={(e) => setForm({ ...form, payment_received: e.target.checked })} />
+              Payment Received
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+              <input type="checkbox" checked={!!form.delivery_done} onChange={(e) => setForm({ ...form, delivery_done: e.target.checked })} />
+              Delivery Done
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+              <input type="checkbox" checked={!!form.commission_done} onChange={(e) => setForm({ ...form, commission_done: e.target.checked })} />
+              Commission Done
+            </label>
+          </div>
+        </div>
+        {/* Row 6: FASTag Info */}
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 py-2">
+          <div>
+            <label className="block text-sm font-medium mb-1">FASTag Barcode</label>
+            <Input value={form.fastag_serial as any} onChange={(e) => { setForm({ ...form, fastag_serial: e.target.value }); setFastagQuery(e.target.value); }} placeholder="Type FASTag barcode" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">FASTag Bank</label>
+            <Input value={form.fastag_bank as any} readOnly className="bg-gray-50" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">FASTag Class</label>
+            <Input value={form.fastag_class as any} readOnly className="bg-gray-50" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">FASTag Owner</label>
+            <Input value={form.fastag_owner as any} readOnly className="bg-gray-50" />
+          </div>
         </div>
         {error && <div className="text-sm text-red-600">{error}</div>}
         <DialogFooter>
