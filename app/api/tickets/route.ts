@@ -1,6 +1,7 @@
 // app/api/tickets/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { logTicketAction } from "@/lib/ticket-logs";
 import { hasTableColumn } from "@/lib/db-helpers";
 import type { PoolConnection } from "mysql2/promise";
 
@@ -83,6 +84,76 @@ function normalizeIndianMobile(val: any): string | null {
   const s = String(val).trim();
   const m = s.match(/^(?:\+?91[\-\s]?|0)?([6-9]\d{9})$/);
   return m ? m[1] : null;
+}
+
+// --- Sales + Ledger helpers (best-effort, won't break request) ---
+async function recordFastagSale(opts: {
+  conn: PoolConnection;
+  tagSerial: string | null | undefined;
+  ticketId: number;
+  vehicleRegNo?: string | null;
+  assignedToUserId?: number | null;
+  payment_to_collect?: number | null;
+  payment_to_send?: number | null;
+  net_value?: number | null;
+  commission_amount?: number | null;
+}) {
+  const { conn } = opts;
+  const serial = opts.tagSerial ? String(opts.tagSerial).trim() : "";
+  if (!serial) return;
+  try {
+    const [rows]: any = await conn.query(
+      `SELECT supplier_id, bank_name, fastag_class, assigned_to_agent_id FROM fastags WHERE tag_serial = ? LIMIT 1`,
+      [serial]
+    );
+    const f = rows?.[0] || {};
+    await conn.query(
+      `INSERT INTO fastag_sales (
+         tag_serial, ticket_id, vehicle_reg_no, bank_name, fastag_class, supplier_id,
+         sold_by_user_id, sold_by_agent_id, payment_to_collect, payment_to_send, net_value,
+         commission_amount, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        serial,
+        opts.ticketId,
+        opts.vehicleRegNo ?? null,
+        f.bank_name ?? null,
+        f.fastag_class ?? null,
+        f.supplier_id ?? null,
+        opts.assignedToUserId ?? null,
+        f.assigned_to_agent_id ?? null,
+        opts.payment_to_collect ?? null,
+        opts.payment_to_send ?? null,
+        opts.net_value ?? null,
+        opts.commission_amount ?? null,
+      ]
+    );
+  } catch {}
+}
+
+async function recordMoneyLedger(opts: {
+  conn: PoolConnection;
+  refType: 'ticket' | 'fastag_sale';
+  refId: number;
+  collect?: number | null;
+  payout?: number | null;
+  commission?: number | null;
+}) {
+  const { conn } = opts;
+  try {
+    const rows: Array<[string, number | null]> = [
+      ['collect', opts.collect ?? null],
+      ['payout', opts.payout ?? null],
+      ['commission', opts.commission ?? null],
+    ];
+    for (const [entryType, amount] of rows) {
+      if (amount === null || isNaN(Number(amount))) continue;
+      await conn.query(
+        `INSERT INTO money_ledger (ref_type, ref_id, entry_type, amount, created_at) VALUES (?, ?, ?, ?, NOW())`,
+        [opts.refType, opts.refId, entryType, Number(amount)]
+      );
+    }
+  } catch {}
 }
 
 // GET:
@@ -402,6 +473,25 @@ export async function POST(req: NextRequest) {
       const [r]: any = await conn.query(childInsert, childValues);
 
       await markFastagAsUsed(conn, effectiveFastagSerial, effectiveVehicle);
+      await recordFastagSale({
+        conn,
+        tagSerial: effectiveFastagSerial,
+        ticketId: Number(r.insertId),
+        vehicleRegNo: effectiveVehicle,
+        assignedToUserId: effectiveAssignedTo ? Number(effectiveAssignedTo) : null,
+        payment_to_collect: c_ptc,
+        payment_to_send: c_pts,
+        net_value: c_net,
+        commission_amount: childCommission,
+      });
+      await recordMoneyLedger({
+        conn,
+        refType: 'ticket',
+        refId: Number(r.insertId),
+        collect: c_ptc,
+        payout: c_pts,
+        commission: childCommission,
+      });
 
       await conn.commit();
       try {
@@ -510,6 +600,19 @@ export async function POST(req: NextRequest) {
     const [r1]: any = await conn.query(parentInsert, parentValues);
     await markFastagAsUsed(conn, fastag_serial, vehicle_reg_no);
     const parentId = r1.insertId as number;
+    // Record parent sale + ledger (if any)
+    await recordFastagSale({
+      conn,
+      tagSerial: fastag_serial,
+      ticketId: parentId,
+      vehicleRegNo: vehicle_reg_no ?? null,
+      assignedToUserId: assigned_to ? Number(assigned_to) : null,
+      payment_to_collect: p_ptc,
+      payment_to_send: p_pts,
+      net_value: p_net,
+      commission_amount: parentCommission,
+    });
+    await recordMoneyLedger({ conn, refType: 'ticket', refId: parentId, collect: p_ptc, payout: p_pts, commission: parentCommission });
 
     let childrenCreated = 0;
     if (Array.isArray(sub_issues) && sub_issues.length > 0) {
@@ -615,7 +718,21 @@ export async function POST(req: NextRequest) {
         const subInsert = `INSERT INTO ${TICKETS_TABLE} (${subColumns.join(", ")}, created_at, updated_at) VALUES (${subPlaceholders.join(", ")}, NOW(), NOW())`;
 
         await conn.query(subInsert, subValues);
-        await markFastagAsUsed(conn, row.fastag_serial ?? fastag_serial ?? null, row.vehicle_reg_no ?? vehicle_reg_no ?? null);
+        const usedSerial = row.fastag_serial ?? fastag_serial ?? null;
+        const usedVehicle = row.vehicle_reg_no ?? vehicle_reg_no ?? null;
+        await markFastagAsUsed(conn, usedSerial, usedVehicle);
+        await recordFastagSale({
+          conn,
+          tagSerial: usedSerial,
+          ticketId: parentId,
+          vehicleRegNo: usedVehicle,
+          assignedToUserId: (row.assigned_to ?? assigned_to) ? Number(row.assigned_to ?? assigned_to) : null,
+          payment_to_collect: r_ptc,
+          payment_to_send: r_pts,
+          net_value: r_net,
+          commission_amount: rowCommission,
+        });
+        await recordMoneyLedger({ conn, refType: 'ticket', refId: parentId, collect: r_ptc, payout: r_pts, commission: rowCommission });
         childrenCreated++;
         try {
           await logTicketAction({ ticketId: parentId, action: "create_child", req, meta: { child_ticket_no: childTicketNo } });
@@ -724,5 +841,4 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
-
 
