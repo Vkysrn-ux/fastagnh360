@@ -30,9 +30,12 @@ export async function GET(req: NextRequest) {
       params
     );
 
-    // 2. Query fastags assignments
+    // 2. Query fastags assignments (current agent-held inventory)
     const [fastags] = await pool.query(
-      `SELECT assigned_to AS user_id FROM fastags`
+      `SELECT assigned_to_agent_id AS user_id
+       FROM fastags
+       WHERE assigned_to_agent_id IS NOT NULL
+         AND status IN ('assigned','in_stock')`
     );
 
     // 3. Build user map

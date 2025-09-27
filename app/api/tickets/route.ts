@@ -102,6 +102,28 @@ async function recordFastagSale(opts: {
   const serial = opts.tagSerial ? String(opts.tagSerial).trim() : "";
   if (!serial) return;
   try {
+    // Ensure table exists so inserts don't silently fail
+    try {
+      await conn.query(`
+        CREATE TABLE IF NOT EXISTS fastag_sales (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          tag_serial VARCHAR(255) NOT NULL,
+          ticket_id INT NULL,
+          vehicle_reg_no VARCHAR(64) NULL,
+          bank_name VARCHAR(255) NULL,
+          fastag_class VARCHAR(32) NULL,
+          supplier_id INT NULL,
+          sold_by_user_id INT NULL,
+          sold_by_agent_id INT NULL,
+          payment_to_collect DECIMAL(10,2) NULL,
+          payment_to_send DECIMAL(10,2) NULL,
+          net_value DECIMAL(10,2) NULL,
+          commission_amount DECIMAL(10,2) NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+    } catch {}
+
     const [rows]: any = await conn.query(
       `SELECT supplier_id, bank_name, fastag_class, assigned_to_agent_id FROM fastags WHERE tag_serial = ? LIMIT 1`,
       [serial]

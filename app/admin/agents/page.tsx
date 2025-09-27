@@ -108,8 +108,8 @@ function renderHierarchyRows(tree, level = 0) {
       </TableCell>
       <TableCell>{agent.role}</TableCell>
       <TableCell>{agent.total_fastags ?? 0}</TableCell>
-      <TableCell>{agent.assigned ?? 0}</TableCell>
-      <TableCell>{agent.sold ?? 0}</TableCell>
+      <TableCell>{agent.assigned_fastags ?? 0}</TableCell>
+      <TableCell>{agent.sold_fastags ?? 0}</TableCell>
     </TableRow>,
     ...(agent.children?.length ? renderHierarchyRows(agent.children, level + 1) : [])
   ]);
@@ -469,24 +469,36 @@ export default function AdminAgentsPage() {
                       <h3 className="font-semibold mb-2">FASTag Summary By Bank, Serial Prefix & Class</h3>
                       {/* --- Build summaryList from agentDetails.fastag_serials --- */}
                       {(() => {
-                        let summaryList = [];
+                        let summaryList: any[] = [];
+                        const map: Record<string, { bank_name: string; serial_prefix: string; classType: string; available: number; sold: number }> = {} as any;
                         if (agentDetails && Array.isArray(agentDetails.fastag_serials)) {
-                          const map = {};
-                          agentDetails.fastag_serials.forEach(tag => {
-                            const [bankCode, mid] = tag.tag_serial.split("-");
+                          agentDetails.fastag_serials.forEach((tag: any) => {
+                            const parts = String(tag.tag_serial || '').split('-');
+                            const bankCode = parts[0] || '';
+                            const mid = parts[1] || '';
                             const bank_name = tag.bank_name || bankCode;
                             const serial_prefix = tag.serial_prefix || `${bankCode}-${mid}`;
-                            let classType = "";
-                            if (mid === "030" || mid === "040") classType = "Class 4";
-                            else if (mid === "050") classType = "Class 5";
-                            else classType = tag.fastag_class ? tag.fastag_class.replace(/^class/i, "Class ") : "Unknown";
+                            let classType = '';
+                            if (mid === '030' || mid === '040') classType = 'Class 4';
+                            else if (mid === '050') classType = 'Class 5';
+                            else classType = tag.fastag_class ? String(tag.fastag_class).replace(/^class/i, 'Class ') : 'Unknown';
                             const key = `${bank_name}|${serial_prefix}|${classType}`;
-                            if (!map[key]) map[key] = { bank_name, serial_prefix, classType, available: 0, sold: 0 };
-                            if (tag.status === "sold") map[key].sold += 1;
-                            else map[key].available += 1;
+                            if (!map[key]) map[key] = { bank_name, serial_prefix, classType, available: 0, sold: 0 } as any;
+                            map[key].available += 1;
                           });
-                          summaryList = Object.values(map);
                         }
+                        if (agentDetails && Array.isArray(agentDetails.sales_groups)) {
+                          agentDetails.sales_groups.forEach((g: any) => {
+                            const bank_name = g.bank_name || '';
+                            const serial_prefix = g.serial_prefix || '';
+                            const clsRaw = String(g.fastag_class || '').trim();
+                            let classType = clsRaw ? clsRaw.replace(/^class/i, 'Class ') : 'Unknown';
+                            const key = `${bank_name}|${serial_prefix}|${classType}`;
+                            if (!map[key]) map[key] = { bank_name, serial_prefix, classType, available: 0, sold: 0 } as any;
+                            map[key].sold += Number(g.sold_count || 0);
+                          });
+                        }
+                        summaryList = Object.values(map);
                         return (
                           <Table>
                             <TableHeader>

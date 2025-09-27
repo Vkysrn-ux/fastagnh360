@@ -65,7 +65,7 @@ type UserRow = RowDataPacket & {
   role: string | null;
   status: string | null;
   dashboard?: string | null;
-  parent_id?: number | null;
+  parent_user_id?: number | null;
   created_at?: Date | string | null;
 };
 
@@ -113,7 +113,7 @@ function mapUserRow(row: UserRow): PortalUser {
     role: normalizedRole,
     status: statusValue,
     dashboard: (row.dashboard as PortalDashboard) ?? resolveDashboard(normalizedRole),
-    parent_id: row.parent_id ?? null,
+    parent_id: (row as any).parent_user_id ?? null,
     created_at: createdAt,
   };
 }
@@ -176,7 +176,7 @@ export interface CreatePortalUserInput {
   role: string;
   status?: string;
   password?: string;
-  parent_id?: number | null;
+  parent_id?: number | null; // API input uses parent_id; stored as parent_user_id in DB
 }
 
 export type CreatePortalUserResult =
@@ -208,13 +208,13 @@ export async function createPortalUser(input: CreatePortalUserInput): Promise<Cr
     await conn.beginTransaction();
 
     const [result] = await conn.query<ResultSetHeader>(
-      "INSERT INTO users (name, email, phone, role, status, password, dashboard, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO users (name, email, phone, role, status, password, dashboard, parent_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       [name, email, phoneValue, role, dbStatus, hashedPassword, dashboard, input.parent_id ?? null],
     );
 
     const userId = Number((result as ResultSetHeader).insertId);
     const [rows] = await conn.query<RowDataPacket[]>(
-      "SELECT id, name, email, phone, role, status, dashboard, parent_id, created_at FROM users WHERE id = ?",
+      "SELECT id, name, email, phone, role, status, dashboard, parent_user_id, created_at FROM users WHERE id = ?",
       [userId],
     );
 
@@ -247,7 +247,7 @@ export async function createPortalUser(input: CreatePortalUserInput): Promise<Cr
 export async function getAllUsers(): Promise<PortalUser[]> {
   try {
     const rows = await executeQuery<RowDataPacket[]>(
-      "SELECT id, name, email, phone, role, status, dashboard, parent_id, created_at FROM users"
+      "SELECT id, name, email, phone, role, status, dashboard, parent_user_id, created_at FROM users"
     );
     return (rows as UserRow[]).map(mapUserRow);
   } catch (error) {
@@ -265,12 +265,12 @@ export async function getScopedUsers(currentUserId: number, currentRole: string)
     if (currentRole === "asm") {
       const rows = await executeQuery<RowDataPacket[]>(
         `WITH RECURSIVE user_hierarchy AS (
-           SELECT id, name, email, phone, role, status, dashboard, parent_id, created_at
+           SELECT id, name, email, phone, role, status, dashboard, parent_user_id, created_at
            FROM users WHERE id = ?
            UNION ALL
-           SELECT u.id, u.name, u.email, u.phone, u.role, u.status, u.dashboard, u.parent_id, u.created_at
+           SELECT u.id, u.name, u.email, u.phone, u.role, u.status, u.dashboard, u.parent_user_id, u.created_at
            FROM users u
-           INNER JOIN user_hierarchy h ON u.parent_id = h.id
+           INNER JOIN user_hierarchy h ON u.parent_user_id = h.id
          )
          SELECT * FROM user_hierarchy`,
         [currentUserId]
@@ -279,7 +279,7 @@ export async function getScopedUsers(currentUserId: number, currentRole: string)
     }
 
     const rows = await executeQuery<RowDataPacket[]>(
-      "SELECT id, name, email, phone, role, status, dashboard, parent_id, created_at FROM users WHERE id = ?",
+      "SELECT id, name, email, phone, role, status, dashboard, parent_user_id, created_at FROM users WHERE id = ?",
       [currentUserId]
     );
     return (rows as UserRow[]).map(mapUserRow);
@@ -301,7 +301,7 @@ export interface UpdatePortalUserInput {
   role?: string;
   status?: string;
   dashboard?: PortalDashboard;
-  parent_id?: number | null;
+  parent_id?: number | null; // stored as parent_user_id
 }
 
 export type UpdatePortalUserResult = 
@@ -358,7 +358,7 @@ export async function updatePortalUser(input: UpdatePortalUserInput): Promise<Up
       values.push(input.dashboard);
     }
     if (input.parent_id !== undefined) {
-      updates.push("parent_id = ?");
+      updates.push("parent_user_id = ?");
       values.push(input.parent_id);
     }
 
@@ -377,7 +377,7 @@ export async function updatePortalUser(input: UpdatePortalUserInput): Promise<Up
 
     // Fetch updated user
     const [rows] = await conn.query<RowDataPacket[]>(
-      "SELECT id, name, email, phone, role, status, dashboard, parent_id, created_at FROM users WHERE id = ?",
+      "SELECT id, name, email, phone, role, status, dashboard, parent_user_id, created_at FROM users WHERE id = ?",
       [id]
     );
 
@@ -418,20 +418,20 @@ export async function getScopedFastags(currentUserId: number, currentRole: strin
       `WITH RECURSIVE user_hierarchy AS (
          SELECT id FROM users WHERE id = ?
          UNION ALL
-         SELECT u.id FROM users u INNER JOIN user_hierarchy h ON u.parent_id = h.id
-       )
-       SELECT id FROM user_hierarchy`,
+        SELECT u.id FROM users u INNER JOIN user_hierarchy h ON u.parent_user_id = h.id
+      )
+      SELECT id FROM user_hierarchy`,
       [currentUserId]
     );
 
     const ids = (userIds as any[]).map((u) => u.id);
     if (!ids.length) return [];
 
-    const [rows] = await pool.query("SELECT * FROM fastags WHERE assigned_user_id IN (?)", [ids]);
+    const [rows] = await pool.query("SELECT * FROM fastags WHERE assigned_to_agent_id IN (?)", [ids]);
     return rows;
   }
 
-  const [rows] = await pool.query("SELECT * FROM fastags WHERE assigned_user_id = ?", [currentUserId]);
+  const [rows] = await pool.query("SELECT * FROM fastags WHERE assigned_to_agent_id = ?", [currentUserId]);
   return rows;
 }
 
@@ -478,23 +478,23 @@ export async function getScopedStats(currentUserId: number, currentRole: string)
       `WITH RECURSIVE user_hierarchy AS (
          SELECT id FROM users WHERE id = ?
          UNION ALL
-         SELECT u.id FROM users u INNER JOIN user_hierarchy h ON u.parent_id = h.id
-       )
-       SELECT id FROM user_hierarchy`,
+        SELECT u.id FROM users u INNER JOIN user_hierarchy h ON u.parent_user_id = h.id
+      )
+      SELECT id FROM user_hierarchy`,
       [currentUserId]
     );
     const ids = (userIds as any[]).map((u) => u.id);
     if (!ids.length) return { totalFastags: 0, activeFastags: 0, totalAgents: 0, totalEmployees: 0, monthlyRevenue: 0 };
 
-    const [fastagRows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) as totalFastags FROM fastags WHERE assigned_user_id IN (?)", [ids]);
-    const [activeFastagRows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) as activeFastags FROM fastags WHERE (status='in_stock' OR status='assigned') AND assigned_user_id IN (?)", [ids]);
+    const [fastagRows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) as totalFastags FROM fastags WHERE assigned_to_agent_id IN (?)", [ids]);
+    const [activeFastagRows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) as activeFastags FROM fastags WHERE (status='in_stock' OR status='assigned') AND assigned_to_agent_id IN (?)", [ids]);
     const [agentRows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) as totalAgents FROM users WHERE role='agent' AND id IN (?)", [ids]);
     const [employeeRows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) as totalEmployees FROM users WHERE role='employee' AND id IN (?)", [ids]);
     const [revenueRows] = await pool.query<RowDataPacket[]>(`
       SELECT IFNULL(SUM(s.sale_price), 0) as monthlyRevenue
       FROM sales s
       JOIN fastags f ON s.fastag_id = f.id
-      WHERE f.assigned_user_id IN (?)
+      WHERE f.assigned_to_agent_id IN (?)
         AND MONTH(s.sale_date) = MONTH(CURRENT_DATE())
         AND YEAR(s.sale_date) = YEAR(CURRENT_DATE())
     `, [ids]);
@@ -508,13 +508,13 @@ export async function getScopedStats(currentUserId: number, currentRole: string)
     };
   }
 
-  const [fastagRows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) as totalFastags FROM fastags WHERE assigned_user_id = ?", [currentUserId]);
-  const [activeFastagRows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) as activeFastags FROM fastags WHERE (status='in_stock' OR status='assigned') AND assigned_user_id = ?", [currentUserId]);
+  const [fastagRows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) as totalFastags FROM fastags WHERE assigned_to_agent_id = ?", [currentUserId]);
+  const [activeFastagRows] = await pool.query<RowDataPacket[]>("SELECT COUNT(*) as activeFastags FROM fastags WHERE (status='in_stock' OR status='assigned') AND assigned_to_agent_id = ?", [currentUserId]);
   const [revenueRows] = await pool.query<RowDataPacket[]>(`
     SELECT IFNULL(SUM(s.sale_price), 0) as monthlyRevenue
     FROM sales s
     JOIN fastags f ON s.fastag_id = f.id
-    WHERE f.assigned_user_id = ?
+    WHERE f.assigned_to_agent_id = ?
       AND MONTH(s.sale_date) = MONTH(CURRENT_DATE())
       AND YEAR(s.sale_date) = YEAR(CURRENT_DATE())
   `, [currentUserId]);
@@ -598,7 +598,7 @@ export interface UpdateUserInput {
   role?: string;
   status?: string;
   dashboard?: PortalDashboard;
-  parent_id?: number | null;
+  parent_id?: number | null; // stored as parent_user_id
 }
 
 export type UpdateUserResult = 
@@ -655,7 +655,7 @@ export async function updateUser(input: UpdateUserInput): Promise<UpdateUserResu
       values.push(input.dashboard);
     }
     if (input.parent_id !== undefined) {
-      updates.push("parent_id = ?");
+      updates.push("parent_user_id = ?");
       values.push(input.parent_id);
     }
 
@@ -674,7 +674,7 @@ export async function updateUser(input: UpdateUserInput): Promise<UpdateUserResu
 
     // Fetch updated user
     const [rows] = await conn.query<RowDataPacket[]>(
-      "SELECT id, name, email, phone, role, status, dashboard, parent_id, created_at FROM users WHERE id = ?",
+      "SELECT id, name, email, phone, role, status, dashboard, parent_user_id, created_at FROM users WHERE id = ?",
       [id]
     );
 

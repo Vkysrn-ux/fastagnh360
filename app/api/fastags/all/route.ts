@@ -8,7 +8,7 @@ export async function GET(req: NextRequest) {
         f.*, 
         COALESCE(u.name, '') AS agent_name
       FROM fastags f
-      LEFT JOIN users u ON f.assigned_to = u.id
+      LEFT JOIN users u ON f.assigned_to_agent_id = u.id
     `);
     return NextResponse.json(rows);
   } catch (error) {

@@ -40,7 +40,7 @@ export default function BulkMarkSoldModal({ onSuccess }: { onSuccess?: () => voi
       const res = await fetch('/api/fastags/bulk-mark-sold', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tag_serials: input })
+        body: JSON.stringify({ tag_serials: input, sold_by_user_id: filterMode==='owner' && owner ? owner.id : (filterMode==='filter' && filterOwner ? filterOwner.id : null) })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to mark sold');
@@ -61,7 +61,7 @@ export default function BulkMarkSoldModal({ onSuccess }: { onSuccess?: () => voi
     try {
       const res = await fetch('/api/fastags/bulk-mark-sold', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tag_serials: list })
+        body: JSON.stringify({ tag_serials: list, sold_by_user_id: filterMode==='owner' && owner ? owner.id : (filterMode==='filter' && filterOwner ? filterOwner.id : null) })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to mark sold');
