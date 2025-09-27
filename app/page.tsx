@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { CheckCircle, Truck, CreditCard, ShieldCheck, ArrowRight } from "lucide-react"
@@ -9,6 +10,10 @@ import { BankLogos } from "@/components/bank-logos"
 import { FAQSection } from "@/components/faq-section"
 
 export default function Home() {
+  if (process.env.ERP_ONLY === 'true') {
+    // In ERP-only mode, do not show marketing home; route to login
+    redirect('/login')
+  }
   return (
     <div className="flex flex-col">
       <HeroSection />

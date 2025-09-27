@@ -4,6 +4,7 @@ export function middleware(req: NextRequest) {
   const session = req.cookies.get('user-session')?.value
   const url = req.nextUrl.clone()
   const isApi = url.pathname.startsWith('/api')
+  const ERP_ONLY = process.env.ERP_ONLY === 'true'
 
   // Always allow Next internals and static assets
   if (
@@ -14,6 +15,25 @@ export function middleware(req: NextRequest) {
     url.pathname.startsWith('/sitemap.xml')
   ) {
     return NextResponse.next()
+  }
+
+  // ERP-only mode: block public site and route root to ERP login/dashboard
+  if (ERP_ONLY) {
+    const allowedRoots = ['/login', '/admin', '/agent', '/employee', '/user', '/api']
+    const isAllowed = allowedRoots.some(p => url.pathname === p || url.pathname.startsWith(p + '/'))
+    if (!isAllowed) {
+      // If session present, send to respective dashboard; else to login
+      if (session) {
+        try {
+          const data = JSON.parse(session)
+          const allowedPrefix = `/${data.userType}`
+          url.pathname = `${allowedPrefix}/dashboard`
+          return NextResponse.redirect(url)
+        } catch {}
+      }
+      url.pathname = '/login'
+      return NextResponse.redirect(url)
+    }
   }
 
   // If hitting API without a session -> 401 JSON

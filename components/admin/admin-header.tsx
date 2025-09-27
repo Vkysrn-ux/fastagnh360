@@ -54,7 +54,7 @@ export function AdminHeader() {
     { href: "/admin/suppliers", label: "Suppliers", icon: <Users className="mr-2 h-4 w-4" /> },
     { href: "/admin/users", label: "Users", icon: <UserCog className="mr-2 h-4 w-4" /> },
     // { href: "/admin/employees", label: "Employees", icon: <Users className="mr-2 h-4 w-4" /> },
-    { href: "/admin/sales/new",   label: "New FASTag Sale",   icon: <CreditCard className="mr-2 h-4 w-4 text-orange-500" /> },
+    { href: "/admin/reports", label: "Reports", icon: <BarChart3 className="mr-2 h-4 w-4" /> },
     // { href: "/admin/commissions", label: "Commissions", icon: <Package className="mr-2 h-4 w-4" /> },
     // { href: "/admin/settings", label: "Settings", icon: <Settings className="mr-2 h-4 w-4" /> },
     { href: "/admin/tickets", label: "Tickets", icon : <Ticket className="mr-2 h-4 w-4" /> }
