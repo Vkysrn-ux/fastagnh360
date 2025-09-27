@@ -33,16 +33,16 @@ export default function LoginPage() {
         // Redirect based on user type
         switch (result.user.userType) {
           case "admin":
-            router.push("/admin/dashboard")
+            router.push("/admin/tickets")
             break
           case "agent":
-            router.push("/agent/dashboard")
+            router.push("/agent/tickets")
             break
           case "employee":
-            router.push("/employee/dashboard")
+            router.push("/employee/tickets")
             break
           default:
-            router.push("/user/dashboard")
+            router.push("/user/tickets")
         }
       } else {
         setError(result.message || "Login failed. Please check your credentials.")
