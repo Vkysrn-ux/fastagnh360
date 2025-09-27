@@ -96,6 +96,16 @@ export interface PortalUser {
   role: string;
   status: string | null;
   dashboard: PortalDashboard;
+  parent_id?: number | null;
   created_at?: string | null;
+}
+
+// Agent dashboard stats
+export interface AgentStats {
+  totalInventory: number;      // current assigned stock
+  availableFastags: number;    // alias of assigned stock for now
+  soldFastags: number;         // total sold handled by this agent
+  totalCustomers: number;      // distinct customers served
+  monthlySales: number;        // sum of sales value this month
 }
 

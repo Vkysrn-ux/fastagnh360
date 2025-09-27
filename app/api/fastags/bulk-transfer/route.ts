@@ -26,14 +26,14 @@ export async function POST(req: NextRequest) {
       }
 
       // Set values
-      let assignedToValue = row.agentId === 'admin' ? null : Number(row.agentId);
+      let assignedToAgentId = row.agentId === 'admin' ? null : Number(row.agentId);
       let statusValue = row.agentId === 'admin' ? 'in_stock' : 'assigned';
 
-      // Update assigned_to, status, assigned_date, assigned_at
+      // Update assigned_to_agent_id, status, assigned_date, assigned_at
       await pool.query(
-        `UPDATE fastags SET assigned_to=?, status=?, assigned_date=CURDATE(), assigned_at=NOW()
+        `UPDATE fastags SET assigned_to_agent_id = ?, status = ?, assigned_date = CURDATE(), assigned_at = NOW()
          WHERE tag_serial IN (${row.serials.map(() => '?').join(",")})`,
-        [assignedToValue, statusValue, ...row.serials]
+        [assignedToAgentId, statusValue, ...row.serials]
       );
 
       // Fetch updated assigned_date for audit/return

@@ -27,6 +27,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { updatePortalUser } from "@/lib/actions/admin-actions";
 import { PortalUser } from "@/lib/types";
+import { useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
 import { useState } from "react";
@@ -80,6 +81,18 @@ export function EditUserModal({
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("details");
 
+  const [agentOptions, setAgentOptions] = useState<Array<{ id: number; name: string; role: string }>>([]);
+
+  useEffect(() => {
+    // Load potential parents (agents/managers etc.)
+    fetch('/api/agents')
+      .then(r => r.json())
+      .then(arr => {
+        if (Array.isArray(arr)) setAgentOptions(arr.map((a: any) => ({ id: Number(a.id), name: a.name, role: a.role })));
+      })
+      .catch(() => setAgentOptions([]));
+  }, []);
+
   const form = useForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -89,6 +102,7 @@ export function EditUserModal({
       role: user.role || "",
       status: user.status || "active",
       dashboard: user.dashboard || "agent",
+      // injected dynamically below
     },
   });
 
@@ -98,6 +112,10 @@ export function EditUserModal({
       const result = await updatePortalUser({
         id: user.id,
         ...values,
+        // @ts-ignore: parent selection added via DOM id
+        parent_id: (document.getElementById('parent_user_id_select') as HTMLSelectElement | null)?.value
+          ? Number((document.getElementById('parent_user_id_select') as HTMLSelectElement).value)
+          : null,
       });
 
       if (!result.success) {
@@ -172,6 +190,18 @@ export function EditUserModal({
           <TabsContent value="edit">
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                {/* Parent (optional) */}
+                <div>
+                  <FormLabel>Parent (Optional)</FormLabel>
+                  <select id="parent_user_id_select" defaultValue={String(user.parent_id ?? "")} className="w-full border rounded px-3 py-2">
+                    <option value="">No Parent</option>
+                    {agentOptions
+                      .filter(o => o.id !== user.id)
+                      .map(o => (
+                        <option key={o.id} value={String(o.id)}>{o.name} ({o.role})</option>
+                      ))}
+                  </select>
+                </div>
                 <FormField
                   control={form.control}
                   name="name"

@@ -16,11 +16,11 @@ export async function GET(req: NextRequest) {
   let params = [bank, fastagClass];
 
   if (assignedTo && assignedTo !== "admin") {
-    sql += "AND assigned_to = ? AND status = 'assigned' ORDER BY tag_serial ASC";
+    sql += "AND assigned_to_agent_id = ? AND status = 'assigned' ORDER BY tag_serial ASC";
     params.push(Number(assignedTo));
   } else {
     // Admin warehouse
-    sql += "AND assigned_to IS NULL AND status = 'in_stock' ORDER BY tag_serial ASC";
+    sql += "AND assigned_to_agent_id IS NULL AND status = 'in_stock' ORDER BY tag_serial ASC";
   }
 
   try {

@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
     values.push(classFilter);
   }
   if (ownerFilter) {
-    conditions.push("f.assigned_to = ?");
+    conditions.push("f.assigned_to_agent_id = ?");
     values.push(ownerFilter);
   }
   if (statusFilter) {
@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
           ELSE 'Admin'
         END AS holder
       FROM fastags f
-      LEFT JOIN users u ON f.assigned_to = u.id
+      LEFT JOIN users u ON f.assigned_to_agent_id = u.id
       LEFT JOIN suppliers s ON f.supplier_id = s.id
       ${whereClause}
       ORDER BY f.created_at DESC

@@ -31,7 +31,7 @@ function AgentDashboard({ fastags, agents }: { fastags: any[]; agents: any[] }) 
   const agentStats = useMemo(() => {
     const map: Record<string, { agent: any; count: number }> = {};
     fastags.forEach(tag => {
-      if (tag.assigned_to && tag.agent_name) {
+      if ((tag.assigned_to_agent_id || tag.assigned_to) && tag.agent_name) {
         map[tag.agent_name] = map[tag.agent_name] || { agent: tag.agent_name, count: 0 };
         map[tag.agent_name].count++;
       }
@@ -94,6 +94,14 @@ function FastagDashboard({ fastags, agents }: { fastags: any[]; agents: any[] })
     return Object.entries(map).map(([type, count]) => ({ type, count }));
   }, [fastags]);
 
+  const [sellerRows, setSellerRows] = useState<{ user_id: number | null; name: string; sold_count: number }[]>([]);
+  useEffect(() => {
+    fetch('/api/fastags/sales/by-seller?limit=10')
+      .then(r => r.json())
+      .then(data => setSellerRows(Array.isArray(data) ? data : []))
+      .catch(() => setSellerRows([]));
+  }, []);
+
   return (
     <div className="p-4">
       {/* Stat cards */}
@@ -133,6 +141,31 @@ function FastagDashboard({ fastags, agents }: { fastags: any[]; agents: any[] })
               <Bar dataKey="count" fill="#0074d9" />
             </BarChart>
           </ResponsiveContainer>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h2 className="font-semibold text-lg mb-3">Top FASTag Sellers</h2>
+          {sellerRows.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No sales recorded.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="text-left p-2">Seller</th>
+                    <th className="text-left p-2">Sold</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sellerRows.map((r, i) => (
+                    <tr key={(r.user_id ?? 'null') + '-' + i} className={i % 2 ? 'bg-gray-50' : ''}>
+                      <td className="p-2">{r.name || `User #${r.user_id ?? ''}`}</td>
+                      <td className="p-2">{r.sold_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-8">

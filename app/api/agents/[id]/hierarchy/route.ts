@@ -25,10 +25,32 @@ function buildAgentTreeAndSums(agents: any[], parentId: number | string | null) 
 
 export async function GET(
   req: NextRequest,
-  context: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const agentId = context.params.id;
+  const { id: agentId } = await params;
   try {
+    // Ensure sales snapshot table exists for consistent counts
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS fastag_sales (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          tag_serial VARCHAR(255) NOT NULL,
+          ticket_id INT NULL,
+          vehicle_reg_no VARCHAR(64) NULL,
+          bank_name VARCHAR(255) NULL,
+          fastag_class VARCHAR(32) NULL,
+          supplier_id INT NULL,
+          sold_by_user_id INT NULL,
+          sold_by_agent_id INT NULL,
+          payment_to_collect DECIMAL(10,2) NULL,
+          payment_to_send DECIMAL(10,2) NULL,
+          net_value DECIMAL(10,2) NULL,
+          commission_amount DECIMAL(10,2) NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+      `);
+    } catch {}
+
     // Fetch agent and all descendants using a recursive CTE
     const [agentRows]: any[] = await pool.query(`
       WITH RECURSIVE agent_tree AS (
@@ -41,9 +63,12 @@ export async function GET(
         INNER JOIN agent_tree at ON u.parent_user_id = at.id
       )
       SELECT at.*,
-        (SELECT COUNT(*) FROM fastags f WHERE f.assigned_to = at.id) as total_fastags,
-        (SELECT COUNT(*) FROM fastags f WHERE f.assigned_to = at.id AND f.status = 'assigned') as assigned_fastags,
-        (SELECT COUNT(*) FROM fastags f WHERE f.assigned_to = at.id AND f.status = 'sold') as sold_fastags
+        (SELECT COUNT(*) FROM fastags f WHERE f.assigned_to_agent_id = at.id AND f.status = 'assigned') as assigned_fastags,
+        (
+          (SELECT COUNT(*) FROM fastag_sales s WHERE s.sold_by_user_id = at.id OR s.sold_by_agent_id = at.id)
+          +
+          (SELECT COUNT(*) FROM fastags f2 WHERE f2.status='sold' AND f2.sold_by_user_id = at.id)
+        ) as sold_fastags
       FROM agent_tree at
       ORDER BY at.parent_user_id, at.id
     `, [agentId]);
@@ -52,7 +77,12 @@ export async function GET(
 
     // Build the hierarchy
     const rootId = agentRows[0].id;
-    const tree = buildAgentTreeAndSums(agentRows, null);
+    // Recompute total_fastags as assigned + sold to reflect handled history
+    const computed = agentRows.map((r: any) => ({
+      ...r,
+      total_fastags: Number(r.assigned_fastags || 0) + Number(r.sold_fastags || 0),
+    }));
+    const tree = buildAgentTreeAndSums(computed, null);
     const root = tree.find(a => String(a.id) === String(rootId));
 
     return NextResponse.json({
