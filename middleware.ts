@@ -27,7 +27,7 @@ export function middleware(req: NextRequest) {
         try {
           const data = JSON.parse(session)
           const allowedPrefix = `/${data.userType}`
-          url.pathname = `${allowedPrefix}/dashboard`
+          url.pathname = `${allowedPrefix}/tickets`
           return NextResponse.redirect(url)
         } catch {}
       }
@@ -87,9 +87,15 @@ export function middleware(req: NextRequest) {
       const data = JSON.parse(session) // expects: { userType: 'admin' | 'agent' | ... }
       const allowedPrefix = `/${data.userType}`
       if (url.pathname.startsWith(allowedPrefix)) {
+        // If user hits the role root (e.g., /admin), send them to tickets by default
+        if (url.pathname === allowedPrefix || url.pathname === `${allowedPrefix}/`) {
+          const to = url.clone()
+          to.pathname = `${allowedPrefix}/tickets`
+          return NextResponse.redirect(to)
+        }
         return NextResponse.next()
       } else {
-        url.pathname = `${allowedPrefix}/dashboard`
+        url.pathname = `${allowedPrefix}/tickets`
         return NextResponse.redirect(url)
       }
     } catch {

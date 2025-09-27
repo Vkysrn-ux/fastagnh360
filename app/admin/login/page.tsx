@@ -28,7 +28,7 @@ export default function AdminLoginPage() {
     try {
       const result = await loginAdmin(email, password)
       if (result.success) {
-        router.push("/admin/dashboard")
+        router.push("/admin/tickets")
       } else {
         setError(result.message || "Login failed. Please check your credentials.")
       }
