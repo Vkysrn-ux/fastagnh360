@@ -9,6 +9,7 @@ export type DashboardPermission = {
 
 export type RoleDashboardPermissions = {
   'Super Admin': DashboardPermission;
+  'Admin': DashboardPermission;
   'Accountant/HR': DashboardPermission;
   'Manager': DashboardPermission;
   'TeamLead': DashboardPermission;
@@ -18,6 +19,15 @@ export type RoleDashboardPermissions = {
 export const DASHBOARD_PERMISSIONS: RoleDashboardPermissions = {
   // Super Admin - view all dashboards
   'Super Admin': {
+    viewAllDashboards: true,
+    viewDailySales: true,
+    viewDailyPendingAmount: true,
+    viewSalesAndAmount: true,
+    viewOwnInventory: true,
+    viewTotalSales: true
+  },
+  // Admin - similar to Super Admin but reserved for main admin features
+  'Admin': {
     viewAllDashboards: true,
     viewDailySales: true,
     viewDailyPendingAmount: true,

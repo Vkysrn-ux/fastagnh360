@@ -21,8 +21,8 @@ TRUNCATE TABLE suppliers;
 -- TRUNCATE TABLE users;
 
 -- Option B: keep admins, delete the rest (uncomment this if you prefer)
--- DELETE FROM users WHERE COALESCE(LOWER(role), '') <> 'admin';
--- ALTER TABLE users AUTO_INCREMENT = 1;
+DELETE FROM users WHERE COALESCE(LOWER(role), '') <> 'admin';
+ALTER TABLE users AUTO_INCREMENT = 1;
 
 SET FOREIGN_KEY_CHECKS=1;
 
