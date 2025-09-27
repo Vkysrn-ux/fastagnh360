@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -23,10 +24,26 @@ import {
 } from "@/components/ui/dialog";
 
 export default function UsersPage() {
+  const router = useRouter();
   const [users, setUsers] = useState<PortalUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
+  const [canManageUsers, setCanManageUsers] = useState(false);
+
+  useEffect(() => {
+    // Gate this page to Super Admin only
+    fetch('/api/auth/session', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => {
+        const sess = data?.session;
+        const display = String(sess?.displayRole || '').toLowerCase();
+        const ok = !!sess && sess.userType === 'admin' && display === 'super admin';
+        setCanManageUsers(ok);
+        if (!ok) router.replace('/admin/tickets');
+      })
+      .catch(() => router.replace('/admin/tickets'));
+  }, [router]);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -54,6 +71,7 @@ export default function UsersPage() {
             Manage NH360 portal credentials for ASM, manager, and employee roles.
           </p>
         </div>
+        {canManageUsers && (
         <div className="flex gap-2">
           <Button
             variant="outline"
@@ -73,8 +91,10 @@ export default function UsersPage() {
             Add User
           </Button>
         </div>
+        )}
       </div>
 
+      {canManageUsers && (
       <Dialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -89,6 +109,7 @@ export default function UsersPage() {
           }} />
         </DialogContent>
       </Dialog>
+      )}
 
       <Card>
         <CardHeader>

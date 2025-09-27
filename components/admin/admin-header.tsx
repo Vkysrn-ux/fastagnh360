@@ -13,6 +13,7 @@ export function AdminHeader() {
   const router = useRouter()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [canManageUsers, setCanManageUsers] = useState(false)
 
   useEffect(() => {
     const checkSession = async () => {
@@ -22,6 +23,9 @@ export function AdminHeader() {
         const session = data?.session;
         const isAdmin = !!session && session.userType === 'admin';
         setIsAuthenticated(isAdmin);
+        const display = String(session?.displayRole || '').toLowerCase();
+        // Only Super Admin can manage users
+        setCanManageUsers(isAdmin && display === 'super admin');
         if (!isAdmin) router.push('/admin/login');
       } catch {
         router.push('/admin/login');
@@ -52,7 +56,8 @@ export function AdminHeader() {
     { href: "/admin/fastags", label: "FASTags", icon: <CreditCard className="mr-2 h-4 w-4" /> },
     { href: "/admin/agents", label: "Agents", icon: <UserCircle className="mr-2 h-4 w-4" /> },
     { href: "/admin/suppliers", label: "Suppliers", icon: <Users className="mr-2 h-4 w-4" /> },
-    { href: "/admin/users", label: "Users", icon: <UserCog className="mr-2 h-4 w-4" /> },
+    // Users menu only for Admin-level (Admin or Super Admin)
+    ...(canManageUsers ? [{ href: "/admin/users", label: "Users", icon: <UserCog className="mr-2 h-4 w-4" /> }] as const : []),
     // { href: "/admin/employees", label: "Employees", icon: <Users className="mr-2 h-4 w-4" /> },
     { href: "/admin/reports", label: "Reports", icon: <BarChart3 className="mr-2 h-4 w-4" /> },
     // { href: "/admin/commissions", label: "Commissions", icon: <Package className="mr-2 h-4 w-4" /> },

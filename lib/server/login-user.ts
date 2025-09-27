@@ -63,7 +63,7 @@ export async function loginUserServer(email: string, password: string) {
     
     const roleMapping: RoleMapType = {
       // Admins
-      'admin':        { type: 'admin',    displayRole: 'Super Admin' },
+      'admin':        { type: 'admin',    displayRole: 'Admin' },
       'super admin':  { type: 'admin',    displayRole: 'Super Admin' },
 
       // Employees (Accountant/HR)
