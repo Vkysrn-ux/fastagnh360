@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import CreateSubTicketFullModal from "@/components/tickets/CreateSubTicketFullModal";
 import CreateTicketFullModal from "@/components/tickets/CreateTicketFullModal";
 import UsersAutocomplete, { type UserOption } from "@/components/UsersAutocomplete";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Ticket {
   id: string;
@@ -63,6 +64,12 @@ export default function TicketListPage() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [childrenMap, setChildrenMap] = useState<Record<string, Ticket[]>>({});
   const [loadingChildFor, setLoadingChildFor] = useState<string | null>(null);
+  // Filters
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [assignedFilter, setAssignedFilter] = useState<UserOption | null>(null);
+  const [fromDate, setFromDate] = useState<string>("");
+  const [toDate, setToDate] = useState<string>("");
 
   const fetchTickets = async () => {
     setLoading(true);
@@ -103,6 +110,41 @@ export default function TicketListPage() {
     fetchTickets();
   }, []);
 
+  const filteredTickets = React.useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const from = fromDate ? new Date(fromDate) : null;
+    const to = toDate ? new Date(toDate) : null;
+    return tickets.filter((t) => {
+      // search match
+      const inSearch =
+        q === "" ||
+        String(t.ticket_no || "").toLowerCase().includes(q) ||
+        String(t.customer_name || "").toLowerCase().includes(q) ||
+        String(t.phone || "").toLowerCase().includes(q) ||
+        String(t.vehicle_reg_no || t.vehicle_number || "").toLowerCase().includes(q) ||
+        String(t.subject || "").toLowerCase().includes(q) ||
+        // allow searching by FASTag barcode if present on ticket
+        String((t as any).fastag_serial || "").toLowerCase().includes(q);
+
+      // status match
+      const st = String(t.status || "").toLowerCase();
+      const statusOk = filterStatus === "all" || st === filterStatus.toLowerCase();
+
+      // assigned match (we only have id in dataset when navigating to ticket detail; keep basic for now)
+      const assignedOk = !assignedFilter || String((t as any).assigned_to || "") === String(assignedFilter.id);
+
+      // date range (created_at is ISO or string)
+      let dateOk = true;
+      if (from || to) {
+        const created = t.created_at ? new Date(t.created_at) : null;
+        if (!created) dateOk = false;
+        if (from && created && created < from) dateOk = false;
+        if (to && created && created > to) dateOk = false;
+      }
+      return inSearch && statusOk && assignedOk && dateOk;
+    });
+  }, [tickets, searchQuery, filterStatus, assignedFilter, fromDate, toDate]);
+
   if (loading) {
     return (
       <div className="p-8">
@@ -123,6 +165,46 @@ export default function TicketListPage() {
           asButtonClassName="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           label="Create New Ticket"
         />
+      </div>
+
+      {/* Filters */}
+      <div className="bg-white border rounded-lg p-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Search</label>
+            <Input placeholder="Ticket no, customer, phone, vehicle, subject" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Status</label>
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <SelectTrigger>
+                <SelectValue placeholder="All" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="open">Open</SelectItem>
+                <SelectItem value="processing">Processing</SelectItem>
+                <SelectItem value="kyc_pending">KYC Pending</SelectItem>
+                <SelectItem value="done">Done</SelectItem>
+                <SelectItem value="waiting">Waiting</SelectItem>
+                <SelectItem value="closed">Closed</SelectItem>
+                <SelectItem value="completed">Completed</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Assigned To</label>
+            <UsersAutocomplete value={assignedFilter} onSelect={setAssignedFilter} placeholder="Type user name" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">From</label>
+            <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">To</label>
+            <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </div>
+        </div>
       </div>
 
       <div className="bg-white shadow overflow-hidden sm:rounded-lg border">
@@ -175,7 +257,7 @@ export default function TicketListPage() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {tickets.map((ticket) => (
+              {filteredTickets.map((ticket) => (
                 <React.Fragment key={String(ticket.id)}>
                 <tr className="hover:bg-gray-50 cursor-pointer" onClick={() => toggleExpand(ticket)}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">

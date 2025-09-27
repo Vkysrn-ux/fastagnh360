@@ -18,6 +18,8 @@ function normalizeFastagRow(row: any) {
       row.assigned_to !== undefined && row.assigned_to !== null ? Number(row.assigned_to) : null,
     assigned_to_name: row.assigned_to_name ? String(row.assigned_to_name) : "",
     holder: row.holder ? String(row.holder) : "",
+    supplier_id: row.supplier_id !== undefined && row.supplier_id !== null ? Number(row.supplier_id) : null,
+    supplier_name: row.supplier_name ? String(row.supplier_name) : "",
   };
 }
 
@@ -26,6 +28,11 @@ export async function GET(req: NextRequest) {
   const queryTerm = (searchParams.get("query") || "").trim();
   const bankFilter = (searchParams.get("bank") || "").trim();
   const classFilter = (searchParams.get("class") || "").trim();
+  const ownerFilter = (searchParams.get("owner") || searchParams.get("assigned_to") || "").trim();
+  const statusFilter = (searchParams.get("status") || "").trim();
+  const supplierFilter = (searchParams.get("supplier") || searchParams.get("supplier_id") || "").trim();
+  const bankLike = (searchParams.get("bank_like") || "").trim();
+  const classLike = (searchParams.get("class_like") || "").trim();
 
   const conditions: string[] = [];
   const values: string[] = [];
@@ -42,6 +49,14 @@ export async function GET(req: NextRequest) {
     conditions.push("f.fastag_class = ?");
     values.push(classFilter);
   }
+  if (ownerFilter) {
+    conditions.push("f.assigned_to = ?");
+    values.push(ownerFilter);
+  }
+  if (statusFilter) {
+    conditions.push("f.status = ?");
+    values.push(statusFilter);
+  }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const limitClause = 'LIMIT 100';
@@ -54,9 +69,11 @@ export async function GET(req: NextRequest) {
         f.bank_name,
         f.batch_number,
         f.status,
+        f.supplier_id,
         f.assigned_to_agent_id,
         f.assigned_to,
         COALESCE(u.name, '') AS assigned_to_name,
+        COALESCE(s.name, '') AS supplier_name,
         CASE
           WHEN f.status = 'sold' THEN 'User'
           WHEN f.assigned_to_agent_id IS NOT NULL THEN 'Agent'
@@ -64,6 +81,7 @@ export async function GET(req: NextRequest) {
         END AS holder
       FROM fastags f
       LEFT JOIN users u ON f.assigned_to = u.id
+      LEFT JOIN suppliers s ON f.supplier_id = s.id
       ${whereClause}
       ORDER BY f.created_at DESC
       ${limitClause}
@@ -84,6 +102,7 @@ export async function GET(req: NextRequest) {
           f.bank_name,
           f.batch_number,
           f.status,
+          f.supplier_id,
           f.assigned_to_agent_id,
           f.assigned_to
         FROM fastags f

@@ -29,14 +29,15 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const ERP_ONLY = process.env.ERP_ONLY === 'true'
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} ${poppins.variable} font-sans`}>
         <ThemeProvider attribute="class" defaultTheme="royal" enableSystem disableTransitionOnChange>
           <div className="flex min-h-screen flex-col">
-            <Navbar />
+            {!ERP_ONLY && <Navbar />}
             <main className="flex-1">{children}</main>
-            <Footer />
+            {!ERP_ONLY && <Footer />}
           </div>
         </ThemeProvider>
       </body>

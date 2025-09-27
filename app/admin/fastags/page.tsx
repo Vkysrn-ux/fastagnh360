@@ -11,6 +11,7 @@ import AddFastagItemForm from "@/components/admin/AddFastagItemForm";
 import BulkFastagUploadForm from "@/components/BulkFastagUploadForm";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import BulkTransferModal from "@/components/admin/BulkTransferModal";
+import BulkMarkSoldModal from "@/components/admin/BulkMarkSoldModal";
 import { PieChart, Pie, Cell, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
 
 const COLORS = ["#2ecc40", "#0074d9", "#ff4136", "#ffb347", "#a569bd", "#5dade2"];
@@ -244,6 +245,7 @@ export default function AdminFastagsPage() {
               <Download className="mr-2 h-4 w-4" />
               Bulk Transfer
             </Button>
+            <BulkMarkSoldModal onSuccess={() => window.location.reload()} />
             {/* Dashboard/Table toggle */}
             <Button variant={view === "dashboard" ? "default" : "outline"} onClick={() => setView("dashboard")}>
               Dashboard View
