@@ -201,14 +201,29 @@ export default function AdminFastagsPage() {
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [agentNameFilter, setAgentNameFilter] = useState("all");
+  // Date filters
+  const [createdFrom, setCreatedFrom] = useState("");
+  const [createdTo, setCreatedTo] = useState("");
+  const [assignedFrom, setAssignedFrom] = useState("");
+  const [assignedTo, setAssignedTo] = useState("");
+  const [soldFrom, setSoldFrom] = useState("");
+  const [soldTo, setSoldTo] = useState("");
 
   useEffect(() => {
     const fetchFastags = async () => {
-      const res = await fetch("/api/fastags/all");
+      const params: string[] = [];
+      if (createdFrom) params.push(`created_from=${encodeURIComponent(createdFrom)}`);
+      if (createdTo) params.push(`created_to=${encodeURIComponent(createdTo)}`);
+      if (assignedFrom) params.push(`assigned_from=${encodeURIComponent(assignedFrom)}`);
+      if (assignedTo) params.push(`assigned_to=${encodeURIComponent(assignedTo)}`);
+      if (soldFrom) params.push(`sold_from=${encodeURIComponent(soldFrom)}`);
+      if (soldTo) params.push(`sold_to=${encodeURIComponent(soldTo)}`);
+      const qs = params.length ? `?${params.join("&")}` : "";
+      const res = await fetch(`/api/fastags${qs}`);
       const data = await res.json();
-      let fastagArr = [];
+      let fastagArr = [] as any[];
       if (Array.isArray(data)) fastagArr = data;
-      else if (Array.isArray(data.fastags)) fastagArr = data.fastags;
+      else if (Array.isArray((data as any).fastags)) fastagArr = (data as any).fastags;
       else fastagArr = [];
       setFastags(fastagArr);
     };
@@ -216,7 +231,7 @@ export default function AdminFastagsPage() {
     fetch("/api/agents")
       .then(res => res.json())
       .then(data => setAgents(Array.isArray(data) ? data : []));
-  }, []);
+  }, [createdFrom, createdTo, assignedFrom, assignedTo, soldFrom, soldTo]);
 
   // Filter logic for table
   const filtered = useMemo(() => {
@@ -390,8 +405,54 @@ export default function AdminFastagsPage() {
                   </Select>
                 </div>
               </div>
+              {/* Date filters row */}
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mt-4">
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Added From</label>
+                  <Input type="date" value={createdFrom} onChange={(e)=> setCreatedFrom(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Added To</label>
+                  <Input type="date" value={createdTo} onChange={(e)=> setCreatedTo(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Assigned From</label>
+                  <Input type="date" value={assignedFrom} onChange={(e)=> setAssignedFrom(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Assigned To</label>
+                  <Input type="date" value={assignedTo} onChange={(e)=> setAssignedTo(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Sold From</label>
+                  <Input type="date" value={soldFrom} onChange={(e)=> setSoldFrom(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1">Sold To</label>
+                  <Input type="date" value={soldTo} onChange={(e)=> setSoldTo(e.target.value)} />
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
+              {/* Quick summary for current filters */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div className="rounded border p-3 text-center">
+                  <div className="text-xs text-muted-foreground">Filtered Total</div>
+                  <div className="text-xl font-semibold">{filtered.length}</div>
+                </div>
+                <div className="rounded border p-3 text-center">
+                  <div className="text-xs text-muted-foreground">In Stock</div>
+                  <div className="text-xl font-semibold">{filtered.filter(f => f.status === 'in_stock').length}</div>
+                </div>
+                <div className="rounded border p-3 text-center">
+                  <div className="text-xs text-muted-foreground">Assigned</div>
+                  <div className="text-xl font-semibold">{filtered.filter(f => f.status === 'assigned').length}</div>
+                </div>
+                <div className="rounded border p-3 text-center">
+                  <div className="text-xs text-muted-foreground">Sold</div>
+                  <div className="text-xl font-semibold text-green-700">{filtered.filter(f => f.status === 'sold').length}</div>
+                </div>
+              </div>
               {filtered.length === 0 ? (
                 <div className="text-muted-foreground text-center py-8">No FASTags found.</div>
               ) : (
@@ -414,7 +475,7 @@ export default function AdminFastagsPage() {
                           <TableCell>{tag.bank_name}</TableCell>
                           <TableCell>{tag.fastag_class}</TableCell>
                           <TableCell>{tag.batch_number}</TableCell>
-                          <TableCell>{tag.assigned_to ? `Agent: ${tag.agent_name}` : "Unassigned"}</TableCell>
+                          <TableCell>{tag.assigned_to ? `Agent: ${tag.agent_name || tag.assigned_to_name || ''}` : "Unassigned"}</TableCell>
                           <TableCell>
                             <Badge
                               className={

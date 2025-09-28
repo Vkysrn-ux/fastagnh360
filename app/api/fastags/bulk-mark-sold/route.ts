@@ -51,13 +51,21 @@ export async function POST(req: NextRequest) {
         serials
       );
 
-      // Build UPDATE with optional sold_by_user_id if column exists
+      // Build UPDATE with optional sold_by_user_id and sold_at/sold_date if columns exist
       let updateSql = `UPDATE fastags SET status = 'sold', assigned_to = NULL, assigned_to_agent_id = NULL`;
       const canSetSoldBy = await hasTableColumn('fastags', 'sold_by_user_id', conn);
+      const canSetSoldAt = await hasTableColumn('fastags', 'sold_at', conn);
+      const canSetSoldDate = await hasTableColumn('fastags', 'sold_date', conn);
       const updateVals: any[] = [];
       if (canSetSoldBy) {
         updateSql += `, sold_by_user_id = ?`;
         updateVals.push(soldByUserId);
+      }
+      if (canSetSoldAt) {
+        updateSql += `, sold_at = NOW()`;
+      }
+      if (canSetSoldDate) {
+        updateSql += `, sold_date = CURDATE()`;
       }
       updateSql += ` WHERE tag_serial IN (${placeholders})`;
       const [result]: any = await conn.query(updateSql, [...updateVals, ...serials]);

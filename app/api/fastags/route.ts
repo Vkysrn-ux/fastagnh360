@@ -33,9 +33,16 @@ export async function GET(req: NextRequest) {
   const supplierFilter = (searchParams.get("supplier") || searchParams.get("supplier_id") || "").trim();
   const bankLike = (searchParams.get("bank_like") || "").trim();
   const classLike = (searchParams.get("class_like") || "").trim();
+  // Date range filters
+  const createdFrom = (searchParams.get("created_from") || "").trim(); // YYYY-MM-DD
+  const createdTo = (searchParams.get("created_to") || "").trim();
+  const assignedFrom = (searchParams.get("assigned_from") || "").trim();
+  const assignedTo = (searchParams.get("assigned_to") || "").trim();
+  const soldFrom = (searchParams.get("sold_from") || "").trim();
+  const soldTo = (searchParams.get("sold_to") || "").trim();
 
   const conditions: string[] = [];
-  const values: string[] = [];
+  const values: any[] = [];
 
   if (queryTerm) {
     conditions.push("f.tag_serial LIKE ?");
@@ -57,6 +64,28 @@ export async function GET(req: NextRequest) {
     conditions.push("f.status = ?");
     values.push(statusFilter);
   }
+  // Created/added date range
+  if (createdFrom) { conditions.push("f.created_at >= ?"); values.push(`${createdFrom} 00:00:00`); }
+  if (createdTo) { conditions.push("f.created_at <= ?"); values.push(`${createdTo} 23:59:59`); }
+  // Assigned date range
+  if (assignedFrom) {
+    // prefer assigned_at if present, else assigned_date
+    conditions.push("( (f.assigned_at IS NOT NULL AND f.assigned_at >= ?) OR (f.assigned_at IS NULL AND f.assigned_date IS NOT NULL AND f.assigned_date >= ?) )");
+    values.push(`${assignedFrom} 00:00:00`, assignedFrom);
+  }
+  if (assignedTo) {
+    conditions.push("( (f.assigned_at IS NOT NULL AND f.assigned_at <= ?) OR (f.assigned_at IS NULL AND f.assigned_date IS NOT NULL AND f.assigned_date <= ?) )");
+    values.push(`${assignedTo} 23:59:59`, assignedTo);
+  }
+  // Sold date range via fastag_sales snapshot; use EXISTS to avoid joins duplication
+  if (soldFrom) {
+    conditions.push("EXISTS (SELECT 1 FROM fastag_sales s WHERE s.tag_serial = f.tag_serial AND s.created_at >= ?)");
+    values.push(`${soldFrom} 00:00:00`);
+  }
+  if (soldTo) {
+    conditions.push("EXISTS (SELECT 1 FROM fastag_sales s2 WHERE s2.tag_serial = f.tag_serial AND s2.created_at <= ?)");
+    values.push(`${soldTo} 23:59:59`);
+  }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const limitClause = 'LIMIT 100';
@@ -72,6 +101,10 @@ export async function GET(req: NextRequest) {
         f.supplier_id,
         f.assigned_to_agent_id,
         f.assigned_to,
+        f.created_at,
+        f.assigned_at,
+        f.assigned_date,
+        (SELECT MIN(fs.created_at) FROM fastag_sales fs WHERE fs.tag_serial = f.tag_serial) AS sold_at,
         COALESCE(u.name, '') AS assigned_to_name,
         COALESCE(s.name, '') AS supplier_name,
         CASE
