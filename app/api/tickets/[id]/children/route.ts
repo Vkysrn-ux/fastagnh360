@@ -288,6 +288,7 @@ export async function POST(
     const insertQuery = `INSERT INTO ${TICKETS_TABLE} (${columns.join(", ")}, created_at, updated_at) VALUES (${placeholders.join(", ")}, NOW(), NOW())`;
 
     const [r]: any = await conn.query(insertQuery, insertValues);
+    const newId = Number(r.insertId);
 
     await markFastagAsUsed(conn, fastag_serial, vehicle_reg_no);
     await recordFastagSale({
@@ -301,8 +302,6 @@ export async function POST(
       net_value: b_net,
       commission_amount: commissionValue,
     });
-
-    const newId = Number(r.insertId);
 
     await conn.commit();
     try {

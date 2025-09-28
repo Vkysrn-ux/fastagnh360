@@ -200,7 +200,7 @@ export default function AdminFastagsPage() {
   const [filterBank, setFilterBank] = useState("all");
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
-  const [agentNameFilter, setAgentNameFilter] = useState("all");
+  const [agentIdFilter, setAgentIdFilter] = useState("all");
   // Date filters
   const [createdFrom, setCreatedFrom] = useState("");
   const [createdTo, setCreatedTo] = useState("");
@@ -218,6 +218,7 @@ export default function AdminFastagsPage() {
       if (assignedTo) params.push(`assigned_to=${encodeURIComponent(assignedTo)}`);
       if (soldFrom) params.push(`sold_from=${encodeURIComponent(soldFrom)}`);
       if (soldTo) params.push(`sold_to=${encodeURIComponent(soldTo)}`);
+      // No limit by default; API now returns all unless limit is provided
       const qs = params.length ? `?${params.join("&")}` : "";
       const res = await fetch(`/api/fastags${qs}`);
       const data = await res.json();
@@ -241,8 +242,7 @@ export default function AdminFastagsPage() {
       const bank = String(fastag.bank_name || "").toLowerCase();
       const fclass = String(fastag.fastag_class || "").toLowerCase();
       const batch = String(fastag.batch_number || "").toLowerCase();
-      const agentName = String(fastag.agent_name || "").toLowerCase();
-      const assignedStr = String(fastag.assigned_to ?? "").toLowerCase();
+      const agentName = String(fastag.agent_name || fastag.assigned_to_name || "").toLowerCase();
 
       const matchesSearch =
         q === "" ||
@@ -260,17 +260,108 @@ export default function AdminFastagsPage() {
         (filterStatus === "assigned" && !!fastag.assigned_to) ||
         (filterStatus === "unassigned" && !fastag.assigned_to);
 
-      const matchesAgent =
-        agentNameFilter === "all" ||
-        (agentName !== "" && agentName === agentNameFilter.trim().toLowerCase());
+      const matchesAgent = (
+        agentIdFilter === "all" ||
+        String(fastag.assigned_to_agent_id ?? "") === String(agentIdFilter) ||
+        String(fastag.assigned_to ?? "") === String(agentIdFilter) ||
+        (String(fastag.status || '').toLowerCase() === 'sold' && String((fastag as any).sold_by_user_id ?? '') === String(agentIdFilter))
+      );
 
       return matchesSearch && matchesBank && matchesType && matchesStatus && matchesAgent;
     });
-  }, [fastags, searchQuery, filterBank, filterType, filterStatus, agentNameFilter]);
+  }, [fastags, searchQuery, filterBank, filterType, filterStatus, agentIdFilter]);
+
+  // Aggregate by Bank + Class + Batch with counts
+  const aggregated = useMemo(() => {
+    function toTs(v: any): number | null {
+      if (!v) return null;
+      const d = new Date(v);
+      const ts = d.getTime();
+      return isNaN(ts) ? null : ts;
+    }
+    const map: Record<string, {
+      bank: string;
+      type: string;
+      batch: string;
+      total: number;
+      in_stock: number;
+      assigned: number;
+      sold: number;
+      assignedMin: number | null;
+      assignedMax: number | null;
+      soldMin: number | null;
+      soldMax: number | null;
+    }> = {};
+    for (const t of filtered) {
+      const bank = String(t.bank_name || '');
+      const type = String(t.fastag_class || '');
+      const batch = String(t.batch_number || '');
+      const key = `${bank}|${type}|${batch}`;
+      if (!map[key]) map[key] = { bank, type, batch, total: 0, in_stock: 0, assigned: 0, sold: 0, assignedMin: null, assignedMax: null, soldMin: null, soldMax: null };
+      map[key].total += 1;
+      const status = String(t.status || '').toLowerCase();
+      if (status === 'assigned') map[key].assigned += 1;
+      else if (status === 'sold') map[key].sold += 1;
+      else map[key].in_stock += 1;
+      // collect date ranges
+      const assignedAtTs = toTs(t.assigned_at) ?? (t.assigned_date ? toTs(`${t.assigned_date}T00:00:00`) : null);
+      if (assignedAtTs) {
+        map[key].assignedMin = map[key].assignedMin === null ? assignedAtTs : Math.min(map[key].assignedMin, assignedAtTs);
+        map[key].assignedMax = map[key].assignedMax === null ? assignedAtTs : Math.max(map[key].assignedMax, assignedAtTs);
+      }
+      const soldAtTs = toTs(t.sold_at);
+      if (soldAtTs) {
+        map[key].soldMin = map[key].soldMin === null ? soldAtTs : Math.min(map[key].soldMin, soldAtTs);
+        map[key].soldMax = map[key].soldMax === null ? soldAtTs : Math.max(map[key].soldMax, soldAtTs);
+      }
+    }
+    return Object.values(map).sort((a, b) => a.bank.localeCompare(b.bank) || a.type.localeCompare(b.type) || a.batch.localeCompare(b.batch));
+  }, [filtered]);
 
   const uniqueBanks = useMemo(() => Array.from(new Set(fastags.map((f) => f.bank_name))).filter(Boolean), [fastags]);
   const uniqueTypes = useMemo(() => Array.from(new Set(fastags.map((f) => f.fastag_class))).filter(Boolean), [fastags]);
-  const uniqueAgentNames = useMemo(() => Array.from(new Set(agents.map(a => a.name))).filter(Boolean), [agents]);
+  const agentOptions = useMemo(() => agents.map(a => ({ id: String(a.id), name: a.name })), [agents]);
+
+  // Backfill UI state per aggregated group
+  const [backfillDates, setBackfillDates] = useState<Record<string, string>>({});
+  const [backfillBusy, setBackfillBusy] = useState<Record<string, boolean>>({});
+
+  async function backfillSoldForGroup(key: string, g: { bank: string; type: string; batch: string }) {
+    if (agentIdFilter === 'all') { alert('Select an Agent first to attribute sales.'); return; }
+    const sold_date = backfillDates[key]?.trim() || '';
+    setBackfillBusy(prev => ({ ...prev, [key]: true }));
+    try {
+      const res = await fetch('/api/fastags/sales/backfill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bank: g.bank, class: g.type, batch: g.batch, seller: Number(agentIdFilter), sold_date })
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success) throw new Error(data?.error || 'Backfill failed');
+      // Refresh data to reflect updated sold counts/dates
+      window.location.reload();
+    } catch (e: any) {
+      alert(e.message || 'Backfill failed');
+    } finally {
+      setBackfillBusy(prev => ({ ...prev, [key]: false }));
+    }
+  }
+
+  function formatYmd(ts: number | null): string {
+    if (!ts) return '';
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  function formatRange(minTs: number | null, maxTs: number | null): string {
+    const a = formatYmd(minTs);
+    const b = formatYmd(maxTs);
+    if (a && b && a !== b) return `${a} → ${b}`;
+    return a || b || '-';
+  }
 
   return (
     <div className="container py-10">
@@ -367,14 +458,14 @@ export default function AdminFastagsPage() {
                   </Select>
                 </div>
                 <div>
-                  <Select value={agentNameFilter} onValueChange={setAgentNameFilter}>
+                  <Select value={agentIdFilter} onValueChange={setAgentIdFilter}>
                     <SelectTrigger>
                       <SelectValue placeholder="Filter by agent" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Agents</SelectItem>
-                      {uniqueAgentNames.map((name) => (
-                        <SelectItem key={name} value={name}>{name}</SelectItem>
+                      {agentOptions.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -453,44 +544,51 @@ export default function AdminFastagsPage() {
                   <div className="text-xl font-semibold text-green-700">{filtered.filter(f => f.status === 'sold').length}</div>
                 </div>
               </div>
-              {filtered.length === 0 ? (
-                <div className="text-muted-foreground text-center py-8">No FASTags found.</div>
+              {aggregated.length === 0 ? (
+                <div className="text-muted-foreground text-center py-8">No FASTag groups found.</div>
               ) : (
                 <div className="overflow-x-auto rounded-md border">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Serial</TableHead>
                         <TableHead>Bank</TableHead>
                         <TableHead>Type</TableHead>
                         <TableHead>Batch Number</TableHead>
-                        <TableHead>Assigned To</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
+                        <TableHead className="text-right">In Stock</TableHead>
+                        <TableHead className="text-right">Assigned</TableHead>
+                        <TableHead className="text-right">Sold</TableHead>
+                        <TableHead>Assigned Dates</TableHead>
+                        <TableHead>Sold Dates</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filtered.map((tag) => (
-                        <TableRow key={tag.id}>
-                          <TableCell>{tag.tag_serial}</TableCell>
-                          <TableCell>{tag.bank_name}</TableCell>
-                          <TableCell>{tag.fastag_class}</TableCell>
-                          <TableCell>{tag.batch_number}</TableCell>
-                          <TableCell>{tag.assigned_to ? `Agent: ${tag.agent_name || tag.assigned_to_name || ''}` : "Unassigned"}</TableCell>
+                      {aggregated.map((g, idx) => {
+                        const key = `${g.bank}|${g.type}|${g.batch}`;
+                        const busy = !!backfillBusy[key];
+                        return (
+                        <TableRow key={key}>
+                          <TableCell>{g.bank}</TableCell>
+                          <TableCell>{g.type}</TableCell>
+                          <TableCell>{g.batch}</TableCell>
+                          <TableCell className="text-right font-semibold">{g.total}</TableCell>
+                          <TableCell className="text-right">{g.in_stock}</TableCell>
+                          <TableCell className="text-right">{g.assigned}</TableCell>
+                          <TableCell className="text-right text-green-700">{g.sold}</TableCell>
+                          <TableCell>{formatRange(g.assignedMin, g.assignedMax)}</TableCell>
+                          <TableCell>{formatRange(g.soldMin, g.soldMax)}</TableCell>
                           <TableCell>
-                            <Badge
-                              className={
-                                tag.status === "assigned"
-                                  ? "bg-yellow-50 text-yellow-700"
-                                  : tag.status === "sold"
-                                  ? "bg-red-50 text-red-700"
-                                  : "bg-green-50 text-green-700"
-                              }
-                            >
-                              {tag.status}
-                            </Badge>
+                            <div className="flex items-center gap-2">
+                              <Input type="date" value={backfillDates[key] || ''} onChange={(e)=> setBackfillDates(prev => ({ ...prev, [key]: e.target.value }))} className="w-40" />
+                              <Button size="sm" disabled={agentIdFilter==='all' || busy} onClick={()=> backfillSoldForGroup(key, g)}>
+                                {busy ? 'Backfilling…' : 'Backfill Sold'}
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
