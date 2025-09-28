@@ -44,66 +44,84 @@ export async function POST(req: NextRequest) {
         `);
       } catch {}
       const placeholders = serials.map(() => '?').join(',');
+      // Determine which assignment columns exist to build a safe SELECT
+      const hasAssignedTo = await hasTableColumn('fastags', 'assigned_to', conn).catch(() => false);
+      const hasAssignedToAgent = await hasTableColumn('fastags', 'assigned_to_agent_id', conn).catch(() => false);
+      const selectAssignedTo = hasAssignedTo ? 'assigned_to' : 'NULL AS assigned_to';
+      const selectAssignedToAgent = hasAssignedToAgent ? 'assigned_to_agent_id' : 'NULL AS assigned_to_agent_id';
       // Fetch snapshot BEFORE clearing assignment
       const [snapRows]: any = await conn.query(
-        `SELECT tag_serial, bank_name, fastag_class, supplier_id, assigned_to_agent_id, assigned_to
+        `SELECT tag_serial, bank_name, fastag_class, supplier_id, ${selectAssignedToAgent}, ${selectAssignedTo}
          FROM fastags WHERE tag_serial IN (${placeholders})`,
         serials
       );
 
-      // Build UPDATE with optional sold_by_user_id and sold_at/sold_date if columns exist
-      let updateSql = `UPDATE fastags SET status = 'sold', assigned_to = NULL, assigned_to_agent_id = NULL`;
+      // Build UPDATE dynamically based on existing columns
+      const canAssignedTo = await hasTableColumn('fastags', 'assigned_to', conn);
+      const canAssignedToAgent = await hasTableColumn('fastags', 'assigned_to_agent_id', conn);
       const canSetSoldBy = await hasTableColumn('fastags', 'sold_by_user_id', conn);
       const canSetSoldAt = await hasTableColumn('fastags', 'sold_at', conn);
       const canSetSoldDate = await hasTableColumn('fastags', 'sold_date', conn);
+      const sets: string[] = ["status = 'sold'"];
       const updateVals: any[] = [];
-      if (canSetSoldBy) {
-        updateSql += `, sold_by_user_id = ?`;
-        updateVals.push(soldByUserId);
-      }
-      if (canSetSoldAt) {
-        updateSql += `, sold_at = NOW()`;
-      }
-      if (canSetSoldDate) {
-        updateSql += `, sold_date = CURDATE()`;
-      }
-      updateSql += ` WHERE tag_serial IN (${placeholders})`;
+      if (canAssignedTo) sets.push('assigned_to = NULL');
+      if (canAssignedToAgent) sets.push('assigned_to_agent_id = NULL');
+      if (canSetSoldBy) { sets.push('sold_by_user_id = ?'); updateVals.push(soldByUserId); }
+      if (canSetSoldAt) sets.push('sold_at = NOW()');
+      if (canSetSoldDate) sets.push('sold_date = CURDATE()');
+      const updateSql = `UPDATE fastags SET ${sets.join(', ')} WHERE tag_serial IN (${placeholders})`;
       const [result]: any = await conn.query(updateSql, [...updateVals, ...serials]);
 
-      // Best-effort: insert into fastag_sales
-      try {
-        for (const r of snapRows || []) {
-          const sellerId = soldByUserId ?? (r.assigned_to !== undefined && r.assigned_to !== null ? Number(r.assigned_to) : null);
+      // Best-effort: insert into fastag_sales (retry with ticket_id=0 if NULL not allowed)
+      for (const r of snapRows || []) {
+        const sellerId = soldByUserId ?? (r.assigned_to !== undefined && r.assigned_to !== null ? Number(r.assigned_to) : null);
+        const baseParams = [
+          r.tag_serial,
+          null, // ticket_id (may fail if NOT NULL)
+          null, // vehicle_reg_no
+          r.bank_name ?? null,
+          r.fastag_class ?? null,
+          r.supplier_id ?? null,
+          sellerId,
+          r.assigned_to_agent_id ?? null,
+          null,
+          null,
+          null,
+          null,
+        ] as any[];
+        try {
           await conn.query(
             `INSERT INTO fastag_sales (
                tag_serial, ticket_id, vehicle_reg_no, bank_name, fastag_class, supplier_id,
                sold_by_user_id, sold_by_agent_id, payment_to_collect, payment_to_send, net_value,
                commission_amount, created_at
              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
-            [
-              r.tag_serial,
-              null,
-              null,
-              r.bank_name ?? null,
-              r.fastag_class ?? null,
-              r.supplier_id ?? null,
-              sellerId,
-              r.assigned_to_agent_id ?? null,
-              null,
-              null,
-              null,
-              null,
-            ]
+            baseParams
           );
+        } catch (e: any) {
+          if (String(e?.code) === 'ER_NO_DEFAULT_FOR_FIELD') {
+            const retryParams = [...baseParams];
+            retryParams[1] = 0; // ticket_id = 0
+            try {
+              await conn.query(
+                `INSERT INTO fastag_sales (
+                   tag_serial, ticket_id, vehicle_reg_no, bank_name, fastag_class, supplier_id,
+                   sold_by_user_id, sold_by_agent_id, payment_to_collect, payment_to_send, net_value,
+                   commission_amount, created_at
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+                retryParams
+              );
+            } catch {}
+          }
         }
-      } catch {}
+      }
       await conn.commit();
-      return NextResponse.json({ ok: true, updated: result?.affectedRows || 0 });
+      return NextResponse.json({ success: true, updated: result?.affectedRows || 0 });
     } catch (e: any) {
-      try { await pool.query('ROLLBACK'); } catch {}
+      try { await conn.rollback(); } catch {}
       return NextResponse.json({ error: e.message }, { status: 500 });
     } finally {
-      pool.releaseConnection(conn);
+      try { (conn as any).release ? conn.release() : (pool as any).releaseConnection?.(conn); } catch {}
     }
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

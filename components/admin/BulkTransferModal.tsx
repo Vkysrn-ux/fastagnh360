@@ -126,7 +126,7 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
   const [transferToUser, setTransferToUser] = useState("");
 
   const [rows, setRows] = useState([
-    { bank: "", fastagClass: "", prefix: "", availableSerials: [], startSerial: "", endSerial: "", quantity: 1 }
+    { bank: "", fastagClass: "", prefix: "", availableSerials: [], startSerial: "", endSerial: "", quantity: 1, note: "" }
   ]);
   const [loading, setLoading] = useState(false);
   const [allSerialsCache, setAllSerialsCache] = useState({});
@@ -252,7 +252,7 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
     }));
   };
 
-  const addRow = () => setRows(r => [...r, { bank: "", fastagClass: "", prefix: "", availableSerials: [], startSerial: "", endSerial: "", quantity: 1 }]);
+  const addRow = () => setRows(r => [...r, { bank: "", fastagClass: "", prefix: "", availableSerials: [], startSerial: "", endSerial: "", quantity: 1, note: "" }]);
   const removeRow = i => setRows(r => r.length === 1 ? r : r.filter((_, idx) => idx !== i));
 
   // Validation for transfer allowed
@@ -297,7 +297,8 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
             toRole: transferToRole,
             agentId: toKey,
             to: toKey,
-            serials
+            serials,
+            note: row.note || ""
           };
         })
         .filter(a => a.from && a.to && Array.isArray(a.serials) && a.serials.length > 0);
@@ -483,6 +484,12 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
                     <option key={unique} value={unique} />
                   ))}
                 </datalist>
+                <Input
+                  className="w-48"
+                  value={row.note || ''}
+                  onChange={e => handleRowChange(i, 'note', e.target.value)}
+                  placeholder="Note (optional)"
+                />
                 {rows.length > 1 && (
                   <Button
                     type="button"

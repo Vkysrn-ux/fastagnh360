@@ -20,6 +20,11 @@ function normalizeFastagRow(row: any) {
     holder: row.holder ? String(row.holder) : "",
     supplier_id: row.supplier_id !== undefined && row.supplier_id !== null ? Number(row.supplier_id) : null,
     supplier_name: row.supplier_name ? String(row.supplier_name) : "",
+    created_at: row.created_at ?? null,
+    assigned_at: row.assigned_at ?? null,
+    assigned_date: row.assigned_date ?? null,
+    sold_at: row.sold_at ?? null,
+    sold_by_user_id: row.sold_by_user_id !== undefined && row.sold_by_user_id !== null ? Number(row.sold_by_user_id) : null,
   };
 }
 
@@ -33,6 +38,12 @@ export async function GET(req: NextRequest) {
   const supplierFilter = (searchParams.get("supplier") || searchParams.get("supplier_id") || "").trim();
   const bankLike = (searchParams.get("bank_like") || "").trim();
   const classLike = (searchParams.get("class_like") || "").trim();
+  // Optional pagination (no limit by default)
+  const limitParamRaw = searchParams.get("limit");
+  const offsetParamRaw = searchParams.get("offset");
+  const hasLimit = !!limitParamRaw;
+  const limit = hasLimit ? Math.max(1, Math.floor(Number(limitParamRaw))) : 0;
+  const offset = offsetParamRaw ? Math.max(0, Math.floor(Number(offsetParamRaw))) : 0;
   // Date range filters
   const createdFrom = (searchParams.get("created_from") || "").trim(); // YYYY-MM-DD
   const createdTo = (searchParams.get("created_to") || "").trim();
@@ -57,8 +68,8 @@ export async function GET(req: NextRequest) {
     values.push(classFilter);
   }
   if (ownerFilter) {
-    conditions.push("f.assigned_to_agent_id = ?");
-    values.push(ownerFilter);
+    conditions.push("(f.assigned_to_agent_id = ? OR f.assigned_to = ?)");
+    values.push(ownerFilter, ownerFilter);
   }
   if (statusFilter) {
     conditions.push("f.status = ?");
@@ -88,7 +99,7 @@ export async function GET(req: NextRequest) {
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  const limitClause = 'LIMIT 100';
+  const limitClause = hasLimit ? 'LIMIT ? OFFSET ?' : '';
 
   const baseQuery = `
       SELECT
@@ -104,7 +115,16 @@ export async function GET(req: NextRequest) {
         f.created_at,
         f.assigned_at,
         f.assigned_date,
-        (SELECT MIN(fs.created_at) FROM fastag_sales fs WHERE fs.tag_serial = f.tag_serial) AS sold_at,
+        (SELECT MIN(fs.created_at)
+           FROM fastag_sales fs
+          WHERE (fs.tag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)
+        ) AS sold_at,
+        (SELECT COALESCE(s.sold_by_user_id, s.sold_by_agent_id)
+           FROM fastag_sales s
+          WHERE (s.tag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)
+          ORDER BY s.created_at ASC
+          LIMIT 1
+        ) AS sold_by_user_id,
         COALESCE(u.name, '') AS assigned_to_name,
         COALESCE(s.name, '') AS supplier_name,
         CASE
@@ -120,8 +140,11 @@ export async function GET(req: NextRequest) {
       ${limitClause}
   `;
 
+  // Prepare query params once for use in both primary and fallback queries
+  const queryParams = hasLimit ? [...values, limit, offset] : values;
+
   try {
-    const [rows] = await pool.query<RowDataPacket[]>(baseQuery, values);
+    const [rows] = await pool.query<RowDataPacket[]>(baseQuery, queryParams);
     return NextResponse.json(rows.map((row) => normalizeFastagRow(row)));
   } catch (primaryError) {
     console.error('Primary FASTag query failed:', primaryError);
@@ -137,13 +160,26 @@ export async function GET(req: NextRequest) {
           f.status,
           f.supplier_id,
           f.assigned_to_agent_id,
-          f.assigned_to
+          f.assigned_to,
+          f.created_at,
+          f.assigned_at,
+          f.assigned_date,
+          (SELECT MIN(fs.created_at)
+             FROM fastag_sales fs
+            WHERE (fs.tag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)
+          ) AS sold_at,
+          (SELECT COALESCE(s.sold_by_user_id, s.sold_by_agent_id)
+             FROM fastag_sales s
+            WHERE (s.tag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)
+            ORDER BY s.created_at ASC
+            LIMIT 1
+          ) AS sold_by_user_id
         FROM fastags f
         ${whereClause}
         ORDER BY f.created_at DESC
         ${limitClause}
       `;
-      const [fallback] = await pool.query<RowDataPacket[]>(fallbackQuery, values);
+      const [fallback] = await pool.query<RowDataPacket[]>(fallbackQuery, queryParams);
       const normalized = fallback.map((row) =>
         normalizeFastagRow({
           ...row,
