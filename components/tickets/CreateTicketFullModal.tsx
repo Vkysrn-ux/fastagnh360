@@ -65,6 +65,22 @@ export default function CreateTicketFullModal({
   const [paymentReceived, setPaymentReceived] = useState<boolean>(false);
   const [deliveryDone, setDeliveryDone] = useState<boolean>(false);
   const [commissionDone, setCommissionDone] = useState<boolean>(false);
+  const [selectedUserNotes, setSelectedUserNotes] = useState<string>("");
+  const [pickupNotes, setPickupNotes] = useState<string>("");
+  const [shopNotes, setShopNotes] = useState<string>("");
+  const paidViaOptions = [
+    'Pending',
+    'Paytm QR',
+    'GPay Box',
+    'IDFC Box',
+    'Cash',
+    'Sriram Gpay',
+    'Lakshman Gpay',
+    'Arjunan Gpay',
+    'Vishnu GPay',
+    'Vimal GPay',
+  ];
+  const [paidVia, setPaidVia] = useState<string>('Pending');
 
   // Reset when modal opens
   useEffect(() => {
@@ -96,6 +112,33 @@ export default function CreateTicketFullModal({
   useEffect(() => {
     setForm((f) => ({ ...f, role_user_id: selectedShop ? String(selectedShop.id) : "" }));
   }, [selectedShop?.id]);
+
+  // Shop notes display
+  useEffect(() => {
+    if (!selectedShop?.id) { setShopNotes(""); return; }
+    fetch(`/api/users?id=${selectedShop.id}`).then(r=>r.json()).then((row)=>{
+      const arr = Array.isArray(row) ? row : (row ? [row] : []);
+      setShopNotes(arr[0]?.notes || "");
+    }).catch(()=> setShopNotes(""));
+  }, [selectedShop?.id]);
+
+  // When Assigned user changes, fetch notes
+  useEffect(() => {
+    if (!assignedUser?.id) { setSelectedUserNotes(""); return; }
+    fetch(`/api/users?id=${assignedUser.id}`).then(r=>r.json()).then((row)=>{
+      const arr = Array.isArray(row) ? row : (row ? [row] : []);
+      setSelectedUserNotes(arr[0]?.notes || "");
+    }).catch(()=> setSelectedUserNotes(""));
+  }, [assignedUser?.id]);
+
+  // When pickup point changes, fetch notes (if it's a user-based pickup)
+  useEffect(() => {
+    if (!selectedPickup?.id) { setPickupNotes(""); return; }
+    fetch(`/api/users?id=${selectedPickup.id}`).then(r=>r.json()).then((row)=>{
+      const arr = Array.isArray(row) ? row : (row ? [row] : []);
+      setPickupNotes(arr[0]?.notes || "");
+    }).catch(()=> setPickupNotes(""));
+  }, [selectedPickup?.id]);
 
   // auto-calc net value
   useEffect(() => {
@@ -201,6 +244,7 @@ export default function CreateTicketFullModal({
         payment_to_collect: form.payment_to_collect !== "" ? Number(form.payment_to_collect) : null,
         payment_to_send: form.payment_to_send !== "" ? Number(form.payment_to_send) : null,
         net_value: form.net_value !== "" ? Number(form.net_value) : null,
+        paid_via: paidVia,
       };
       if (commissionAmount !== "") payload.commission_amount = Number(commissionAmount) || 0;
       payload.payment_received = !!paymentReceived;
@@ -214,13 +258,19 @@ export default function CreateTicketFullModal({
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Failed to create ticket");
+      if (!res.ok) {
+        if (res.status === 409 && data?.duplicates) {
+          const lines = (data.duplicates as any[]).map((d: any) => `#${d.id} (${d.ticket_no || '-'}) - ${d.status || ''}`).join("\n");
+          throw new Error(`Duplicate found for phone + vehicle. Existing:\n${lines}`);
+        }
+        throw new Error(data?.error || "Failed to create ticket");
+      }
       const id = Number(data.parent_id || data.id || 0);
       const ticket_no = data.parent_ticket_no || data.ticket_no;
       onCreated?.({ id, ticket_no });
       setOpen(false);
     } catch (e: any) {
-      setError(e.message);
+      setError(String(e?.message || e) as any);
     } finally {
       setSaving(false);
     }
@@ -293,6 +343,9 @@ export default function CreateTicketFullModal({
               </div>
               <button type="button" className="px-3 py-2 border rounded" onClick={() => { if (currentUser) { setAssignedUser(currentUser); setForm((f) => ({ ...f, assigned_to: String(currentUser.id) })); } }}>Self</button>
             </div>
+            {selectedUserNotes && (
+              <div className="text-xs text-gray-600 mt-1 whitespace-pre-wrap border rounded p-2 bg-gray-50">{selectedUserNotes}</div>
+            )}
           </div>
 
           <div>
@@ -334,13 +387,25 @@ export default function CreateTicketFullModal({
             <input name="net_value" type="number" step="0.01" value={form.net_value} onChange={handleChange} readOnly className="w-full border p-2 rounded bg-gray-50" placeholder="0.00" />
           </div>
           <div>
-            <label className="block font-semibold mb-1">Lead Received From</label>
-            <AutocompleteInput
-              value={form.lead_received_from}
-              onChange={(v) => setForm((f) => ({ ...f, lead_received_from: v }))}
-              options={["WhatsApp","Facebook","Social Media","Google Map","Other","Toll-agent","ASM","Shop","Showroom","TL","Manager"]}
-              placeholder="Type source"
+            <label className="block font-semibold mb-1">Lead Received From (Shop/Agent)</label>
+            <UsersAutocomplete
+              value={selectedShop ? { id: selectedShop.id, name: selectedShop.name } as any : null}
+              onSelect={(u) => {
+                setSelectedShop(u as any);
+                setForm((f) => ({
+                  ...f,
+                  role_user_id: u ? String((u as any).id) : "",
+                  lead_received_from: u ? String((u as any).name) : f.lead_received_from,
+                }));
+              }}
+              placeholder="Type shop/agent name"
             />
+            {selectedShop && (
+              <div className="text-xs text-gray-600 mt-1">Selected: {(selectedShop as any).name}</div>
+            )}
+            {shopNotes && (
+              <div className="text-xs text-gray-600 mt-1 whitespace-pre-wrap border rounded p-2 bg-gray-50">{shopNotes}</div>
+            )}
           </div>
 
           {/* Row 3 */}
@@ -352,6 +417,9 @@ export default function CreateTicketFullModal({
             <label className="block font-semibold mb-1">Pick-up Point</label>
             <PickupPointAutocomplete value={selectedPickup} onSelect={(p) => { setSelectedPickup(p); setForm((f) => ({ ...f, pickup_point_name: p ? p.name : "" })); }} />
             <div className="text-xs text-gray-500 mt-1">Type to search (Agent, Shop, Warehouse)</div>
+            {pickupNotes && (
+              <div className="text-xs text-gray-600 mt-1 whitespace-pre-wrap border rounded p-2 bg-gray-50">{pickupNotes}</div>
+            )}
           </div>
           <div>
             <label className="block font-semibold mb-1">Commission Amount</label>
@@ -371,6 +439,16 @@ export default function CreateTicketFullModal({
               <input type="checkbox" checked={commissionDone} onChange={(e) => setCommissionDone(e.target.checked)} />
               Commission Done
             </label>
+          </div>
+          {/* Paid via */}
+          <div className="lg:col-span-2">
+            <label className="block font-semibold mb-1">Paid via</label>
+            <select className="w-full border rounded p-2" value={paidVia} onChange={(e)=> setPaidVia(e.target.value)}>
+              {paidViaOptions.map(opt => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+            <div className="text-xs text-gray-500 mt-1">Defaults to Pending.</div>
           </div>
           {/* One row: Bank, Class, Barcode, Owner */}
           <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -9,7 +9,8 @@ export async function POST(req: NextRequest) {
     const {
       name, phone, role,
       parent_id, area, bank_ids,
-      email, pincode
+      email, pincode,
+      notes,
     } = body;
 
     // Create portal user first
@@ -33,10 +34,15 @@ export async function POST(req: NextRequest) {
     try {
       await conn.beginTransaction();
 
+      // Ensure users.notes column exists (TEXT)
+      try {
+        await conn.query("ALTER TABLE users ADD COLUMN notes TEXT NULL");
+      } catch {}
+
       // Update pincode and area
       await conn.query(
-        "UPDATE users SET pincode = ?, area = ? WHERE id = ?",
-        [pincode || null, area || null, userId]
+        "UPDATE users SET pincode = ?, area = ?, notes = COALESCE(?, notes) WHERE id = ?",
+        [pincode || null, area || null, notes || null, userId]
       );
 
       // Insert bank_ids if provided (only for toll agents)

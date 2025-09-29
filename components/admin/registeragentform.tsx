@@ -54,6 +54,7 @@ export default function RegisterAgentModal({ onSuccess }: RegisterAgentModalProp
     parent_manager: "",
     parent_team_leader: "",
     bank_ids: [{ supplier_name: "", bank_name: "", bank_reference_id: "" }],
+    notes: "",
   });
   const [message, setMessage] = useState("");
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -160,7 +161,8 @@ export default function RegisterAgentModal({ onSuccess }: RegisterAgentModalProp
           status: "active",
           parent_id: parent_id,
           area: form.role === "asm" ? form.area : undefined,
-          bank_ids: form.role === "toll-agent" ? form.bank_ids : undefined
+          bank_ids: form.role === "toll-agent" ? form.bank_ids : undefined,
+          notes: form.notes?.trim() || undefined,
         }),
       });
       
@@ -179,6 +181,7 @@ export default function RegisterAgentModal({ onSuccess }: RegisterAgentModalProp
           parent_manager: "",
           parent_team_leader: "",
           bank_ids: [{ supplier_name: "", bank_name: "", bank_reference_id: "" }],
+          notes: "",
         });
         
         // Refetch agents to update the list
@@ -256,6 +259,17 @@ export default function RegisterAgentModal({ onSuccess }: RegisterAgentModalProp
           className="border rounded px-3 py-2"
         />
       )}
+      {/* Notes */}
+      <div className="flex flex-col">
+        <label className="text-sm font-semibold mb-1">Notes (internal)</label>
+        <textarea
+          name="notes"
+          placeholder="Write reminders or special instructions for this agent/shop"
+          value={form.notes}
+          onChange={handleChange as any}
+          className="border rounded px-3 py-2 w-full min-h-[80px]"
+        />
+      </div>
       {/* Parent dropdowns dynamically rendered */}
       {parentFields.includes("asm") &&
         getParentDropdown("parent_asm", "Select ASM (Regional Manager)", agents.filter(a => a.role === "asm"), form.parent_asm)
