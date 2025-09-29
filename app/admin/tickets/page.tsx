@@ -70,6 +70,8 @@ export default function TicketListPage() {
   const [assignedFilter, setAssignedFilter] = useState<UserOption | null>(null);
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
+  const [paidViaFilter, setPaidViaFilter] = useState<string>("all");
+  const [paymentReceivedFilter, setPaymentReceivedFilter] = useState<string>("all");
 
   const fetchTickets = async () => {
     setLoading(true);
@@ -141,9 +143,18 @@ export default function TicketListPage() {
         if (from && created && created < from) dateOk = false;
         if (to && created && created > to) dateOk = false;
       }
-      return inSearch && statusOk && assignedOk && dateOk;
+      // paid via filter
+      const paidVia = String((t as any).paid_via ?? '').trim();
+      const paidViaOk = paidViaFilter === 'all' || paidVia === paidViaFilter;
+
+      // payment received filter
+      const pr = (t as any).payment_received;
+      const prBool = pr === 1 || pr === true || pr === '1';
+      const prOk = paymentReceivedFilter === 'all' || (paymentReceivedFilter === 'yes' ? prBool : !prBool);
+
+      return inSearch && statusOk && assignedOk && dateOk && paidViaOk && prOk;
     });
-  }, [tickets, searchQuery, filterStatus, assignedFilter, fromDate, toDate]);
+  }, [tickets, searchQuery, filterStatus, assignedFilter, fromDate, toDate, paidViaFilter, paymentReceivedFilter]);
 
   if (loading) {
     return (
@@ -169,7 +180,7 @@ export default function TicketListPage() {
 
       {/* Filters */}
       <div className="bg-white border rounded-lg p-4 mb-4">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
           <div>
             <label className="block text-xs text-gray-500 mb-1">Search</label>
             <Input placeholder="Ticket no, customer, phone, vehicle, subject" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
@@ -203,6 +214,30 @@ export default function TicketListPage() {
           <div>
             <label className="block text-xs text-gray-500 mb-1">To</label>
             <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Paid Via</label>
+            <select className="w-full border rounded p-2" value={paidViaFilter} onChange={(e)=> setPaidViaFilter(e.target.value)}>
+              <option value="all">All</option>
+              <option value="Pending">Pending</option>
+              <option value="Paytm QR">Paytm QR</option>
+              <option value="GPay Box">GPay Box</option>
+              <option value="IDFC Box">IDFC Box</option>
+              <option value="Cash">Cash</option>
+              <option value="Sriram Gpay">Sriram Gpay</option>
+              <option value="Lakshman Gpay">Lakshman Gpay</option>
+              <option value="Arjunan Gpay">Arjunan Gpay</option>
+              <option value="Vishnu GPay">Vishnu GPay</option>
+              <option value="Vimal GPay">Vimal GPay</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Payment Received</label>
+            <select className="w-full border rounded p-2" value={paymentReceivedFilter} onChange={(e)=> setPaymentReceivedFilter(e.target.value)}>
+              <option value="all">All</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
           </div>
         </div>
       </div>

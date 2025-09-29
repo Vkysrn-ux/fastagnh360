@@ -45,6 +45,8 @@ export default function CreateSubTicketFullModal({
   label?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // Local draft key
+  const draftKey = useMemo(() => `nh360:draft:subticket:${parent?.id ?? 'unknown'}`, [parent?.id]);
 
   const initialForm = useMemo(() => ({
     vehicle_reg_no: parent?.vehicle_reg_no || "",
@@ -83,10 +85,45 @@ export default function CreateSubTicketFullModal({
   const [paymentReceived, setPaymentReceived] = useState<boolean>(false);
   const [deliveryDone, setDeliveryDone] = useState<boolean>(false);
   const [commissionDone, setCommissionDone] = useState<boolean>(false);
+  const [selectedUserNotes, setSelectedUserNotes] = useState<string>("");
+  const [pickupNotes, setPickupNotes] = useState<string>("");
+  const [shopNotes, setShopNotes] = useState<string>("");
+  const paidViaOptions = [
+    'Pending',
+    'Paytm QR',
+    'GPay Box',
+    'IDFC Box',
+    'Cash',
+    'Sriram Gpay',
+    'Lakshman Gpay',
+    'Arjunan Gpay',
+    'Vishnu GPay',
+    'Vimal GPay',
+  ];
+  const [paidVia, setPaidVia] = useState<string>('Pending');
 
   // Reset when modal opens (apply desired defaults)
   useEffect(() => {
     if (!open) return;
+    // Try load draft first
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (raw) {
+        const data = JSON.parse(raw || '{}');
+        setForm((prev) => ({ ...prev, ...(data.form || {}) }));
+        if (data.selectedShop) setSelectedShop(data.selectedShop);
+        if (data.selectedPickup) setSelectedPickup(data.selectedPickup);
+        if (typeof data.fastagClass === 'string') setFastagClass(data.fastagClass);
+        if (typeof data.fastagSerialInput === 'string') setFastagSerialInput(data.fastagSerialInput);
+        if (typeof data.commissionAmount === 'string') setCommissionAmount(data.commissionAmount);
+        if (typeof data.paidVia === 'string') setPaidVia(data.paidVia);
+        if (typeof data.paymentReceived === 'boolean') setPaymentReceived(data.paymentReceived);
+        if (typeof data.deliveryDone === 'boolean') setDeliveryDone(data.deliveryDone);
+        if (typeof data.commissionDone === 'boolean') setCommissionDone(data.commissionDone);
+        if (data.assignedUser) setAssignedUser(data.assignedUser);
+        return; // loaded draft, skip defaults
+      }
+    } catch {}
     setForm({
       vehicle_reg_no: parent.vehicle_reg_no || "",
       phone: parent.phone || "",
@@ -109,11 +146,60 @@ export default function CreateSubTicketFullModal({
     setSelectedShop(null);
     setSelectedPickup(null);
     setError(null);
-  }, [open, parent, currentUser?.id]);
+  }, [open, parent, currentUser?.id, draftKey]);
+
+  // Autosave draft (debounced)
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(() => {
+      try {
+        const snapshot = {
+          form,
+          selectedShop,
+          selectedPickup,
+          assignedUser,
+          fastagClass,
+          fastagSerialInput,
+          commissionAmount,
+          paidVia,
+          paymentReceived,
+          deliveryDone,
+          commissionDone,
+        };
+        localStorage.setItem(draftKey, JSON.stringify(snapshot));
+      } catch {}
+    }, 500);
+    return () => clearTimeout(t);
+  }, [open, form, selectedShop, selectedPickup, assignedUser, fastagClass, fastagSerialInput, commissionAmount, paidVia, paymentReceived, deliveryDone, commissionDone, draftKey]);
+
+  // Show notes for assigned user
+  useEffect(() => {
+    if (!assignedUser?.id) { setSelectedUserNotes(""); return; }
+    fetch(`/api/users?id=${assignedUser.id}`).then(r=>r.json()).then((row)=>{
+      const arr = Array.isArray(row) ? row : (row ? [row] : []);
+      setSelectedUserNotes(arr[0]?.notes || "");
+    }).catch(()=> setSelectedUserNotes(""));
+  }, [assignedUser?.id]);
+
+  // Show notes for pickup point
+  useEffect(() => {
+    if (!selectedPickup?.id) { setPickupNotes(""); return; }
+    fetch(`/api/users?id=${selectedPickup.id}`).then(r=>r.json()).then((row)=>{
+      const arr = Array.isArray(row) ? row : (row ? [row] : []);
+      setPickupNotes(arr[0]?.notes || "");
+    }).catch(()=> setPickupNotes(""));
+  }, [selectedPickup?.id]);
 
   // keep role user id in sync with selected shop
   useEffect(() => {
     setForm((f) => ({ ...f, role_user_id: selectedShop ? String(selectedShop.id) : "" }));
+  }, [selectedShop?.id]);
+  useEffect(() => {
+    if (!selectedShop?.id) { setShopNotes(""); return; }
+    fetch(`/api/users?id=${selectedShop.id}`).then(r=>r.json()).then((row)=>{
+      const arr = Array.isArray(row) ? row : (row ? [row] : []);
+      setShopNotes(arr[0]?.notes || "");
+    }).catch(()=> setShopNotes(""));
   }, [selectedShop?.id]);
 
   // Default Assigned To = current user
@@ -244,6 +330,7 @@ export default function CreateSubTicketFullModal({
         payment_to_collect: form.payment_to_collect !== "" ? Number(form.payment_to_collect) : null,
         payment_to_send: form.payment_to_send !== "" ? Number(form.payment_to_send) : null,
         net_value: form.net_value !== "" ? Number(form.net_value) : null,
+        paid_via: paidVia,
       };
       if (commissionAmount !== "") payload.commission_amount = Number(commissionAmount) || 0;
       // @ts-ignore
@@ -259,9 +346,16 @@ export default function CreateSubTicketFullModal({
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Failed to create sub-ticket");
+      if (!res.ok) {
+        if (res.status === 409 && data?.duplicates) {
+          const lines = (data.duplicates as any[]).map((d: any) => `#${d.id} (${d.ticket_no || '-'}) - ${d.status || ''}`).join("\n");
+          throw new Error(`Duplicate found for phone + vehicle. Existing:\n${lines}`);
+        }
+        throw new Error(data?.error || "Failed to create sub-ticket");
+      }
 
       onCreated?.({ id: data.id, ticket_no: data.ticket_no });
+      try { localStorage.removeItem(draftKey); } catch {}
       setOpen(false);
     } catch (e: any) {
       setError(e.message);
@@ -328,33 +422,36 @@ export default function CreateSubTicketFullModal({
             <input name="alt_phone" value={form.alt_phone} onChange={handleChange} className="w-full border p-2 rounded" />
           </div>
 
-          <div>
-            <label className="block font-semibold mb-1">Assigned To</label>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <UsersAutocomplete
-                  value={assignedUser}
-                  onSelect={(u) => {
-                    setAssignedUser(u);
-                    setForm((f) => ({ ...f, assigned_to: u ? String(u.id) : "" }));
-                  }}
-                  placeholder="Type user name"
-                />
-              </div>
-              <button
-                type="button"
-                className="px-3 py-2 border rounded"
-                onClick={() => {
-                  if (currentUser) {
-                    setAssignedUser(currentUser);
-                    setForm((f) => ({ ...f, assigned_to: String(currentUser.id) }));
-                  }
+        <div>
+          <label className="block font-semibold mb-1">Assigned To</label>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <UsersAutocomplete
+                value={assignedUser}
+                onSelect={(u) => {
+                  setAssignedUser(u);
+                  setForm((f) => ({ ...f, assigned_to: u ? String(u.id) : "" }));
                 }}
-              >
-                Self
-              </button>
+                placeholder="Type user name"
+              />
             </div>
+            <button
+              type="button"
+              className="px-3 py-2 border rounded"
+              onClick={() => {
+                if (currentUser) {
+                  setAssignedUser(currentUser);
+                  setForm((f) => ({ ...f, assigned_to: String(currentUser.id) }));
+                }
+              }}
+            >
+              Self
+            </button>
           </div>
+          {selectedUserNotes && (
+            <div className="text-xs text-gray-600 mt-1 whitespace-pre-wrap border rounded p-2 bg-gray-50">{selectedUserNotes}</div>
+          )}
+        </div>
 
           <div>
             <label className="block font-semibold mb-1">Status</label>
@@ -382,34 +479,14 @@ export default function CreateSubTicketFullModal({
           </div>
 
           <div className="lg:col-span-4 md:col-span-2">
-            <label className="block font-semibold mb-1">Lead Received From</label>
-            <AutocompleteInput
-              value={form.lead_received_from}
-              onChange={(v) => setForm((f) => ({ ...f, lead_received_from: v }))}
-              options={["WhatsApp","Facebook","Social Media","Google Map","Other","Toll-agent","ASM","Shop","Showroom","TL","Manager"]}
-              placeholder="Type source"
+            <label className="block font-semibold mb-1">Lead Received From (Shop/Agent)</label>
+            <UsersAutocomplete
+              value={selectedShop ? { id: (selectedShop as any).id, name: (selectedShop as any).name } as any : null}
+              onSelect={(u) => { setSelectedShop(u as any); setForm((f)=> ({ ...f, role_user_id: u ? String((u as any).id) : '' })); }}
+              placeholder="Type shop/agent name"
             />
-
-            {form.lead_received_from === "Shop" && (
-              <div className="mt-2">
-                <ShopAutocomplete
-                  value={selectedShop}
-                  onSelect={(shop) => {
-                    setSelectedShop(shop);
-                  }}
-                />
-              </div>
-            )}
-            {["Toll-agent", "ASM", "TL", "Manager"].includes(form.lead_received_from) && (
-              <div className="mt-2">
-                <UsersAutocomplete
-                  role={form.lead_received_from}
-                  value={form.role_user_id ? { id: Number(form.role_user_id), name: "" } : null}
-                  onSelect={(u) => setForm((f) => ({ ...f, role_user_id: u ? String(u.id) : "" }))}
-                  placeholder={`Type ${form.lead_received_from} name`}
-                />
-              </div>
-            )}
+            {selectedShop && (<div className="text-xs text-gray-600 mt-1">Selected: {(selectedShop as any).name}</div>)}
+            {shopNotes && (<div className="text-xs text-gray-600 mt-1 whitespace-pre-wrap border rounded p-2 bg-gray-50">{shopNotes}</div>)}
           </div>
 
           <div>
@@ -456,25 +533,36 @@ export default function CreateSubTicketFullModal({
             />
           </div>
 
-          {/* Bank / Commission */}
-          <div>
-            <label className="block font-semibold mb-1">Commission Amount</label>
-            <input type="number" step="0.01" value={commissionAmount} onChange={(e) => setCommissionAmount(e.target.value)} className="w-full border p-2 rounded" placeholder="0" />
-            <div className="text-xs text-gray-500 mt-1">Defaults to 0 if no commission is due.</div>
-          </div>
-          <div className="flex items-center gap-6">
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
-              <input type="checkbox" checked={paymentReceived} onChange={(e) => setPaymentReceived(e.target.checked)} />
-              Payment Received
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
-              <input type="checkbox" checked={deliveryDone} onChange={(e) => setDeliveryDone(e.target.checked)} />
-              Delivery Done
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
-              <input type="checkbox" checked={commissionDone} onChange={(e) => setCommissionDone(e.target.checked)} />
-              Commission Done
-            </label>
+          {/* Commission + Paid via + Flags (single row) */}
+          <div className="lg:col-span-4 md:col-span-2 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="block font-semibold mb-1">Commission Amount</label>
+              <input type="number" step="0.01" value={commissionAmount} onChange={(e) => setCommissionAmount(e.target.value)} className="w-full border p-2 rounded" placeholder="0" />
+              <div className="text-xs text-gray-500 mt-1">Defaults to 0 if no commission is due.</div>
+            </div>
+            <div>
+              <label className="block font-semibold mb-1">Paid via</label>
+              <select className="w-full border rounded p-2" value={paidVia} onChange={(e)=> setPaidVia(e.target.value)}>
+                {paidViaOptions.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+              <div className="text-xs text-gray-500 mt-1">Defaults to Pending.</div>
+            </div>
+            <div className="md:col-span-2 lg:col-span-2 flex items-center gap-6 pt-6">
+              <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+                <input type="checkbox" checked={paymentReceived} onChange={(e) => setPaymentReceived(e.target.checked)} />
+                Payment Received
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+                <input type="checkbox" checked={deliveryDone} onChange={(e) => setDeliveryDone(e.target.checked)} />
+                Delivery Done
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+                <input type="checkbox" checked={commissionDone} onChange={(e) => setCommissionDone(e.target.checked)} />
+                Commission Done
+              </label>
+            </div>
           </div>
           {/* One row: Bank, Class, Barcode, Owner */}
           <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -517,15 +605,24 @@ export default function CreateSubTicketFullModal({
             </div>
           </div>
 
-          {/* Pickup Point */}
-          <div className="lg:col-span-2">
-            <label className="block font-semibold mb-1">Pick-up Point</label>
-            <PickupPointAutocomplete value={selectedPickup} onSelect={(p) => {
-              setSelectedPickup(p);
-              setForm((f) => ({ ...f, pickup_point_name: p ? p.name : "" }));
-            }} />
-            <div className="text-xs text-gray-500 mt-1">Type to search (Agent, Shop, Warehouse)</div>
-          </div>
+          {/* Pick-up Point (Shop/Agent with notes) */}
+        <div className="lg:col-span-2">
+          <label className="block font-semibold mb-1">Pick-up Point (Shop/Agent)</label>
+          <UsersAutocomplete
+            value={selectedPickup ? ({ id: (selectedPickup as any).id, name: (selectedPickup as any).name } as any) : null}
+            onSelect={(u) => {
+              setSelectedPickup(u as any);
+              setForm((f) => ({ ...f, pickup_point_name: u ? (u as any).name : "" }));
+            }}
+            placeholder="Type shop/agent name"
+          />
+          {selectedPickup && (
+            <div className="text-xs text-gray-600 mt-1">Selected: {(selectedPickup as any).name}</div>
+          )}
+          {pickupNotes && (
+            <div className="text-xs text-gray-600 mt-1 whitespace-pre-wrap border rounded p-2 bg-gray-50">{pickupNotes}</div>
+          )}
+        </div>
 
           <div className="lg:col-span-4 md:col-span-2">
             <label className="block font-semibold mb-1">Details</label>

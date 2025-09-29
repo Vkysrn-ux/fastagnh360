@@ -25,7 +25,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { updatePortalUser } from "@/lib/actions/admin-actions";
 import { PortalUser } from "@/lib/types";
 import { useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -109,17 +108,17 @@ export function EditUserModal({
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
       setIsLoading(true);
-      const result = await updatePortalUser({
+      const payload = {
         id: user.id,
         ...values,
-        // @ts-ignore: parent selection added via DOM id
         parent_id: (document.getElementById('parent_user_id_select') as HTMLSelectElement | null)?.value
           ? Number((document.getElementById('parent_user_id_select') as HTMLSelectElement).value)
           : null,
-      });
-
-      if (!result.success) {
-        throw new Error(result.error);
+      };
+      const res = await fetch('/api/users/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const data = await res.json();
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to update user');
       }
 
       toast.success("User updated successfully");

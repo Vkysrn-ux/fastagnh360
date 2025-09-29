@@ -32,6 +32,24 @@ function normalizeKyv(val: any): string | null {
   return map[s] || s || null;
 }
 
+// Normalize 'paid_via' to a fixed set of options
+function normalizePaidVia(v: any): string {
+  const allowed = new Set<string>([
+    'Pending',
+    'Paytm QR',
+    'GPay Box',
+    'IDFC Box',
+    'Cash',
+    'Sriram Gpay',
+    'Lakshman Gpay',
+    'Arjunan Gpay',
+    'Vishnu GPay',
+    'Vimal GPay',
+  ]);
+  const val = String(v ?? 'Pending').trim();
+  return allowed.has(val) ? val : 'Pending';
+}
+
 // --- utility: make a ticket_no like NH360-YYYYMMDD-###, inside a txn ---
 
 async function markFastagAsUsed(conn: PoolConnection, fastagSerial: string | null, vehicleRegNo?: string | null) {
@@ -368,11 +386,36 @@ export async function POST(req: NextRequest) {
   try {
     await conn.beginTransaction();
 
+    // Ensure new field 'paid_via' exists on tickets table (idempotent)
+    try {
+      const hasPaidVia = await hasTableColumn(TICKETS_TABLE, 'paid_via', conn);
+      if (!hasPaidVia) {
+        await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN paid_via VARCHAR(64) NOT NULL DEFAULT 'Pending'`);
+      }
+    } catch {}
+
     const hasCommissionColumn = await hasTableColumn(TICKETS_TABLE, "commission_amount", conn);
     const hasFastagSerialColumn = await hasTableColumn(TICKETS_TABLE, "fastag_serial", conn);
     const hasPaymentReceived = await hasTableColumn(TICKETS_TABLE, "payment_received", conn);
     const hasDeliveryDone = await hasTableColumn(TICKETS_TABLE, "delivery_done", conn);
     const hasCommissionDone = await hasTableColumn(TICKETS_TABLE, "commission_done", conn);
+    const hasPaidVia = await hasTableColumn(TICKETS_TABLE, 'paid_via', conn);
+
+    // helper: duplicate guard by phone + vehicle
+    async function findDuplicates(phoneRaw: any, vrnRaw: any) {
+      const p = normalizeIndianMobile(phoneRaw);
+      const vrn = (vrnRaw ?? '').toString().trim();
+      if (!p || !vrn) return [] as any[];
+      const [rows]: any = await conn.query(
+        `SELECT id, ticket_no, status, customer_name, created_at
+           FROM ${TICKETS_TABLE}
+          WHERE phone = ? AND UPPER(COALESCE(vehicle_reg_no,'')) = UPPER(?)
+          ORDER BY created_at DESC
+          LIMIT 10`,
+        [p, vrn]
+      );
+      return Array.isArray(rows) ? rows : [];
+    }
 
     // --- CASE A: create only a sub-ticket (no new parent) ---
     if (parent_ticket_id) {
@@ -415,6 +458,16 @@ export async function POST(req: NextRequest) {
       const effectiveKyvStatus = normalizeKyv(typeof kyv_status !== "undefined" ? kyv_status : null) || parent.kyv_status || null;
       const effectiveCustomer = (typeof customer_name !== "undefined" ? customer_name : null) ?? parent.customer_name ?? null;
       const effectiveComments = (typeof comments !== "undefined" ? comments : null) ?? null;
+
+      // Duplicate guard: prevent creating a sub-ticket with same phone+VRN
+      const dupSub = await findDuplicates(effectivePhone, effectiveVehicle);
+      if (dupSub.length) {
+        await conn.rollback();
+        return NextResponse.json({
+          error: 'Duplicate ticket exists for this phone and vehicle number',
+          duplicates: dupSub,
+        }, { status: 409 });
+      }
 
       const childColumns = [
         "ticket_no",
@@ -603,6 +656,11 @@ export async function POST(req: NextRequest) {
       parentPlaceholders.push("?");
       parentValues.push(isNaN(parentCommission as any) ? 0 : parentCommission);
     }
+    if (hasPaidVia) {
+      parentColumns.push('paid_via');
+      parentPlaceholders.push('?');
+      parentValues.push(normalizePaidVia((data as any)?.paid_via));
+    }
     parentColumns.push("pickup_point_name");
     parentPlaceholders.push("?");
     parentValues.push(pickup_point_name ?? null);
@@ -616,6 +674,16 @@ export async function POST(req: NextRequest) {
     parentColumns.push("parent_ticket_id");
     parentPlaceholders.push("?");
     parentValues.push(null);
+
+    // Duplicate guard for parent creation
+    const dupParent = await findDuplicates(phone, vehicle_reg_no);
+    if (dupParent.length) {
+      await conn.rollback();
+      return NextResponse.json({
+        error: 'Duplicate ticket exists for this phone and vehicle number',
+        duplicates: dupParent,
+      }, { status: 409 });
+    }
 
     const parentInsert = `INSERT INTO ${TICKETS_TABLE} (${parentColumns.join(", ")}, created_at, updated_at) VALUES (${parentPlaceholders.join(", ")}, NOW(), NOW())`;
 
@@ -722,6 +790,12 @@ export async function POST(req: NextRequest) {
           subPlaceholders.push("?");
           subValues.push(isNaN(rowCommission as any) ? 0 : rowCommission);
         }
+        if (hasPaidVia) {
+          subColumns.push('paid_via');
+          subPlaceholders.push('?');
+          // child row can override paid_via, else inherit from parent payload
+          subValues.push(normalizePaidVia((row as any)?.paid_via ?? (data as any)?.paid_via));
+        }
 
         subColumns.push("pickup_point_name");
         subPlaceholders.push("?");
@@ -793,6 +867,7 @@ export async function PATCH(req: NextRequest) {
     const includePaymentReceived = await hasTableColumn(TICKETS_TABLE, "payment_received");
     const includeDeliveryDone = await hasTableColumn(TICKETS_TABLE, "delivery_done");
     const includeCommissionDone = await hasTableColumn(TICKETS_TABLE, "commission_done");
+    const includePaidVia = await hasTableColumn(TICKETS_TABLE, 'paid_via');
     const allowedFields = [
       "vehicle_reg_no",
       "subject",
@@ -825,6 +900,9 @@ export async function PATCH(req: NextRequest) {
     if (includeCommissionDone) {
       allowedFields.push("commission_done");
     }
+    if (includePaidVia) {
+      allowedFields.push('paid_via');
+    }
     allowedFields.push("pickup_point_name");
 
     const updates: string[] = [];
@@ -838,6 +916,8 @@ export async function PATCH(req: NextRequest) {
           values.push(normalizeKyv(data[field]) || null);
         } else if (field === "phone" || field === "alt_phone") {
           values.push(normalizeIndianMobile(data[field]));
+        } else if (field === 'paid_via') {
+          values.push(normalizePaidVia(data[field]));
         } else {
           values.push(data[field]);
         }

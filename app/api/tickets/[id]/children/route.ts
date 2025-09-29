@@ -196,8 +196,17 @@ export async function POST(
 
     await conn.beginTransaction();
 
+    // Ensure new field 'paid_via' exists on tickets table
+    try {
+      const hasPaidVia = await hasTableColumn(TICKETS_TABLE, "paid_via", conn);
+      if (!hasPaidVia) {
+        await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN paid_via VARCHAR(64) NOT NULL DEFAULT 'Pending'`);
+      }
+    } catch {}
+
     const hasCommissionColumn = await hasTableColumn(TICKETS_TABLE, "commission_amount", conn);
     const hasFastagSerialColumn = await hasTableColumn(TICKETS_TABLE, "fastag_serial", conn);
+    const hasPaidViaColumn = await hasTableColumn(TICKETS_TABLE, "paid_via", conn);
 
     const ticket_no = await generateTicketNo(conn);
 
@@ -228,6 +237,41 @@ export async function POST(
     const commissionRaw = body.commission_amount ?? parent.commission_amount ?? 0;
     const commissionValue =
       commissionRaw === undefined || commissionRaw === null ? 0 : Number(commissionRaw);
+
+    // Normalize paid_via to allowed options
+    const allowedPaidVia = new Set([
+      'Pending',
+      'Paytm QR',
+      'GPay Box',
+      'IDFC Box',
+      'Cash',
+      'Sriram Gpay',
+      'Lakshman Gpay',
+      'Arjunan Gpay',
+      'Vishnu GPay',
+      'Vimal GPay',
+    ]);
+    let paid_via: string = String(body.paid_via ?? parent.paid_via ?? 'Pending').trim();
+    if (!allowedPaidVia.has(paid_via)) paid_via = 'Pending';
+
+    // Duplicate guard: do not allow creating a ticket with same phone + VRN
+    try {
+      const [dups]: any = await conn.query(
+        `SELECT id, ticket_no, status, customer_name, created_at
+           FROM ${TICKETS_TABLE}
+          WHERE phone = ? AND UPPER(COALESCE(vehicle_reg_no,'')) = UPPER(?)
+          ORDER BY created_at DESC
+          LIMIT 10`,
+        [phone, vehicle_reg_no]
+      );
+      if (Array.isArray(dups) && dups.length) {
+        await conn.rollback();
+        return NextResponse.json({
+          error: 'Duplicate ticket exists for this phone and vehicle number',
+          duplicates: dups,
+        }, { status: 409 });
+      }
+    } catch {}
 
     const columns = [
       "ticket_no",
@@ -270,6 +314,11 @@ export async function POST(
       columns.push("commission_amount");
       placeholders.push("?");
       insertValues.push(isNaN(commissionValue as any) ? 0 : commissionValue);
+    }
+    if (hasPaidViaColumn) {
+      columns.push("paid_via");
+      placeholders.push("?");
+      insertValues.push(paid_via);
     }
     columns.push("pickup_point_name");
     placeholders.push("?");

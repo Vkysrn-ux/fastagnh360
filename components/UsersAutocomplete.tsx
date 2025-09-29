@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 
-export type UserOption = { id: number; name: string };
+export type UserOption = { id: number; name: string; notes?: string };
 
 export default function UsersAutocomplete({
   value,
@@ -110,7 +110,10 @@ export default function UsersAutocomplete({
               onMouseDown={() => pick(u)}
               onMouseEnter={() => setHighlight(i)}
             >
-              {u.name}
+              <div className="font-medium">{u.name}</div>
+              {u.notes && (
+                <div className="text-xs text-gray-500 line-clamp-2 whitespace-pre-wrap">{u.notes}</div>
+              )}
             </div>
           ))}
         </div>
