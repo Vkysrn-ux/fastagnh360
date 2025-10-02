@@ -171,7 +171,7 @@ async function executeQuery<T>(query: string, params?: any[]): Promise<T> {
 
 export interface CreatePortalUserInput {
   name: string;
-  email: string;
+  email?: string; // optional during onboarding
   phone?: string;
   role: string;
   status?: string;
@@ -192,12 +192,13 @@ export async function createPortalUser(input: CreatePortalUserInput): Promise<Cr
   const rawPassword = (input.password ?? "").trim();
 
   if (!name) return { success: false, error: "Name is required." };
-  if (!email) return { success: false, error: "Email is required." };
-  if (!EMAIL_PATTERN.test(email)) return { success: false, error: "Enter a valid email address." };
+  // Email is optional on onboarding; validate only if provided
+  if (email && !EMAIL_PATTERN.test(email)) return { success: false, error: "Enter a valid email address." };
   if (!PORTAL_ROLE_SET.has(role)) return { success: false, error: "Unsupported role for portal access." };
 
-  const passwordToUse = rawPassword || generatePortalPassword();
-  const hashedPassword = await bcrypt.hash(passwordToUse, 10);
+  const hasEmail = !!email;
+  const passwordToUse = rawPassword || (hasEmail ? generatePortalPassword() : "");
+  const hashedPassword = hasEmail ? await bcrypt.hash(passwordToUse, 10) : null;
   const dbStatus = toDbStatus(status);
   const phoneValue = phone || null;
   const dashboard = resolveDashboard(role);
@@ -209,7 +210,7 @@ export async function createPortalUser(input: CreatePortalUserInput): Promise<Cr
 
     const [result] = await conn.query<ResultSetHeader>(
       "INSERT INTO users (name, email, phone, role, status, password, dashboard, parent_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [name, email, phoneValue, role, dbStatus, hashedPassword, dashboard, input.parent_id ?? null],
+      [name, email || null, phoneValue, role, dbStatus, hashedPassword, dashboard, input.parent_id ?? null],
     );
 
     const userId = Number((result as ResultSetHeader).insertId);
@@ -226,7 +227,7 @@ export async function createPortalUser(input: CreatePortalUserInput): Promise<Cr
     return {
       success: true,
       user: mapUserRow(userRow),
-      generatedPassword: rawPassword ? undefined : passwordToUse,
+      generatedPassword: hasEmail && !rawPassword ? passwordToUse : undefined,
     };
   } catch (error: any) {
     await conn.rollback();

@@ -216,10 +216,9 @@ export default function RegisterAgentModal({ onSuccess }: RegisterAgentModalProp
       <input
         name="email"
         type="email"
-        placeholder="Email Address"
+        placeholder="Email Address (optional)"
         value={form.email}
         onChange={handleChange}
-        required
         className="border rounded px-3 py-2 w-full"
       />
       <input

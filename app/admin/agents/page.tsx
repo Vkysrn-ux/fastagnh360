@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Repeat2, Eye, Edit, Trash2, Plus, Search } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getAdminSession } from "@/lib/actions/auth-actions";
-import type { Agent } from "@/lib/types";
+import type { Agent, PortalUser } from "@/lib/types";
+import { EditUserModal } from "@/components/admin/EditUserModal";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import RegisterAgentForm from "@/components/admin/registeragentform";
 
@@ -51,12 +52,16 @@ function flattenTreeWithExpand(tree, expandedMap, setExpandedMap, searchQuery, f
     const isExpanded = !!expandedMap[key];
 
     // Apply search/status filter to agent or its descendants
+    const nameStr = String(agent.name || '').toLowerCase();
+    const emailStr = String(agent.email || '').toLowerCase();
+    const phoneStr = String(agent.phone || '').toLowerCase();
+    const pincodeStr = String(agent.pincode || '').toLowerCase();
     const matchesSearch =
       !searchQuery ||
-      agent.name.toLowerCase().includes(searchQuery) ||
-      (agent.email && agent.email.toLowerCase().includes(searchQuery)) ||
-      agent.phone.includes(searchQuery) ||
-      agent.pincode.toLowerCase().includes(searchQuery);
+      nameStr.includes(searchQuery) ||
+      (emailStr && emailStr.includes(searchQuery)) ||
+      phoneStr.includes(searchQuery) ||
+      pincodeStr.includes(searchQuery);
 
     const matchesStatus =
       filterStatus === "all" || (agent.status || "Active").toLowerCase() === filterStatus;
@@ -135,34 +140,33 @@ export default function AdminAgentsPage() {
   // Expanded state (by row key)
   const [expandedRows, setExpandedRows] = useState<{ [key: string]: boolean }>({});
 
-  useEffect(() => {
-    const checkSessionAndLoadAgents = async () => {
-      const session = await getAdminSession();
-      if (!session) {
-        router.push("/admin/login");
-        return;
-      }
-      try {
-        const res = await fetch("/api/agents/all");
-        const agentData = await res.json();
-        if (Array.isArray(agentData)) {
-          setAgents(agentData);
-        } else {
-          setAgents([]);
-          setError(agentData?.error || "Failed to load agent data.");
-        }
-      } catch (error) {
+  // Edit modal state
+  const [editOpen, setEditOpen] = useState(false);
+  const [editUser, setEditUser] = useState<PortalUser | null>(null);
+
+  async function loadAgents() {
+    const session = await getAdminSession();
+    if (!session) { router.push("/admin/login"); return; }
+    try {
+      const res = await fetch("/api/agents/all");
+      const agentData = await res.json();
+      if (Array.isArray(agentData)) {
+        setAgents(agentData);
+      } else {
         setAgents([]);
-        setError("Failed to load agent data. Please try again.");
-      } finally {
-        setIsLoading(false);
+        setError(agentData?.error || "Failed to load agent data.");
       }
-    };
-    checkSessionAndLoadAgents();
-  }, [router]);
+    } catch (error) {
+      setAgents([]);
+      setError("Failed to load agent data. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+  useEffect(() => { loadAgents(); }, [router]);
 
   // --- Hierarchical agent list with expand/collapse ---
-  const agentTree = buildAgentTree(agents);
+  const agentTree = useMemo(() => buildAgentTree(agents), [agents]);
   // Expand all root nodes by default (only at first render)
   useEffect(() => {
     if (agentTree.length && Object.keys(expandedRows).length === 0) {
@@ -174,6 +178,30 @@ export default function AdminAgentsPage() {
     }
     // eslint-disable-next-line
   }, [agents]);
+
+  // Auto-expand matching branches when searching, so matches are visible
+  useEffect(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return; // only expand on active search
+    const allKeys: { [k: string]: boolean } = {};
+    function walk(node: any, parentKey = "") {
+      const key = parentKey + node.id;
+      allKeys[key] = true; // expand this level
+      if (Array.isArray(node.children) && node.children.length) {
+        node.children.forEach((c: any) => walk(c, key + "-"));
+      }
+    }
+    agentTree.forEach(n => walk(n));
+    setExpandedRows(prev => {
+      // Only update if new keys actually add changes
+      let changed = false;
+      for (const k in allKeys) {
+        if (!prev[k]) { changed = true; break; }
+      }
+      if (!changed) return prev;
+      return { ...prev, ...allKeys };
+    });
+  }, [searchQuery, agentTree]);
 
   const flattenedAgents = flattenTreeWithExpand(
     agentTree,
@@ -223,7 +251,7 @@ export default function AdminAgentsPage() {
               onClick={() => router.push("/admin/fastags/transfer")}
             >
               <Repeat2 className="mr-2 h-4 w-4" />
-              Transfer FASTags
+              Quick Transfer
             </Button>
           </div>
         </div>
@@ -373,7 +401,19 @@ export default function AdminAgentsPage() {
                               size="icon"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                alert("Edit Agent (not implemented)");
+                                const u: PortalUser = {
+                                  id: Number(agent.id),
+                                  name: agent.name || "",
+                                  email: (agent as any).email ?? null,
+                                  phone: agent.phone || "",
+                                  role: String(agent.role || "agent"),
+                                  status: String(agent.status || "active"),
+                                  dashboard: (agent as any).dashboard || "agent",
+                                  parent_id: agent.parent_user_id ?? null,
+                                  created_at: (agent as any).created_at ?? null,
+                                };
+                                setEditUser(u);
+                                setEditOpen(true);
                               }}
                             >
                               <Edit className="h-4 w-4" />
@@ -566,6 +606,14 @@ export default function AdminAgentsPage() {
               )}
             </div>
           </div>
+        )}
+        {editUser && (
+          <EditUserModal
+            user={editUser}
+            isOpen={editOpen}
+            onClose={() => setEditOpen(false)}
+            onSuccess={() => { setEditOpen(false); loadAgents(); }}
+          />
         )}
       </div>
     </div>

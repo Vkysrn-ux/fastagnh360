@@ -90,7 +90,7 @@ export default function FastagTransferPage() {
     <div className="container py-10">
       <Card>
         <CardHeader>
-          <CardTitle>Transfer FASTags Between Agents</CardTitle>
+          <CardTitle>Quick Transfer</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
@@ -250,7 +250,7 @@ export default function FastagTransferPage() {
             </div>
           )}
 
-          <Button className="mt-4" onClick={handleTransfer}>Transfer FASTags</Button>
+          <Button className="mt-4" onClick={handleTransfer}>Quick Transfer</Button>
           {message && <p className="text-sm text-muted-foreground pt-2">{message}</p>}
         </CardContent>
       </Card>
