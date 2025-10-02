@@ -576,12 +576,12 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
 
   return (
     <Dialog open={!!ticket} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent className="sm:max-w-6xl">
+      <DialogContent className="sm:max-w-[95vw] md:max-w-5xl lg:max-w-6xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Ticket #{ticket?.ticket_no || ticket?.id}</DialogTitle>
         </DialogHeader>
         {/* Row 1 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 py-2">
+        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-4 gap-4 py-2">
           <div>
             <label className="block text-sm font-medium mb-1">Vehicle Reg. No (VRN)</label>
             <Input
@@ -600,7 +600,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
           </div>
         </div>
         {/* Row 2 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 py-2">
+        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-4 gap-4 py-2">
           <div>
             <label className="block text-sm font-medium mb-1">Alt Phone</label>
             <Input value={form.alt_phone} onChange={(e) => setForm({ ...form, alt_phone: e.target.value })} />
@@ -623,7 +623,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
           </div>
         </div>
         {/* Row 3 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 py-2">
+        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-4 gap-4 py-2">
           <div>
             <label className="block text-sm font-medium mb-1">Status</label>
             <select className="w-full border rounded p-2" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
@@ -692,7 +692,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
           </div>
         </div>
         {/* Row 4 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 py-2">
+        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-4 gap-4 py-2">
           <div>
             <label className="block text-sm font-medium mb-1">Lead By (User/Shop ID)</label>
             <Input value={form.lead_by} onChange={(e) => setForm({ ...form, lead_by: e.target.value })} placeholder="e.g., 2" />
@@ -719,7 +719,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
           <Input value={form.comments} onChange={(e) => setForm({ ...form, comments: e.target.value })} />
         </div>
         {/* Row 5: Commission + Flags */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 py-2">
+        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-4 gap-4 py-2">
           <div>
             <label className="block text-sm font-medium mb-1">Commission Amount</label>
             <Input type="number" step="0.01" value={form.commission_amount as any} onChange={(e) => setForm({ ...form, commission_amount: e.target.value })} placeholder="0" />
@@ -740,7 +740,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
           </div>
         </div>
         {/* Row 6: FASTag Info */}
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 py-2">
+        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-4 gap-4 py-2">
           <div>
             <label className="block text-sm font-medium mb-1">FASTag Barcode</label>
             <Input value={form.fastag_serial as any} onChange={(e) => { setForm({ ...form, fastag_serial: e.target.value }); setFastagQuery(e.target.value); }} placeholder="Type FASTag barcode" />
