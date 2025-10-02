@@ -584,7 +584,11 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 py-2">
           <div>
             <label className="block text-sm font-medium mb-1">Vehicle Reg. No (VRN)</label>
-            <Input value={form.vehicle_reg_no} disabled readOnly className="bg-gray-100" />
+            <Input
+              value={form.vehicle_reg_no}
+              onChange={(e) => setForm({ ...form, vehicle_reg_no: e.target.value })}
+              placeholder="e.g., TN01AB1234 (optional)"
+            />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Customer Name</label>
