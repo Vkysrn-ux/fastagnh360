@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { ArrowLeft, Clock, MessageSquare, User, Truck, PhoneCall, Tag, FileText, AlertCircle, CheckCircle, Circle } from 'lucide-react';
 import Link from 'next/link';
 import { useCanAccessDashboardFeature } from '@/hooks/use-dashboard-permissions';
+import { formatERPDate } from '@/lib/date-format';
 
 interface Ticket {
   id: number;
@@ -171,9 +172,7 @@ export default function TicketDetailPage() {
                   </div>
                   <div>
                     <p className="font-medium">Ticket Created</p>
-                    <p className="text-sm text-gray-500">
-                      {ticket.created_at ? new Date(ticket.created_at).toLocaleString() : '-'}
-                    </p>
+                    <p className="text-sm text-gray-500">{ticket.created_at ? formatERPDate(ticket.created_at as any) : '-'}</p>
                   </div>
                 </div>
               </div>
