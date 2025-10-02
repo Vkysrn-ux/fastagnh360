@@ -84,12 +84,13 @@ export default function NewTicketPage() {
     return "";
   }
 
-  const canSubmit = useMemo(() => form.subject.trim().length > 0 && form.vehicle_reg_no.trim().length > 0 && form.phone.trim().length > 0, [form.subject, form.vehicle_reg_no, form.phone]);
+  // Allow creating a ticket with just mobile number (VRN optional)
+  const canSubmit = useMemo(() => form.subject.trim().length > 0 && form.phone.trim().length > 0, [form.subject, form.phone]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) {
-      setError("Please fill VRN, Phone and Subject");
+      setError("Please fill Mobile and Subject");
       return;
     }
     setSaving(true);
@@ -102,7 +103,7 @@ export default function NewTicketPage() {
           : form.lead_by || form.role_user_id || "";
 
       const payload = {
-        vehicle_reg_no: form.vehicle_reg_no,
+        vehicle_reg_no: form.vehicle_reg_no || "",
         phone: form.phone,
         alt_phone: form.alt_phone,
         subject: form.subject,
@@ -143,7 +144,7 @@ export default function NewTicketPage() {
       <form className="bg-white rounded-2xl shadow-lg p-6 md:p-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" onSubmit={submit}>
         <div>
           <label className="block font-semibold mb-1">Vehicle Reg. No (VRN)</label>
-          <input name="vehicle_reg_no" value={form.vehicle_reg_no} onChange={handleChange} className="w-full border p-2 rounded" required />
+          <input name="vehicle_reg_no" value={form.vehicle_reg_no} onChange={handleChange} className="w-full border p-2 rounded" placeholder="Optional" />
         </div>
         <div>
           <label className="block font-semibold mb-1">Mobile</label>
