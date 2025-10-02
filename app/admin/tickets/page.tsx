@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import CreateSubTicketFullModal from "@/components/tickets/CreateSubTicketFullModal";
+import { formatERPDate } from "@/lib/date-format";
 import CreateTicketFullModal from "@/components/tickets/CreateTicketFullModal";
 import UsersAutocomplete, { type UserOption } from "@/components/UsersAutocomplete";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -324,9 +325,7 @@ export default function TicketListPage() {
                     <StatusBadge status={ticket.status || "open"} />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {ticket.created_at
-                      ? new Date(ticket.created_at).toLocaleDateString()
-                      : "-"}
+                    {ticket.created_at ? formatERPDate(ticket.created_at as any) : "-"}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <Link href={`/admin/tickets/${ticket.id}`} className="text-blue-600 hover:text-blue-900 mr-4" onClick={(e) => e.stopPropagation()}>
@@ -368,7 +367,7 @@ export default function TicketListPage() {
                                   <td className="px-4 py-2 text-sm font-medium text-gray-900">{child.ticket_no}</td>
                                   <td className="px-4 py-2 text-sm">{child.subject}</td>
                                   <td className="px-4 py-2 text-sm"><StatusBadge status={child.status || "open"} /></td>
-                                  <td className="px-4 py-2 text-sm text-gray-500">{child.created_at ? new Date(child.created_at as any).toLocaleString() : '-'}</td>
+                                  <td className="px-4 py-2 text-sm text-gray-500">{child.created_at ? formatERPDate(child.created_at as any) : '-'}</td>
                                   <td className="px-4 py-2 text-sm">
                                     <Link
                                       href={`/admin/tickets/${child.id}`}

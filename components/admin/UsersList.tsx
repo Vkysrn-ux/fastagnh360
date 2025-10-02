@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/table";
 import { useState } from "react";
 import { EditUserModal } from "./EditUserModal";
-import { format } from "date-fns";
+import { formatERPDate } from "@/lib/date-format";
 import { cn } from "@/lib/utils";
 
 interface UsersListProps {
@@ -76,9 +76,7 @@ export function UsersList({ users, onUserUpdated }: UsersListProps) {
                   </span>
                 </TableCell>
                 <TableCell>
-                  {user.created_at
-                    ? format(new Date(user.created_at), "dd/MM/yyyy")
-                    : "-"}
+                  {user.created_at ? formatERPDate(user.created_at as any) : "-"}
                 </TableCell>
               </TableRow>
             ))}

@@ -90,11 +90,15 @@ export async function GET(req: NextRequest) {
   }
   // Sold date range via fastag_sales snapshot; use EXISTS to avoid joins duplication
   if (soldFrom) {
-    conditions.push("EXISTS (SELECT 1 FROM fastag_sales s WHERE s.tag_serial = f.tag_serial AND s.created_at >= ?)");
+    conditions.push(
+      "EXISTS (SELECT 1 FROM fastag_sales s WHERE (s.tag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci) AND s.created_at >= ?)"
+    );
     values.push(`${soldFrom} 00:00:00`);
   }
   if (soldTo) {
-    conditions.push("EXISTS (SELECT 1 FROM fastag_sales s2 WHERE s2.tag_serial = f.tag_serial AND s2.created_at <= ?)");
+    conditions.push(
+      "EXISTS (SELECT 1 FROM fastag_sales s2 WHERE (s2.tag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci) AND s2.created_at <= ?)"
+    );
     values.push(`${soldTo} 23:59:59`);
   }
 
