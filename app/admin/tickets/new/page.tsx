@@ -12,6 +12,7 @@ export default function NewTicketPage() {
 
   const initialForm = useMemo(() => ({
     vehicle_reg_no: "",
+    alt_vehicle_reg_no: "",
     phone: "",
     alt_phone: "",
     subject: "ADD new fastag",
@@ -28,6 +29,30 @@ export default function NewTicketPage() {
     payment_to_send: "",
     net_value: "",
     pickup_point_name: "",
+    // new optional fields matching UI
+    paid_via: "Pending",
+    payment_received: false,
+    payment_nil: false,
+    delivery_done: false,
+    delivery_nil: false,
+    lead_commission: "",
+    lead_commission_paid: false,
+    lead_commission_nil: false,
+    pickup_commission: "",
+    pickup_commission_paid: false,
+    pickup_commission_nil: false,
+    fastag_bank: "",
+    fastag_class: "",
+    fastag_owner: "",
+    fastag_serial: "",
+    rc_front_url: "",
+    rc_back_url: "",
+    pan_url: "",
+    aadhaar_front_url: "",
+    aadhaar_back_url: "",
+    vehicle_front_url: "",
+    vehicle_side_url: "",
+    sticker_pasted_url: "",
   }), []);
 
   const [form, setForm] = useState(initialForm);
@@ -104,6 +129,7 @@ export default function NewTicketPage() {
 
       const payload = {
         vehicle_reg_no: form.vehicle_reg_no || "",
+        alt_vehicle_reg_no: form.alt_vehicle_reg_no || "",
         phone: form.phone,
         alt_phone: form.alt_phone,
         subject: form.subject,
@@ -119,6 +145,29 @@ export default function NewTicketPage() {
         payment_to_collect: form.payment_to_collect !== "" ? Number(form.payment_to_collect) : null,
         payment_to_send: form.payment_to_send !== "" ? Number(form.payment_to_send) : null,
         net_value: form.net_value !== "" ? Number(form.net_value) : null,
+        paid_via: form.paid_via,
+        payment_received: !!form.payment_received,
+        payment_nil: !!form.payment_nil,
+        delivery_done: !!form.delivery_done,
+        delivery_nil: !!form.delivery_nil,
+        lead_commission: form.lead_commission !== "" ? Number(form.lead_commission) : null,
+        lead_commission_paid: !!form.lead_commission_paid,
+        lead_commission_nil: !!form.lead_commission_nil,
+        pickup_commission: form.pickup_commission !== "" ? Number(form.pickup_commission) : null,
+        pickup_commission_paid: !!form.pickup_commission_paid,
+        pickup_commission_nil: !!form.pickup_commission_nil,
+        fastag_bank: form.fastag_bank || null,
+        fastag_class: form.fastag_class || null,
+        fastag_owner: form.fastag_owner || null,
+        fastag_serial: form.fastag_serial || null,
+        rc_front_url: form.rc_front_url || null,
+        rc_back_url: form.rc_back_url || null,
+        pan_url: form.pan_url || null,
+        aadhaar_front_url: form.aadhaar_front_url || null,
+        aadhaar_back_url: form.aadhaar_back_url || null,
+        vehicle_front_url: form.vehicle_front_url || null,
+        vehicle_side_url: form.vehicle_side_url || null,
+        sticker_pasted_url: form.sticker_pasted_url || null,
       };
 
       const res = await fetch(`/api/tickets`, {
@@ -145,6 +194,10 @@ export default function NewTicketPage() {
         <div>
           <label className="block font-semibold mb-1">Vehicle Reg. No (VRN)</label>
           <input name="vehicle_reg_no" value={form.vehicle_reg_no} onChange={handleChange} className="w-full border p-2 rounded" placeholder="Optional" />
+        </div>
+        <div>
+          <label className="block font-semibold mb-1">Alt Reg Number</label>
+          <input name="alt_vehicle_reg_no" value={form.alt_vehicle_reg_no} onChange={handleChange} className="w-full border p-2 rounded" placeholder="Optional" />
         </div>
         <div>
           <label className="block font-semibold mb-1">Mobile</label>
@@ -220,6 +273,33 @@ export default function NewTicketPage() {
         </div>
 
         <div>
+          <label className="block font-semibold mb-1">FASTag Bank</label>
+          <AutocompleteInput
+            value={form.fastag_bank}
+            onChange={(v) => setForm((f) => ({ ...f, fastag_bank: v }))}
+            options={[]}
+            placeholder="Type bank"
+          />
+        </div>
+        <div>
+          <label className="block font-semibold mb-1">FASTag Class</label>
+          <AutocompleteInput
+            value={form.fastag_class}
+            onChange={(v) => setForm((f) => ({ ...f, fastag_class: v }))}
+            options={["Class 4 (Car/Jeep/Van)", "Class 5 (LCV)", "Class 6 (Bus/Truck)", "Class 7 (Multi-Axle)"]}
+            placeholder="Type class"
+          />
+        </div>
+        <div>
+          <label className="block font-semibold mb-1">Barcode</label>
+          <input name="fastag_serial" value={form.fastag_serial} onChange={handleChange} className="w-full border p-2 rounded" placeholder="Type FASTag barcode" />
+        </div>
+        <div>
+          <label className="block font-semibold mb-1">FASTag Owner</label>
+          <input name="fastag_owner" value={form.fastag_owner} onChange={handleChange} className="w-full border p-2 rounded" placeholder="Owner appears after picking" />
+        </div>
+
+        <div>
           <label className="block font-semibold mb-1">KYV Status</label>
           <AutocompleteInput
             value={form.kyv_status}
@@ -287,9 +367,80 @@ export default function NewTicketPage() {
           <input name="net_value" type="number" step="0.01" value={form.net_value} onChange={handleChange} readOnly className="w-full border p-2 rounded bg-gray-50" placeholder="0.00" />
         </div>
 
+        <div>
+          <label className="block font-semibold mb-1">Paid Via</label>
+          <select className="w-full border p-2 rounded" value={form.paid_via} onChange={(e)=> setForm(f => ({...f, paid_via: e.target.value}))}>
+            <option value="Pending">Pending</option>
+            <option value="Paytm QR">Paytm QR</option>
+            <option value="GPay Box">GPay Box</option>
+            <option value="IDFC Box">IDFC Box</option>
+            <option value="Cash">Cash</option>
+            <option value="Sriram Gpay">Sriram Gpay</option>
+            <option value="Lakshman Gpay">Lakshman Gpay</option>
+            <option value="Arjunan Gpay">Arjunan Gpay</option>
+            <option value="Vishnu GPay">Vishnu GPay</option>
+            <option value="Vimal GPay">Vimal GPay</option>
+          </select>
+          <div className="flex gap-4 mt-2 text-sm">
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={!!form.payment_received} onChange={(e)=> setForm(f => ({...f, payment_received: e.target.checked}))}/> Payment Received</label>
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={!!form.payment_nil} onChange={(e)=> setForm(f => ({...f, payment_nil: e.target.checked}))}/> Payment Nil</label>
+          </div>
+        </div>
+
+        <div>
+          <label className="block font-semibold mb-1">Lead Commission to Give</label>
+          <input name="lead_commission" type="number" step="0.01" value={form.lead_commission} onChange={handleChange} className="w-full border p-2 rounded" placeholder="0" />
+          <div className="flex gap-4 mt-2 text-sm">
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={!!form.lead_commission_paid} onChange={(e)=> setForm(f => ({...f, lead_commission_paid: e.target.checked}))}/> Commission Paid</label>
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={!!form.lead_commission_nil} onChange={(e)=> setForm(f => ({...f, lead_commission_nil: e.target.checked}))}/> Commission Nil</label>
+          </div>
+        </div>
+        <div>
+          <label className="block font-semibold mb-1">Pickup Commission to Give</label>
+          <input name="pickup_commission" type="number" step="0.01" value={form.pickup_commission} onChange={handleChange} className="w-full border p-2 rounded" placeholder="0" />
+          <div className="flex gap-4 mt-2 text-sm">
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={!!form.pickup_commission_paid} onChange={(e)=> setForm(f => ({...f, pickup_commission_paid: e.target.checked}))}/> Commission Paid</label>
+            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={!!form.pickup_commission_nil} onChange={(e)=> setForm(f => ({...f, pickup_commission_nil: e.target.checked}))}/> Commission Nil</label>
+          </div>
+        </div>
+
         <div className="lg:col-span-4 md:col-span-2">
           <label className="block font-semibold mb-1">Details</label>
           <textarea name="details" value={form.details} onChange={handleChange} className="w-full border p-2 rounded" rows={3} />
+        </div>
+
+        {/* Simple URL inputs to store document references */}
+        <div>
+          <label className="block font-semibold mb-1">RC Front (URL)</label>
+          <input name="rc_front_url" value={form.rc_front_url} onChange={handleChange} className="w-full border p-2 rounded" placeholder="https://..." />
+        </div>
+        <div>
+          <label className="block font-semibold mb-1">RC Back (URL)</label>
+          <input name="rc_back_url" value={form.rc_back_url} onChange={handleChange} className="w-full border p-2 rounded" placeholder="https://..." />
+        </div>
+        <div>
+          <label className="block font-semibold mb-1">PAN (URL)</label>
+          <input name="pan_url" value={form.pan_url} onChange={handleChange} className="w-full border p-2 rounded" placeholder="https://..." />
+        </div>
+        <div>
+          <label className="block font-semibold mb-1">Aadhaar Front (URL)</label>
+          <input name="aadhaar_front_url" value={form.aadhaar_front_url} onChange={handleChange} className="w-full border p-2 rounded" placeholder="https://..." />
+        </div>
+        <div>
+          <label className="block font-semibold mb-1">Aadhaar Back (URL)</label>
+          <input name="aadhaar_back_url" value={form.aadhaar_back_url} onChange={handleChange} className="w-full border p-2 rounded" placeholder="https://..." />
+        </div>
+        <div>
+          <label className="block font-semibold mb-1">Vehicle Front (URL)</label>
+          <input name="vehicle_front_url" value={form.vehicle_front_url} onChange={handleChange} className="w-full border p-2 rounded" placeholder="https://..." />
+        </div>
+        <div>
+          <label className="block font-semibold mb-1">Vehicle Side (URL)</label>
+          <input name="vehicle_side_url" value={form.vehicle_side_url} onChange={handleChange} className="w-full border p-2 rounded" placeholder="https://..." />
+        </div>
+        <div>
+          <label className="block font-semibold mb-1">Sticker Pasted (URL)</label>
+          <input name="sticker_pasted_url" value={form.sticker_pasted_url} onChange={handleChange} className="w-full border p-2 rounded" placeholder="https://..." />
         </div>
 
         <div className="lg:col-span-4 md:col-span-2">
@@ -297,11 +448,17 @@ export default function NewTicketPage() {
           <input name="comments" value={form.comments} onChange={handleChange} className="w-full border p-2 rounded" />
         </div>
 
-        <div className="lg:col-span-4 md:col-span-2 flex items-center gap-3">
+        <div className="lg:col-span-4 md:col-span-2 flex items-center gap-6 flex-wrap">
           <Button variant="outline" type="button" onClick={() => setForm(initialForm)} disabled={saving}>Reset</Button>
           <Button type="submit" disabled={saving || !canSubmit}>{saving ? "Creating..." : "Create Ticket"}</Button>
           {error && <span className="text-red-600 text-sm">{error}</span>}
           {message && <span className="text-green-600 text-sm">{message}</span>}
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={!!(form as any).delivery_done} onChange={(e)=> setForm(f => ({...f, delivery_done: e.target.checked}))} /> Delivery / Pickup Completed
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={!!(form as any).delivery_nil} onChange={(e)=> setForm(f => ({...f, delivery_nil: e.target.checked}))} /> Delivery / Pickup Nil
+          </label>
         </div>
       </form>
     </div>
