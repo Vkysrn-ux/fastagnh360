@@ -401,6 +401,28 @@ export async function POST(req: NextRequest) {
     const hasCommissionDone = await hasTableColumn(TICKETS_TABLE, "commission_done", conn);
     const hasPaidVia = await hasTableColumn(TICKETS_TABLE, 'paid_via', conn);
 
+    // Ensure additional optional columns exist (idempotent)
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN alt_vehicle_reg_no VARCHAR(64) NULL`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN payment_nil TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN delivery_nil TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN lead_commission DECIMAL(10,2) NULL`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN lead_commission_paid TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN lead_commission_nil TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN pickup_commission DECIMAL(10,2) NULL`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN pickup_commission_paid TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN pickup_commission_nil TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN fastag_bank VARCHAR(64) NULL`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN fastag_class VARCHAR(32) NULL`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN fastag_owner VARCHAR(64) NULL`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN rc_front_url VARCHAR(255) NULL`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN rc_back_url VARCHAR(255) NULL`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN pan_url VARCHAR(255) NULL`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN aadhaar_front_url VARCHAR(255) NULL`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN aadhaar_back_url VARCHAR(255) NULL`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN vehicle_front_url VARCHAR(255) NULL`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN vehicle_side_url VARCHAR(255) NULL`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN sticker_pasted_url VARCHAR(255) NULL`); } catch {}
+
     // helper: duplicate guard by phone + vehicle
     async function findDuplicates(phoneRaw: any, vrnRaw: any) {
       const p = normalizeIndianMobile(phoneRaw);
@@ -476,6 +498,7 @@ export async function POST(req: NextRequest) {
         "details",
         "phone",
         "alt_phone",
+        "alt_vehicle_reg_no",
         "assigned_to",
         "lead_received_from",
         "lead_by",
@@ -495,6 +518,7 @@ export async function POST(req: NextRequest) {
         details ?? "",
         normalizeIndianMobile(effectivePhone) ?? null,
         normalizeIndianMobile(effectiveAltPhone),
+        data?.alt_vehicle_reg_no ?? null,
         effectiveAssignedTo,
         effectiveLeadFrom,
         effectiveLeadBy,
@@ -538,6 +562,28 @@ export async function POST(req: NextRequest) {
         childPlaceholders.push("?");
         childValues.push(effectiveFastagSerial ?? null);
       }
+      // Extra optional fields (avoid duplicates already handled above)
+      if (hasPaidVia) { childColumns.push('paid_via'); childPlaceholders.push('?'); childValues.push(normalizePaidVia(data?.paid_via)); }
+      childColumns.push('payment_nil'); childPlaceholders.push('?'); childValues.push(data?.payment_nil ? 1 : 0);
+      childColumns.push('delivery_nil'); childPlaceholders.push('?'); childValues.push(data?.delivery_nil ? 1 : 0);
+      // commission_amount already added above when present
+      childColumns.push('lead_commission'); childPlaceholders.push('?'); childValues.push(data?.lead_commission ?? null);
+      childColumns.push('lead_commission_paid'); childPlaceholders.push('?'); childValues.push(data?.lead_commission_paid ? 1 : 0);
+      childColumns.push('lead_commission_nil'); childPlaceholders.push('?'); childValues.push(data?.lead_commission_nil ? 1 : 0);
+      childColumns.push('pickup_commission'); childPlaceholders.push('?'); childValues.push(data?.pickup_commission ?? null);
+      childColumns.push('pickup_commission_paid'); childPlaceholders.push('?'); childValues.push(data?.pickup_commission_paid ? 1 : 0);
+      childColumns.push('pickup_commission_nil'); childPlaceholders.push('?'); childValues.push(data?.pickup_commission_nil ? 1 : 0);
+      childColumns.push('fastag_bank'); childPlaceholders.push('?'); childValues.push(data?.fastag_bank ?? null);
+      childColumns.push('fastag_class'); childPlaceholders.push('?'); childValues.push(data?.fastag_class ?? null);
+      childColumns.push('fastag_owner'); childPlaceholders.push('?'); childValues.push(data?.fastag_owner ?? null);
+      childColumns.push('rc_front_url'); childPlaceholders.push('?'); childValues.push(data?.rc_front_url ?? null);
+      childColumns.push('rc_back_url'); childPlaceholders.push('?'); childValues.push(data?.rc_back_url ?? null);
+      childColumns.push('pan_url'); childPlaceholders.push('?'); childValues.push(data?.pan_url ?? null);
+      childColumns.push('aadhaar_front_url'); childPlaceholders.push('?'); childValues.push(data?.aadhaar_front_url ?? null);
+      childColumns.push('aadhaar_back_url'); childPlaceholders.push('?'); childValues.push(data?.aadhaar_back_url ?? null);
+      childColumns.push('vehicle_front_url'); childPlaceholders.push('?'); childValues.push(data?.vehicle_front_url ?? null);
+      childColumns.push('vehicle_side_url'); childPlaceholders.push('?'); childValues.push(data?.vehicle_side_url ?? null);
+      childColumns.push('sticker_pasted_url'); childPlaceholders.push('?'); childValues.push(data?.sticker_pasted_url ?? null);
 
       childColumns.push("parent_ticket_id");
       childPlaceholders.push("?");
@@ -602,6 +648,7 @@ export async function POST(req: NextRequest) {
     const parentColumns = [
       "ticket_no",
       "vehicle_reg_no",
+      "alt_vehicle_reg_no",
       "subject",
       "details",
       "phone",
@@ -621,6 +668,7 @@ export async function POST(req: NextRequest) {
     const parentValues: (string | number | null)[] = [
       ticket_no_parent,
       vehicle_reg_no ?? "",
+      data?.alt_vehicle_reg_no ?? null,
       subject ?? "",
       details ?? "",
       normalizeIndianMobile(phone) ?? null,
@@ -656,11 +704,27 @@ export async function POST(req: NextRequest) {
       parentPlaceholders.push("?");
       parentValues.push(isNaN(parentCommission as any) ? 0 : parentCommission);
     }
-    if (hasPaidVia) {
-      parentColumns.push('paid_via');
-      parentPlaceholders.push('?');
-      parentValues.push(normalizePaidVia((data as any)?.paid_via));
-    }
+    if (hasPaidVia) { parentColumns.push('paid_via'); parentPlaceholders.push('?'); parentValues.push(normalizePaidVia(data?.paid_via)); }
+    parentColumns.push('payment_nil'); parentPlaceholders.push('?'); parentValues.push(data?.payment_nil ? 1 : 0);
+    parentColumns.push('delivery_nil'); parentPlaceholders.push('?'); parentValues.push(data?.delivery_nil ? 1 : 0);
+    parentColumns.push('lead_commission'); parentPlaceholders.push('?'); parentValues.push(data?.lead_commission ?? null);
+    parentColumns.push('lead_commission_paid'); parentPlaceholders.push('?'); parentValues.push(data?.lead_commission_paid ? 1 : 0);
+    parentColumns.push('lead_commission_nil'); parentPlaceholders.push('?'); parentValues.push(data?.lead_commission_nil ? 1 : 0);
+    parentColumns.push('pickup_commission'); parentPlaceholders.push('?'); parentValues.push(data?.pickup_commission ?? null);
+    parentColumns.push('pickup_commission_paid'); parentPlaceholders.push('?'); parentValues.push(data?.pickup_commission_paid ? 1 : 0);
+    parentColumns.push('pickup_commission_nil'); parentPlaceholders.push('?'); parentValues.push(data?.pickup_commission_nil ? 1 : 0);
+    parentColumns.push('fastag_bank'); parentPlaceholders.push('?'); parentValues.push(data?.fastag_bank ?? null);
+    parentColumns.push('fastag_class'); parentPlaceholders.push('?'); parentValues.push(data?.fastag_class ?? null);
+    parentColumns.push('fastag_owner'); parentPlaceholders.push('?'); parentValues.push(data?.fastag_owner ?? null);
+    parentColumns.push('rc_front_url'); parentPlaceholders.push('?'); parentValues.push(data?.rc_front_url ?? null);
+    parentColumns.push('rc_back_url'); parentPlaceholders.push('?'); parentValues.push(data?.rc_back_url ?? null);
+    parentColumns.push('pan_url'); parentPlaceholders.push('?'); parentValues.push(data?.pan_url ?? null);
+    parentColumns.push('aadhaar_front_url'); parentPlaceholders.push('?'); parentValues.push(data?.aadhaar_front_url ?? null);
+    parentColumns.push('aadhaar_back_url'); parentPlaceholders.push('?'); parentValues.push(data?.aadhaar_back_url ?? null);
+    parentColumns.push('vehicle_front_url'); parentPlaceholders.push('?'); parentValues.push(data?.vehicle_front_url ?? null);
+    parentColumns.push('vehicle_side_url'); parentPlaceholders.push('?'); parentValues.push(data?.vehicle_side_url ?? null);
+    parentColumns.push('sticker_pasted_url'); parentPlaceholders.push('?'); parentValues.push(data?.sticker_pasted_url ?? null);
+    // paid_via already included above if available
     parentColumns.push("pickup_point_name");
     parentPlaceholders.push("?");
     parentValues.push(pickup_point_name ?? null);
@@ -868,8 +932,10 @@ export async function PATCH(req: NextRequest) {
     const includeDeliveryDone = await hasTableColumn(TICKETS_TABLE, "delivery_done");
     const includeCommissionDone = await hasTableColumn(TICKETS_TABLE, "commission_done");
     const includePaidVia = await hasTableColumn(TICKETS_TABLE, 'paid_via');
+    const includeAltVRN = await hasTableColumn(TICKETS_TABLE, 'alt_vehicle_reg_no');
     const allowedFields = [
       "vehicle_reg_no",
+      "alt_vehicle_reg_no",
       "subject",
       "details",
       "phone",
@@ -903,7 +969,13 @@ export async function PATCH(req: NextRequest) {
     if (includePaidVia) {
       allowedFields.push('paid_via');
     }
+    allowedFields.push('payment_nil');
+    allowedFields.push('delivery_nil');
     allowedFields.push("pickup_point_name");
+    // commissions and extras
+    allowedFields.push('lead_commission','lead_commission_paid','lead_commission_nil','pickup_commission','pickup_commission_paid','pickup_commission_nil');
+    allowedFields.push('fastag_bank','fastag_class','fastag_owner');
+    allowedFields.push('rc_front_url','rc_back_url','pan_url','aadhaar_front_url','aadhaar_back_url','vehicle_front_url','vehicle_side_url','sticker_pasted_url');
 
     const updates: string[] = [];
     const values: any[] = [];

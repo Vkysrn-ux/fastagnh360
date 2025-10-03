@@ -29,6 +29,7 @@ export default function CreateTicketFullModal({
 
   const initialForm = useMemo(() => ({
     vehicle_reg_no: "",
+    alt_vehicle_reg_no: "",
     phone: "",
     alt_phone: "",
     subject: "ADD new fastag",
@@ -47,6 +48,15 @@ export default function CreateTicketFullModal({
     pickup_point_name: "",
     bank_name: "",
     fastag_serial: "",
+    // documents
+    rc_front_url: "",
+    rc_back_url: "",
+    pan_url: "",
+    aadhaar_front_url: "",
+    aadhaar_back_url: "",
+    vehicle_front_url: "",
+    vehicle_side_url: "",
+    sticker_pasted_url: "",
   }), []);
 
   const [form, setForm] = useState(initialForm);
@@ -63,8 +73,16 @@ export default function CreateTicketFullModal({
   const [fastagOwner, setFastagOwner] = useState<string>("");
   const [commissionAmount, setCommissionAmount] = useState<string>("0");
   const [paymentReceived, setPaymentReceived] = useState<boolean>(false);
+  const [paymentNil, setPaymentNil] = useState<boolean>(false);
   const [deliveryDone, setDeliveryDone] = useState<boolean>(false);
+  const [deliveryNil, setDeliveryNil] = useState<boolean>(false);
   const [commissionDone, setCommissionDone] = useState<boolean>(false);
+  const [leadCommission, setLeadCommission] = useState<string>("");
+  const [leadCommissionPaid, setLeadCommissionPaid] = useState<boolean>(false);
+  const [leadCommissionNil, setLeadCommissionNil] = useState<boolean>(false);
+  const [pickupCommission, setPickupCommission] = useState<string>("");
+  const [pickupCommissionPaid, setPickupCommissionPaid] = useState<boolean>(false);
+  const [pickupCommissionNil, setPickupCommissionNil] = useState<boolean>(false);
   const [selectedUserNotes, setSelectedUserNotes] = useState<string>("");
   const [pickupNotes, setPickupNotes] = useState<string>("");
   const [shopNotes, setShopNotes] = useState<string>("");
@@ -189,6 +207,46 @@ export default function CreateTicketFullModal({
     setFastagOptions([]);
   }
 
+  async function uploadToServer(file: File): Promise<string> {
+    const fd = new FormData();
+    fd.set('file', file);
+    const res = await fetch('/api/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || 'Upload failed');
+    return String(data.url);
+  }
+
+  function UploadField({ label, value, onChange }: { label: string; value: string; onChange: (url: string) => void }) {
+    return (
+      <div>
+        <label className="block font-semibold mb-1">{label}</label>
+        <div className="flex items-center gap-2">
+          <input type="file" onChange={async (e) => {
+            const inputEl = e.currentTarget as HTMLInputElement;
+            const f = inputEl.files?.[0];
+            if (!f) return;
+            try {
+              const url = await uploadToServer(f);
+              onChange(url);
+            } catch (err: any) {
+              alert(err?.message || 'Upload failed');
+            } finally { try { inputEl.value = ''; } catch {} }
+          }} />
+          {value && (<a href={value} target="_blank" rel="noreferrer" className="text-blue-600 underline text-sm">View</a>)}
+        </div>
+      </div>
+    );
+  }
+
+  function CheckboxItem({ label, checked, onChange, className = "" }: { label: string; checked: boolean; onChange: (v: boolean) => void; className?: string }) {
+    return (
+      <label className={`inline-flex items-center gap-2 text-sm leading-none ${className}`}>
+        <input type="checkbox" className="h-4 w-4" checked={checked} onChange={(e)=> onChange(e.target.checked)} />
+        <span className="select-none">{label}</span>
+      </label>
+    );
+  }
+
   // If user types a full barcode that exactly matches, auto-pick to fill bank/class/owner
   useEffect(() => {
     const exact = (fastagOptions || []).find((r: any) => String(r.tag_serial) === fastagSerialInput.trim());
@@ -202,8 +260,8 @@ export default function CreateTicketFullModal({
   }
 
   const canSubmit = useMemo(
-    () => form.subject.trim().length > 0 && form.vehicle_reg_no.trim().length > 0 && form.phone.trim().length > 0,
-    [form.subject, form.vehicle_reg_no, form.phone]
+    () => form.subject.trim().length > 0 && form.phone.trim().length > 0,
+    [form.subject, form.phone]
   );
 
   async function submit() {
@@ -228,7 +286,8 @@ export default function CreateTicketFullModal({
           : form.lead_by || form.role_user_id || "";
 
       const payload: any = {
-        vehicle_reg_no: form.vehicle_reg_no,
+        vehicle_reg_no: form.vehicle_reg_no || "",
+        alt_vehicle_reg_no: form.alt_vehicle_reg_no || "",
         phone: main.value,
         alt_phone: altNorm,
         subject: form.subject,
@@ -248,9 +307,29 @@ export default function CreateTicketFullModal({
       };
       if (commissionAmount !== "") payload.commission_amount = Number(commissionAmount) || 0;
       payload.payment_received = !!paymentReceived;
+      payload.payment_nil = !!paymentNil;
       payload.delivery_done = !!deliveryDone;
+      payload.delivery_nil = !!deliveryNil;
       payload.commission_done = !!commissionDone;
       if (form.fastag_serial) payload.fastag_serial = form.fastag_serial;
+      if (form.bank_name) payload.fastag_bank = form.bank_name;
+      if (fastagClass) payload.fastag_class = fastagClass;
+      if (fastagOwner) payload.fastag_owner = fastagOwner;
+      if (leadCommission !== "") payload.lead_commission = Number(leadCommission) || 0;
+      payload.lead_commission_paid = !!leadCommissionPaid;
+      payload.lead_commission_nil = !!leadCommissionNil;
+      if (pickupCommission !== "") payload.pickup_commission = Number(pickupCommission) || 0;
+      payload.pickup_commission_paid = !!pickupCommissionPaid;
+      payload.pickup_commission_nil = !!pickupCommissionNil;
+      // document urls
+      payload.rc_front_url = form.rc_front_url || null;
+      payload.rc_back_url = form.rc_back_url || null;
+      payload.pan_url = form.pan_url || null;
+      payload.aadhaar_front_url = form.aadhaar_front_url || null;
+      payload.aadhaar_back_url = form.aadhaar_back_url || null;
+      payload.vehicle_front_url = form.vehicle_front_url || null;
+      payload.vehicle_side_url = form.vehicle_side_url || null;
+      payload.sticker_pasted_url = form.sticker_pasted_url || null;
 
       const res = await fetch(`/api/tickets`, {
         method: "POST",
@@ -286,7 +365,11 @@ export default function CreateTicketFullModal({
           <DialogTitle>Create New Ticket</DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Two-column layout: left main form, right documents */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Left: main form */}
+          <div className="md:col-span-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="block font-semibold mb-1">Subject *</label>
             <AutocompleteInput
@@ -320,6 +403,16 @@ export default function CreateTicketFullModal({
               value={form.vehicle_reg_no}
               onChange={handleChange}
               className="w-full border p-2 rounded"
+            />
+          </div>
+          <div>
+            <label className="block font-semibold mb-1">Alt Reg Number</label>
+            <input
+              name="alt_vehicle_reg_no"
+              value={form.alt_vehicle_reg_no}
+              onChange={handleChange}
+              className="w-full border p-2 rounded"
+              placeholder="Optional"
             />
           </div>
           <div>
@@ -426,19 +519,12 @@ export default function CreateTicketFullModal({
             <input type="number" step="0.01" value={commissionAmount} onChange={(e) => setCommissionAmount(e.target.value)} className="w-full border p-2 rounded" placeholder="0" />
             <div className="text-xs text-gray-500 mt-1">Defaults to 0 if no commission is due.</div>
           </div>
-          <div className="flex items-center gap-6">
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
-              <input type="checkbox" checked={paymentReceived} onChange={(e) => setPaymentReceived(e.target.checked)} />
-              Payment Received
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
-              <input type="checkbox" checked={deliveryDone} onChange={(e) => setDeliveryDone(e.target.checked)} />
-              Delivery Done
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
-              <input type="checkbox" checked={commissionDone} onChange={(e) => setCommissionDone(e.target.checked)} />
-              Commission Done
-            </label>
+          <div className="col-span-1 md:col-span-2 lg:col-span-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mt-1">
+            <CheckboxItem label="Payment Received" checked={paymentReceived} onChange={setPaymentReceived} />
+            <CheckboxItem label="Payment Nil" checked={paymentNil} onChange={setPaymentNil} />
+            <CheckboxItem label="Delivery Done" checked={deliveryDone} onChange={setDeliveryDone} />
+            <CheckboxItem label="Delivery Nil" checked={deliveryNil} onChange={setDeliveryNil} />
+            <CheckboxItem label="Commission Done" checked={commissionDone} onChange={setCommissionDone} />
           </div>
           {/* Paid via */}
           <div className="lg:col-span-2">
@@ -489,10 +575,45 @@ export default function CreateTicketFullModal({
             </div>
           </div>
 
+          {/* Lead & Pickup Commissions */}
+          <div>
+            <label className="block font-semibold mb-1">Lead Commission to Give</label>
+            <input type="number" step="0.01" value={leadCommission} onChange={(e)=> setLeadCommission(e.target.value)} className="w-full border p-2 rounded" placeholder="0" />
+            <div className="grid grid-cols-2 gap-3 mt-2">
+              <CheckboxItem label="Commission Paid" checked={leadCommissionPaid} onChange={setLeadCommissionPaid} className="text-xs" />
+              <CheckboxItem label="Commission Nil" checked={leadCommissionNil} onChange={setLeadCommissionNil} className="text-xs" />
+            </div>
+          </div>
+          <div>
+            <label className="block font-semibold mb-1">Pickup Commission to Give</label>
+            <input type="number" step="0.01" value={pickupCommission} onChange={(e)=> setPickupCommission(e.target.value)} className="w-full border p-2 rounded" placeholder="0" />
+            <div className="grid grid-cols-2 gap-3 mt-2">
+              <CheckboxItem label="Commission Paid" checked={pickupCommissionPaid} onChange={setPickupCommissionPaid} className="text-xs" />
+              <CheckboxItem label="Commission Nil" checked={pickupCommissionNil} onChange={setPickupCommissionNil} className="text-xs" />
+            </div>
+          </div>
+
           {/* Details full width */}
           <div className="lg:col-span-4 md:col-span-2">
             <label className="block font-semibold mb-1">Details</label>
             <textarea name="details" value={form.details} onChange={handleChange} className="w-full border p-2 rounded" rows={3} />
+          </div>
+            </div>
+          </div>
+
+          {/* Right: documents sidebar */}
+          <div className="md:col-span-1">
+            <h3 className="font-semibold mb-2">Documents</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <UploadField label="RC Front" value={form.rc_front_url} onChange={(u)=> setForm(f => ({...f, rc_front_url: u}))} />
+              <UploadField label="RC Back" value={form.rc_back_url} onChange={(u)=> setForm(f => ({...f, rc_back_url: u}))} />
+              <UploadField label="PAN" value={form.pan_url} onChange={(u)=> setForm(f => ({...f, pan_url: u}))} />
+              <UploadField label="Aadhaar" value={form.aadhaar_front_url} onChange={(u)=> setForm(f => ({...f, aadhaar_front_url: u}))} />
+              <UploadField label="Aadhaar" value={form.aadhaar_back_url} onChange={(u)=> setForm(f => ({...f, aadhaar_back_url: u}))} />
+              <UploadField label="Vehicle Front" value={form.vehicle_front_url} onChange={(u)=> setForm(f => ({...f, vehicle_front_url: u}))} />
+              <UploadField label="Vehicle Side" value={form.vehicle_side_url} onChange={(u)=> setForm(f => ({...f, vehicle_side_url: u}))} />
+              <UploadField label="Sticker" value={form.sticker_pasted_url} onChange={(u)=> setForm(f => ({...f, sticker_pasted_url: u}))} />
+            </div>
           </div>
         </div>
 
