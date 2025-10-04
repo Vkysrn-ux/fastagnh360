@@ -67,7 +67,7 @@ function normalizePaidVia(v: any): string {
   return allowed.has(val) ? val : 'Pending';
 }
 
-// --- utility: make a ticket_no like NH360-YYYYMMDD-###, inside a txn ---
+// --- utility: make a ticket_no like TK-A0001 (prefix + 4-digit id-based sequence)
 
 async function markFastagAsUsed(conn: PoolConnection, fastagSerial: string | null, vehicleRegNo?: string | null) {
   const serial = fastagSerial ? String(fastagSerial).trim() : "";
@@ -99,19 +99,23 @@ async function markFastagAsUsed(conn: PoolConnection, fastagSerial: string | nul
 }
 
 async function generateTicketNo(conn: PoolConnection): Promise<string> {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  const todayStr = `${yyyy}${mm}${dd}`;
-
-  const [rows] = await conn.query(
-    "SELECT COUNT(*) AS count FROM tickets_nh WHERE DATE(created_at) = CURDATE()"
-  );
-  // @ts-ignore - RowDataPacket
-  const todayCount = rows?.[0]?.count || 0;
-  const seq = String(todayCount + 1).padStart(3, "0");
-  return `NH360-${todayStr}-${seq}`;
+  // Use the next AUTO_INCREMENT value for tickets_nh to derive a unique sequence
+  // This keeps numbers strictly increasing across the table and avoids date-based resets.
+  try {
+    const [rows]: any = await conn.query(
+      `SELECT AUTO_INCREMENT AS nextId FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1`,
+      [TICKETS_TABLE]
+    );
+    const nextId = Number(rows?.[0]?.nextId || 1);
+    const seq = String(nextId).padStart(4, '0');
+    return `TK-A${seq}`;
+  } catch {
+    // Fallback: count rows + 1 (less robust under concurrency, but better than failing)
+    const [rows2]: any = await conn.query(`SELECT COALESCE(MAX(id), 0) + 1 AS nextId FROM ${TICKETS_TABLE}`);
+    const nextId2 = Number(rows2?.[0]?.nextId || 1);
+    const seq2 = String(nextId2).padStart(4, '0');
+    return `TK-A${seq2}`;
+  }
 }
 
 function normalizeIndianMobile(val: any): string | null {
@@ -426,6 +430,27 @@ export async function POST(req: NextRequest) {
     const hasDeliveryDone = await hasTableColumn(TICKETS_TABLE, "delivery_done", conn);
     const hasCommissionDone = await hasTableColumn(TICKETS_TABLE, "commission_done", conn);
     const hasPaidVia = await hasTableColumn(TICKETS_TABLE, 'paid_via', conn);
+
+    // Business rule validation: if payment is received, paid_via must not be 'Pending'
+    try {
+      const normalizedVia = normalizePaidVia((data as any)?.paid_via);
+      const paymentIsReceived = !!(data as any)?.payment_received;
+      if (paymentIsReceived && normalizedVia === 'Pending') {
+        await conn.rollback();
+        return NextResponse.json({ error: "Paid via cannot be 'Pending' when Payment Received is checked." }, { status: 400 });
+      }
+      // If creating sub_issues, ensure each child respects the same rule
+      if (Array.isArray((data as any)?.sub_issues)) {
+        for (const row of (data as any).sub_issues) {
+          const childVia = normalizePaidVia((row as any)?.paid_via ?? (data as any)?.paid_via);
+          const childReceived = !!(row as any)?.payment_received;
+          if (childReceived && childVia === 'Pending') {
+            await conn.rollback();
+            return NextResponse.json({ error: "Paid via cannot be 'Pending' for a sub-ticket when Payment Received is checked." }, { status: 400 });
+          }
+        }
+      }
+    } catch {}
 
     // Ensure additional optional columns exist (idempotent)
     try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN alt_vehicle_reg_no VARCHAR(64) NULL`); } catch {}
@@ -1017,10 +1042,10 @@ export async function PATCH(req: NextRequest) {
     if (includeNpci) {
       allowedFields.push("npci_status");
     }
-    if (includeCommissionColumn) {
+  if (includeCommissionColumn) {
       allowedFields.push("commission_amount");
     }
-    if (includeFastagColumn) {
+  if (includeFastagColumn) {
       allowedFields.push("fastag_serial");
     }
     if (includePaymentReceived) {
@@ -1071,7 +1096,18 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    const updates: string[] = [];
+  // Business rule validation: if final payment_received is true and final paid_via is 'Pending', block update
+  try {
+    const [rows]: any = await pool.query(`SELECT paid_via, payment_received FROM ${TICKETS_TABLE} WHERE id = ? LIMIT 1`, [data.id]);
+    const cur = rows?.[0] || {};
+    const finalReceived = includePaymentReceived ? (typeof (data as any).payment_received !== 'undefined' ? !!(data as any).payment_received : !!cur.payment_received) : !!cur.payment_received;
+    const finalVia = includePaidVia ? (typeof (data as any).paid_via !== 'undefined' ? normalizePaidVia((data as any).paid_via) : (cur.paid_via ?? 'Pending')) : (cur.paid_via ?? 'Pending');
+    if (finalReceived && finalVia === 'Pending') {
+      return NextResponse.json({ error: "Paid via cannot be 'Pending' when Payment Received is checked." }, { status: 400 });
+    }
+  } catch {}
+
+  const updates: string[] = [];
     const values: any[] = [];
     for (const field of allowedFields) {
       if (typeof data[field] !== "undefined") {

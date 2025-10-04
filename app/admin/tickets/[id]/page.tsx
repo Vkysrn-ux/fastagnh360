@@ -122,9 +122,14 @@ export default function TicketDetailPage() {
               <ArrowLeft className="w-5 h-5" />
               Back to Tickets
             </Link>
-            <h1 className="text-2xl font-bold">
-              Ticket #{ticket.ticket_no || ticket.id}
-            </h1>
+            <div className="flex flex-col">
+              <h1 className="text-2xl font-bold">
+                Ticket #{ticket.ticket_no || `TK-A${String(ticket.id).padStart(4,'0')}`}
+              </h1>
+              <div className="text-sm text-gray-500">
+                {ticket.created_at ? formatERPDate(ticket.created_at as any) : "-"}
+              </div>
+            </div>
           </div>
           <StatusBadge status={ticket.status || 'open'} />
         </div>

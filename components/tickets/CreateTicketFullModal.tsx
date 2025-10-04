@@ -102,6 +102,10 @@ export default function CreateTicketFullModal({
     'Vimal GPay',
   ];
   const [paidVia, setPaidVia] = useState<string>('Pending');
+  // If payment is marked received, default away from 'Pending'
+  useEffect(() => {
+    if (paymentReceived && paidVia === 'Pending') setPaidVia('Cash');
+  }, [paymentReceived]);
 
   // Reset when modal opens
   useEffect(() => {
@@ -301,6 +305,11 @@ export default function CreateTicketFullModal({
   async function submit() {
     if (!canSubmit) {
       setError("Please fill VRN, Phone and Subject");
+      return;
+    }
+    // Business rule: if payment is received, Paid via cannot be 'Pending'
+    if (paymentReceived && String(paidVia).trim() === 'Pending') {
+      setError("Paid via cannot be 'Pending' when Payment Received is checked.");
       return;
     }
     const main = parseIndianMobile(form.phone);
