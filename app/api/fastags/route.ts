@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { hasTableColumn } from "@/lib/db-helpers";
 import type { RowDataPacket } from "mysql2";
 
 function normalizeFastagRow(row: any) {
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
   const supplierFilter = (searchParams.get("supplier") || searchParams.get("supplier_id") || "").trim();
   const bankLike = (searchParams.get("bank_like") || "").trim();
   const classLike = (searchParams.get("class_like") || "").trim();
+  const mappingFilter = (searchParams.get("mapping") || "").trim().toLowerCase();
   // Optional pagination (no limit by default)
   const limitParamRaw = searchParams.get("limit");
   const offsetParamRaw = searchParams.get("offset");
@@ -75,6 +77,20 @@ export async function GET(req: NextRequest) {
     conditions.push("f.status = ?");
     values.push(statusFilter);
   }
+  // Optional bank mapping status if column exists
+  try {
+    const hasMappingStatus = await hasTableColumn('fastags', 'bank_mapping_status');
+    const hasMappingDone = await hasTableColumn('fastags', 'mapping_done');
+    if (mappingFilter && (hasMappingStatus || hasMappingDone)) {
+      if (hasMappingStatus) {
+        if (mappingFilter === 'done') { conditions.push("f.bank_mapping_status = 'done'"); }
+        else if (mappingFilter === 'pending') { conditions.push("f.bank_mapping_status = 'pending'"); }
+      } else if (hasMappingDone) {
+        if (mappingFilter === 'done') { conditions.push("f.mapping_done = 1"); }
+        else if (mappingFilter === 'pending') { conditions.push("(f.mapping_done = 0 OR f.mapping_done IS NULL)"); }
+      }
+    }
+  } catch {}
   // Created/added date range
   if (createdFrom) { conditions.push("f.created_at >= ?"); values.push(`${createdFrom} 00:00:00`); }
   if (createdTo) { conditions.push("f.created_at <= ?"); values.push(`${createdTo} 23:59:59`); }
@@ -126,7 +142,7 @@ export async function GET(req: NextRequest) {
         (SELECT COALESCE(s.sold_by_user_id, s.sold_by_agent_id)
            FROM fastag_sales s
           WHERE (s.tag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)
-          ORDER BY s.created_at ASC
+          ORDER BY s.created_at DESC
           LIMIT 1
         ) AS sold_by_user_id,
         COALESCE(u.name, '') AS assigned_to_name,
@@ -175,7 +191,7 @@ export async function GET(req: NextRequest) {
           (SELECT COALESCE(s.sold_by_user_id, s.sold_by_agent_id)
              FROM fastag_sales s
             WHERE (s.tag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)
-            ORDER BY s.created_at ASC
+            ORDER BY s.created_at DESC
             LIMIT 1
           ) AS sold_by_user_id
         FROM fastags f

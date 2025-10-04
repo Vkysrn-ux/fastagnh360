@@ -1,6 +1,7 @@
 // app/api/tickets/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { getUserSession } from "@/lib/getSession";
 import { logTicketAction } from "@/lib/ticket-logs";
 import { hasTableColumn } from "@/lib/db-helpers";
 import type { PoolConnection } from "mysql2/promise";
@@ -11,10 +12,26 @@ function normalizeStatus(val: any): string | null {
   if (val === null || val === undefined) return null;
   const s = String(val).trim().toLowerCase();
   const map: Record<string, string> = {
+    // canonical set we use across app: open | in_progress | completed | closed
+    "open": "open",
+    "pending": "open",
     "activation pending": "open",
+    "kyc pending": "open",
+    "waiting": "open",
+    "new lead": "open",
+
+    "in progress": "in_progress",
+    "in_progress": "in_progress",
+    "working": "in_progress",
+
+    "completed": "completed",
+    "done": "completed",
     "activated": "completed",
-    "cust cancelled": "closed",
+    "resolved": "completed",
+
     "closed": "closed",
+    "cancelled": "closed",
+    "cust cancelled": "closed",
   };
   return map[s] || s || null;
 }
@@ -206,6 +223,11 @@ export async function GET(req: NextRequest) {
   const scope = searchParams.get("scope");
 
   try {
+    // Determine if created_by column exists; use safe selects/joins accordingly
+    let hasCreatedByCol = false;
+    try { hasCreatedByCol = await hasTableColumn(TICKETS_TABLE, 'created_by'); } catch {}
+    const createdBySelect = hasCreatedByCol ? ", COALESCE(cu.name, '') AS created_by_name" : ", '' AS created_by_name";
+    const createdByJoin = hasCreatedByCol ? " LEFT JOIN users cu ON t.created_by = cu.id" : "";
     if (parentId) {
       // Children of one parent
       // Try rich join (FASTag info). Fallback to basic if join fails.
@@ -252,6 +274,7 @@ export async function GET(req: NextRequest) {
         const [rows] = await pool.query(`
           SELECT
             t.*,
+            COALESCE(u.name, '') AS assigned_to_name${createdBySelect},
             CASE
               WHEN t.lead_received_from = 'Shop' AND u.role = 'shop' THEN u.name
               ELSE NULL
@@ -264,7 +287,7 @@ export async function GET(req: NextRequest) {
               ELSE 'Admin'
             END AS fastag_owner
           FROM tickets_nh t
-          LEFT JOIN users u ON t.assigned_to = u.id
+          LEFT JOIN users u ON t.assigned_to = u.id${createdByJoin}
           LEFT JOIN fastags f ON f.tag_serial = t.fastag_serial
           WHERE COALESCE(t.status, '') <> 'draft'
           ORDER BY t.created_at DESC
@@ -274,12 +297,13 @@ export async function GET(req: NextRequest) {
         const [rows] = await pool.query(`
           SELECT
             t.*,
+            COALESCE(u.name, '') AS assigned_to_name${createdBySelect},
             CASE
               WHEN t.lead_received_from = 'Shop' AND u.role = 'shop' THEN u.name
               ELSE NULL
             END AS shop_name
           FROM tickets_nh t
-          LEFT JOIN users u ON t.assigned_to = u.id
+          LEFT JOIN users u ON t.assigned_to = u.id${createdByJoin}
           WHERE COALESCE(t.status, '') <> 'draft'
           ORDER BY t.created_at DESC
         `);
@@ -292,6 +316,7 @@ export async function GET(req: NextRequest) {
       const [rows] = await pool.query(`
         SELECT
           t.*,
+          COALESCE(u.name, '') AS assigned_to_name${createdBySelect},
           CASE
             WHEN t.lead_received_from = 'Shop' AND u.role = 'shop' THEN u.name
             ELSE NULL
@@ -305,7 +330,7 @@ export async function GET(req: NextRequest) {
           END AS fastag_owner,
           COALESCE(s.cnt, 0) AS subs_count
         FROM tickets_nh t
-        LEFT JOIN users u ON t.assigned_to = u.id
+        LEFT JOIN users u ON t.assigned_to = u.id${createdByJoin}
         LEFT JOIN fastags f ON f.tag_serial = t.fastag_serial
         LEFT JOIN (
           SELECT parent_ticket_id, COUNT(*) AS cnt
@@ -322,13 +347,14 @@ export async function GET(req: NextRequest) {
       const [rows] = await pool.query(`
         SELECT
           t.*,
+          COALESCE(u.name, '') AS assigned_to_name${createdBySelect},
           CASE
             WHEN t.lead_received_from = 'Shop' AND u.role = 'shop' THEN u.name
             ELSE NULL
           END AS shop_name,
           COALESCE(s.cnt, 0) AS subs_count
         FROM tickets_nh t
-        LEFT JOIN users u ON t.assigned_to = u.id
+        LEFT JOIN users u ON t.assigned_to = u.id${createdByJoin}
         LEFT JOIN (
           SELECT parent_ticket_id, COUNT(*) AS cnt
           FROM tickets_nh
@@ -422,6 +448,13 @@ export async function POST(req: NextRequest) {
     try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN vehicle_front_url VARCHAR(255) NULL`); } catch {}
     try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN vehicle_side_url VARCHAR(255) NULL`); } catch {}
     try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN sticker_pasted_url VARCHAR(255) NULL`); } catch {}
+    try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN npci_status VARCHAR(64) NULL`); } catch {}
+    // created_by: ensure existence, but track flag for safe inserts
+    let hasCreatedBy = await hasTableColumn(TICKETS_TABLE, 'created_by', conn);
+    if (!hasCreatedBy) {
+      try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN created_by INT NULL`); } catch {}
+      try { hasCreatedBy = await hasTableColumn(TICKETS_TABLE, 'created_by', conn); } catch {}
+    }
 
     // helper: duplicate guard by phone + vehicle
     async function findDuplicates(phoneRaw: any, vrnRaw: any) {
@@ -645,6 +678,22 @@ export async function POST(req: NextRequest) {
         ? 0
         : Number(parentCommissionRaw);
 
+    // Enforce status business rules before composing insert
+    const reqPaymentOK = !!data?.payment_received || !!data?.payment_nil;
+    const reqLeadOK = !!data?.lead_commission_paid || !!data?.lead_commission_nil;
+    const reqPickupOK = !!data?.pickup_commission_paid || !!data?.pickup_commission_nil;
+    const reqK = (data?.kyv_status ?? '').toString().toLowerCase();
+    const reqKyvOK = reqK.includes('compliant') || reqK === 'nil' || reqK === 'kyv compliant';
+    const reqDeliveryOK = !!data?.delivery_done || !!data?.delivery_nil;
+    let requestedStatusNorm = normalizeStatus(status) || 'open';
+    if (requestedStatusNorm === 'closed' && !(reqPaymentOK && reqLeadOK && reqPickupOK && reqKyvOK && reqDeliveryOK)) {
+      await conn.rollback();
+      return NextResponse.json({ error: 'Cannot close ticket until Payment, Lead Commission, Pickup Commission, KYV and Delivery are completed or marked Nil.' }, { status: 400 });
+    }
+    if (!(reqPaymentOK || reqLeadOK || reqPickupOK || reqKyvOK || reqDeliveryOK)) {
+      requestedStatusNorm = 'open';
+    }
+
     const parentColumns = [
       "ticket_no",
       "vehicle_reg_no",
@@ -658,6 +707,7 @@ export async function POST(req: NextRequest) {
       "lead_by",
       "status",
       "kyv_status",
+      "npci_status",
       "customer_name",
       "comments",
       "payment_to_collect",
@@ -676,8 +726,9 @@ export async function POST(req: NextRequest) {
       assigned_to ?? null,
       lead_received_from ?? null,
       lead_by ?? null,
-      normalizeStatus(status) || "open",
+      requestedStatusNorm || "open",
       normalizeKyv(kyv_status) || null,
+      (data?.npci_status ?? null),
       customer_name ?? null,
       comments ?? null,
       isNaN(p_ptc as any) ? null : p_ptc,
@@ -728,6 +779,17 @@ export async function POST(req: NextRequest) {
     parentColumns.push("pickup_point_name");
     parentPlaceholders.push("?");
     parentValues.push(pickup_point_name ?? null);
+
+    // created_by (from session cookie)
+    try {
+      if (hasCreatedBy) {
+        const session = await getUserSession();
+        const creatorId = session?.id ? Number(session.id) : null;
+        parentColumns.push('created_by');
+        parentPlaceholders.push('?');
+        parentValues.push(creatorId);
+      }
+    } catch {}
 
     if (hasFastagSerialColumn) {
       parentColumns.push("fastag_serial");
@@ -932,6 +994,7 @@ export async function PATCH(req: NextRequest) {
     const includeDeliveryDone = await hasTableColumn(TICKETS_TABLE, "delivery_done");
     const includeCommissionDone = await hasTableColumn(TICKETS_TABLE, "commission_done");
     const includePaidVia = await hasTableColumn(TICKETS_TABLE, 'paid_via');
+    const includeNpci = await hasTableColumn(TICKETS_TABLE, 'npci_status');
     const includeAltVRN = await hasTableColumn(TICKETS_TABLE, 'alt_vehicle_reg_no');
     const allowedFields = [
       "vehicle_reg_no",
@@ -951,6 +1014,9 @@ export async function PATCH(req: NextRequest) {
       "payment_to_send",
       "net_value",
     ];
+    if (includeNpci) {
+      allowedFields.push("npci_status");
+    }
     if (includeCommissionColumn) {
       allowedFields.push("commission_amount");
     }
@@ -976,6 +1042,34 @@ export async function PATCH(req: NextRequest) {
     allowedFields.push('lead_commission','lead_commission_paid','lead_commission_nil','pickup_commission','pickup_commission_paid','pickup_commission_nil');
     allowedFields.push('fastag_bank','fastag_class','fastag_owner');
     allowedFields.push('rc_front_url','rc_back_url','pan_url','aadhaar_front_url','aadhaar_back_url','vehicle_front_url','vehicle_side_url','sticker_pasted_url');
+
+    // Enforce close rules if status is being set to closed
+    if (typeof data.status !== 'undefined') {
+      const desired = normalizeStatus(data.status) || '';
+      if (desired === 'closed') {
+        const [rows]: any = await pool.query(
+          `SELECT payment_received, payment_nil, delivery_done, delivery_nil, kyv_status, 
+                  lead_commission_paid, lead_commission_nil, pickup_commission_paid, pickup_commission_nil
+             FROM ${TICKETS_TABLE} WHERE id = ? LIMIT 1`,
+          [data.id]
+        );
+        const cur = rows?.[0] || {};
+        const paymentOK = (includePaymentReceived ? (typeof data.payment_received !== 'undefined' ? !!data.payment_received : !!cur.payment_received) : false)
+          || (typeof data.payment_nil !== 'undefined' ? !!data.payment_nil : !!cur.payment_nil);
+        const deliveryOK = (includeDeliveryDone ? (typeof data.delivery_done !== 'undefined' ? !!data.delivery_done : !!cur.delivery_done) : false)
+          || (typeof data.delivery_nil !== 'undefined' ? !!data.delivery_nil : !!cur.delivery_nil);
+        const leadOK = (typeof data.lead_commission_paid !== 'undefined' ? !!data.lead_commission_paid : !!cur.lead_commission_paid)
+          || (typeof data.lead_commission_nil !== 'undefined' ? !!data.lead_commission_nil : !!cur.lead_commission_nil);
+        const pickupOK = (typeof data.pickup_commission_paid !== 'undefined' ? !!data.pickup_commission_paid : !!cur.pickup_commission_paid)
+          || (typeof data.pickup_commission_nil !== 'undefined' ? !!data.pickup_commission_nil : !!cur.pickup_commission_nil);
+        const kyvText = String(typeof data.kyv_status !== 'undefined' ? data.kyv_status : (cur.kyv_status ?? '')).toLowerCase();
+        const kyvOK = kyvText.includes('compliant') || kyvText === 'nil' || kyvText === 'kyv compliant';
+        const allOK = paymentOK && leadOK && pickupOK && kyvOK && deliveryOK;
+        if (!allOK) {
+          return NextResponse.json({ error: 'Cannot close ticket until Payment, Lead Commission, Pickup Commission, KYV and Delivery are completed or marked Nil.' }, { status: 400 });
+        }
+      }
+    }
 
     const updates: string[] = [];
     const values: any[] = [];

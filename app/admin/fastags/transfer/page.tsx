@@ -22,6 +22,7 @@ export default function FastagTransferPage() {
   const [barcodesLoading, setBarcodesLoading] = useState<Record<string, boolean>>({});
   const [selectedMap, setSelectedMap] = useState<Record<string, Record<string, boolean>>>({});
   const [message, setMessage] = useState("");
+  const [mappingFilter, setMappingFilter] = useState<'all'|'pending'|'done'>('all');
 
   useEffect(() => {
     const load = async () => {
@@ -53,7 +54,8 @@ export default function FastagTransferPage() {
         } else {
           // Load full list if not present, then take remaining
           if (!barcodesMap[key]) {
-            const url = `/api/fastags?status=assigned&owner=${encodeURIComponent(fromAgent)}&bank=${encodeURIComponent(row.bank_name)}&class=${encodeURIComponent(row.fastag_class)}`;
+            let url = `/api/fastags?status=assigned&owner=${encodeURIComponent(fromAgent)}&bank=${encodeURIComponent(row.bank_name)}&class=${encodeURIComponent(row.fastag_class)}`;
+            if (mappingFilter !== 'all') url += `&mapping=${encodeURIComponent(mappingFilter)}`;
             const data = await fetch(url).then(r => r.json()).catch(() => []);
             const list: Array<{ tag_serial: string }> = Array.isArray(data) ? data : [];
             setBarcodesMap(m => ({ ...m, [key]: list.map(x => x.tag_serial) }));
@@ -113,6 +115,17 @@ export default function FastagTransferPage() {
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <Label>Bank Mapping</Label>
+            <Select value={mappingFilter} onValueChange={(v: any)=> setMappingFilter(v)}>
+              <SelectTrigger><SelectValue placeholder="Mapping Status" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="pending">Mapping Pending</SelectItem>
+                <SelectItem value="done">Mapping Done</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
           <div>
             <Label>To Agent</Label>
@@ -165,7 +178,8 @@ export default function FastagTransferPage() {
                                 if (nextQty > 0 && !barcodesMap[key]) {
                                   setBarcodesLoading(m => ({ ...m, [key]: true }));
                                   try {
-                                    const url = `/api/fastags?status=assigned&owner=${encodeURIComponent(fromAgent)}&bank=${encodeURIComponent(r.bank_name)}&class=${encodeURIComponent(r.fastag_class)}`;
+                                    let url = `/api/fastags?status=assigned&owner=${encodeURIComponent(fromAgent)}&bank=${encodeURIComponent(r.bank_name)}&class=${encodeURIComponent(r.fastag_class)}`;
+                                    if (mappingFilter !== 'all') url += `&mapping=${encodeURIComponent(mappingFilter)}`;
                                     const data = await fetch(url).then(res => res.json()).catch(() => []);
                                     const list: Array<{ tag_serial: string }> = Array.isArray(data) ? data : [];
                                     setBarcodesMap(m => ({ ...m, [key]: list.map(x => x.tag_serial) }));

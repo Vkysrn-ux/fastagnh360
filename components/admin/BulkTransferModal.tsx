@@ -21,7 +21,7 @@ function sortedSerials(serials, prefix = "") {
     .sort((a, b) => a.num - b.num);
 }
 function getDynamicAvailable(rows, allSerialsCache, row, rowIdx, transferFromUser) {
-  const key = `${row.bank}-${row.fastagClass}-${transferFromUser}`;
+  const key = `${row.bank}-${row.fastagClass}-${transferFromUser}-${row.mapping || 'pending'}`;
   let allSerials = allSerialsCache[key] || [];
   rows.forEach((r, i) => {
     if (
@@ -126,7 +126,7 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
   const [transferToUser, setTransferToUser] = useState("");
 
   const [rows, setRows] = useState([
-    { bank: "", fastagClass: "", prefix: "", availableSerials: [], startSerial: "", endSerial: "", quantity: 1, note: "" }
+    { bank: "", fastagClass: "", prefix: "", availableSerials: [], startSerial: "", endSerial: "", quantity: 1, note: "", mapping: "pending" }
   ]);
   const [loading, setLoading] = useState(false);
   const [allSerialsCache, setAllSerialsCache] = useState({});
@@ -136,7 +136,7 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
     rows.forEach((row, i) => {
       const fromKey = transferFromRole === "admin" ? "admin" : transferFromUser;
       if (row.bank && row.fastagClass && fromKey) {
-        const key = `${row.bank}-${row.fastagClass}-${fromKey}`;
+        const key = `${row.bank}-${row.fastagClass}-${fromKey}-${row.mapping||'pending'}`;
         if (allSerialsCache[key]) {
           setRows(rows =>
             rows.map((r, idx) => idx === i
@@ -147,6 +147,7 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
         } else {
           let url = `/api/fastags/available?bank=${row.bank}&class=${row.fastagClass}`;
           if (fromKey !== "admin") url += `&assigned_to=${fromKey}`;
+          if (row.mapping && row.mapping !== 'all') url += `&mapping=${row.mapping}`;
           fetch(url)
             .then(async res => {
               if (!res.ok) return [];
@@ -165,7 +166,7 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
       }
     });
     // eslint-disable-next-line
-  }, [rows.map(r => r.bank + r.fastagClass).join(","), transferFromRole, transferFromUser]);
+  }, [rows.map(r => r.bank + r.fastagClass + (r.mapping||'')).join(","), transferFromRole, transferFromUser]);
 
   // Row handlers
   const getSelectedSerials = (bank, fastagClass, prefix, excludeIdx) => {
@@ -196,7 +197,7 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
     const fromKey = transferFromRole === "admin" ? "admin" : transferFromUser;
     setRows(rows => rows.map((row, idx) => {
       if (idx !== i) return row;
-      const key = `${row.bank}-${row.fastagClass}-${fromKey}`;
+      const key = `${row.bank}-${row.fastagClass}-${fromKey}-${(field === 'mapping' ? value : (row as any).mapping) || 'pending'}`;
       const allSerials = allSerialsCache[key] || [];
       const prefix = field === "prefix" ? value : row.prefix;
       const otherSelected = getSelectedSerials(row.bank, row.fastagClass, prefix, i);
@@ -209,6 +210,18 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
           [field]: value,
           prefix: "",
           availableSerials: [],
+          startSerial: "",
+          endSerial: "",
+          quantity: 1
+        };
+      }
+      if (field === "mapping") {
+        return {
+          ...row,
+          mapping: value,
+          // reset serial-related selections when mapping changes
+          prefix: row.prefix,
+          availableSerials,
           startSerial: "",
           endSerial: "",
           quantity: 1
@@ -252,7 +265,7 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
     }));
   };
 
-  const addRow = () => setRows(r => [...r, { bank: "", fastagClass: "", prefix: "", availableSerials: [], startSerial: "", endSerial: "", quantity: 1, note: "" }]);
+  const addRow = () => setRows(r => [...r, { bank: "", fastagClass: "", prefix: "", availableSerials: [], startSerial: "", endSerial: "", quantity: 1, note: "", mapping: "pending" }]);
   const removeRow = i => setRows(r => r.length === 1 ? r : r.filter((_, idx) => idx !== i));
 
   // Validation for transfer allowed
@@ -298,7 +311,9 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
             agentId: toKey,
             to: toKey,
             serials,
-            note: row.note || ""
+            note: row.note || "",
+            // include mapping intent so API can set bank mapping status on tags
+            mapping: (row as any).mapping || 'pending'
           };
         })
         .filter(a => a.from && a.to && Array.isArray(a.serials) && a.serials.length > 0);
@@ -490,6 +505,14 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
                   onChange={e => handleRowChange(i, 'note', e.target.value)}
                   placeholder="Note (optional)"
                 />
+                <Select value={row.mapping || 'pending'} onValueChange={val => handleRowChange(i, 'mapping', val)}>
+                  <SelectTrigger className="w-48"><SelectValue placeholder="Bank Mapping" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Mapping Pending</SelectItem>
+                    <SelectItem value="done">Mapping Done</SelectItem>
+                    <SelectItem value="all">All</SelectItem>
+                  </SelectContent>
+                </Select>
                 {rows.length > 1 && (
                   <Button
                     type="button"

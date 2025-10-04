@@ -52,10 +52,11 @@ export default function CreateSubTicketFullModal({
     vehicle_reg_no: parent?.vehicle_reg_no || "",
     phone: parent?.phone || "",
     alt_phone: parent?.alt_phone || "",
-    subject: "ADD new fastag",
+    subject: "New Fastag",
     details: "",
-    status: "ACTIVATION PENDING",
-    kyv_status: "pending",
+    status: "New Lead",
+    kyv_status: "KYV pending",
+    npci_status: "Activation Pending",
     assigned_to: parent?.assigned_to ? String(parent.assigned_to) : "",
     lead_received_from: parent?.lead_received_from || "",
     role_user_id: "",
@@ -77,14 +78,22 @@ export default function CreateSubTicketFullModal({
   const [assignedUser, setAssignedUser] = useState<{ id: number; name: string } | null>(null);
   const [currentUser, setCurrentUser] = useState<{ id: number; name: string } | null>(null);
   const [banks, setBanks] = useState<string[]>([]);
-  const [fastagClass, setFastagClass] = useState<string>("class4");
+  const [fastagClass, setFastagClass] = useState<string>("");
   const [fastagSerialInput, setFastagSerialInput] = useState("");
   const [fastagOptions, setFastagOptions] = useState<any[]>([]);
   const [fastagOwner, setFastagOwner] = useState<string>("");
   const [commissionAmount, setCommissionAmount] = useState<string>("0");
   const [paymentReceived, setPaymentReceived] = useState<boolean>(false);
+  const [paymentNil, setPaymentNil] = useState<boolean>(false);
   const [deliveryDone, setDeliveryDone] = useState<boolean>(false);
+  const [deliveryNil, setDeliveryNil] = useState<boolean>(false);
   const [commissionDone, setCommissionDone] = useState<boolean>(false);
+  const [leadCommission, setLeadCommission] = useState<string>("");
+  const [leadCommissionPaid, setLeadCommissionPaid] = useState<boolean>(false);
+  const [leadCommissionNil, setLeadCommissionNil] = useState<boolean>(false);
+  const [pickupCommission, setPickupCommission] = useState<string>("");
+  const [pickupCommissionPaid, setPickupCommissionPaid] = useState<boolean>(false);
+  const [pickupCommissionNil, setPickupCommissionNil] = useState<boolean>(false);
   const [selectedUserNotes, setSelectedUserNotes] = useState<string>("");
   const [pickupNotes, setPickupNotes] = useState<string>("");
   const [shopNotes, setShopNotes] = useState<string>("");
@@ -313,14 +322,33 @@ export default function CreateSubTicketFullModal({
           ? selectedShop?.id || form.lead_by || form.role_user_id || ""
           : form.lead_by || form.role_user_id || "";
 
+      // Gating similar to CreateTicket
+      const kyvText = String(form.kyv_status || '').toLowerCase();
+      const kyvOK = kyvText.includes('compliant') || kyvText === 'nil' || kyvText === 'kyv compliant';
+      const paymentOK = !!paymentReceived || !!paymentNil;
+      const leadOK = !!leadCommissionPaid || !!leadCommissionNil;
+      const pickupOK = !!pickupCommissionPaid || !!pickupCommissionNil;
+      const deliveryOK = !!deliveryDone || !!deliveryNil;
+      const allOK = paymentOK && leadOK && pickupOK && kyvOK && deliveryOK;
+      let chosenStatus = form.status;
+      if (String(form.status).toLowerCase() === 'closed' && !allOK) {
+        setError('Cannot mark ticket Closed until Payment, Lead Commission, Pickup Commission, KYV and Delivery conditions are satisfied.');
+        setSaving(false);
+        return;
+      }
+      if (!paymentOK && !leadOK && !pickupOK && !kyvOK && !deliveryOK) {
+        chosenStatus = 'New Lead';
+      }
+
       const payload: any = {
         vehicle_reg_no: form.vehicle_reg_no,
         phone: main.value,
         alt_phone: altNorm,
         subject: form.subject,
         details: form.details,
-        status: form.status,
+        status: chosenStatus,
         kyv_status: form.kyv_status || null,
+        npci_status: (form as any).npci_status || null,
         assigned_to: normalizeAssignedTo(form.assigned_to),
         lead_received_from: form.lead_received_from,
         lead_by: effectiveLeadBy,
@@ -336,8 +364,16 @@ export default function CreateSubTicketFullModal({
       // @ts-ignore
       if (form.fastag_serial) payload.fastag_serial = (form as any).fastag_serial;
       payload.payment_received = !!paymentReceived;
+      payload.payment_nil = !!paymentNil;
       payload.delivery_done = !!deliveryDone;
+      payload.delivery_nil = !!deliveryNil;
       payload.commission_done = !!commissionDone;
+      if (leadCommission !== "") payload.lead_commission = Number(leadCommission) || 0;
+      payload.lead_commission_paid = !!leadCommissionPaid;
+      payload.lead_commission_nil = !!leadCommissionNil;
+      if (pickupCommission !== "") payload.pickup_commission = Number(pickupCommission) || 0;
+      payload.pickup_commission_paid = !!pickupCommissionPaid;
+      payload.pickup_commission_nil = !!pickupCommissionNil;
 
       // Use children endpoint to ensure parenting and inheritance behavior
       const res = await fetch(`/api/tickets/${parent.id}/children`, {
@@ -377,29 +413,22 @@ export default function CreateSubTicketFullModal({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="block font-semibold mb-1">Subject *</label>
-            <AutocompleteInput
-              value={form.subject}
-              onChange={(v) => setForm((f) => ({ ...f, subject: v }))}
-              options={[
-                "ADD new fastag",
-                "New FASTag",
-                "ADD-ON NEWTAG",
-                "Replacement FASTag",
-                "Hotlisted FASTag",
-                "KYC PROCESS",
-                "ONLY KYV",
-                "ANNUAL PASS",
-                "PHONE UPDATE",
-                "TAG CLOSING",
-                "VRN UPDATE",
-                "HOLDER",
-                "HOTLIST REMOVING",
-                "LOWBALANCE CLEARING",
-                "ONLY RECHARGE",
-                "OTHER",
-              ]}
-              placeholder="Type subject"
-            />
+            <select className="w-full border rounded p-2" value={form.subject} onChange={(e)=> setForm(f=> ({...f, subject: e.target.value}))}>
+              <option value="New Fastag">New Fastag</option>
+              <option value="Add-on Tag">Add-on Tag</option>
+              <option value="Replacement Tag">Replacement Tag</option>
+              <option value="Hotlisted Case">Hotlisted Case</option>
+              <option value="Annual Pass">Annual Pass</option>
+              <option value="Phone Num Update">Phone Num Update</option>
+              <option value="Tag Closing">Tag Closing</option>
+              <option value="Chassis VRN Update">Chassis VRN Update</option>
+              <option value="VRN Update">VRN Update</option>
+              <option value="Low Balance Case">Low Balance Case</option>
+              <option value="Only Recharge">Only Recharge</option>
+              <option value="Holder">Holder</option>
+              <option value="MinKYC Process">MinKYC Process</option>
+              <option value="Full KYC Process">Full KYC Process</option>
+            </select>
           </div>
 
           <div>
@@ -454,28 +483,33 @@ export default function CreateSubTicketFullModal({
         </div>
 
           <div>
-            <label className="block font-semibold mb-1">Status</label>
-            <AutocompleteInput
-              value={form.status}
-              onChange={(v) => setForm((f) => ({ ...f, status: v }))}
-              options={[
-                "ACTIVATION PENDING",
-                "ACTIVATED",
-                "CUST CANCELLED",
-                "CLOSED",
-              ]}
-              placeholder="Type status"
-            />
+            <label className="block font-semibold mb-1">Ticket Status</label>
+            <select className="w-full border rounded p-2" value={form.status} onChange={(e)=> setForm(f=> ({...f, status: e.target.value}))}>
+              <option>New Lead</option>
+              <option>Working</option>
+              <option>Completed</option>
+              <option>Cancelled</option>
+            </select>
           </div>
 
           <div>
             <label className="block font-semibold mb-1">KYV Status</label>
-            <AutocompleteInput
-              value={form.kyv_status}
-              onChange={(v) => setForm((f) => ({ ...f, kyv_status: v }))}
-              options={["pending","kyv_pending_approval","kyv_success","kyv_hotlisted"]}
-              placeholder="Type KYV status"
-            />
+            <select className="w-full border rounded p-2" value={form.kyv_status} onChange={(e)=> setForm(f=> ({...f, kyv_status: e.target.value}))}>
+              <option>KYV pending</option>
+              <option>KYV submitted</option>
+              <option>KYV compliant</option>
+              <option>Nil</option>
+            </select>
+          </div>
+          <div>
+            <label className="block font-semibold mb-1">NPCI Status</label>
+            <select className="w-full border rounded p-2" value={(form as any).npci_status || 'Activation Pending'} onChange={(e)=> setForm((f:any)=> ({...f, npci_status: e.target.value}))}>
+              <option>Activation Pending</option>
+              <option>Active</option>
+              <option>Low Balance</option>
+              <option>Hotlist</option>
+              <option>Closed</option>
+            </select>
           </div>
 
           <div className="lg:col-span-4 md:col-span-2">
@@ -549,19 +583,41 @@ export default function CreateSubTicketFullModal({
               </select>
               <div className="text-xs text-gray-500 mt-1">Defaults to Pending.</div>
             </div>
-            <div className="md:col-span-2 lg:col-span-2 flex items-center gap-6 pt-6">
+            <div className="md:col-span-2 lg:col-span-2 flex flex-col gap-2 pt-6">
               <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
                 <input type="checkbox" checked={paymentReceived} onChange={(e) => setPaymentReceived(e.target.checked)} />
                 Payment Received
+              </label>
+              <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+                <input type="checkbox" checked={paymentNil} onChange={(e) => setPaymentNil(e.target.checked)} />
+                Payment Nil
               </label>
               <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
                 <input type="checkbox" checked={deliveryDone} onChange={(e) => setDeliveryDone(e.target.checked)} />
                 Delivery Done
               </label>
               <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
-                <input type="checkbox" checked={commissionDone} onChange={(e) => setCommissionDone(e.target.checked)} />
-                Commission Done
+                <input type="checkbox" checked={deliveryNil} onChange={(e) => setDeliveryNil(e.target.checked)} />
+                Delivery Nil
               </label>
+            </div>
+          </div>
+          <div className="lg:col-span-4 md:col-span-2 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="block font-semibold mb-1">Lead Commission to Give</label>
+              <input type="number" step="0.01" value={leadCommission} onChange={(e)=> setLeadCommission(e.target.value)} className="w-full border p-2 rounded" placeholder="0" />
+            </div>
+            <div className="flex flex-col justify-end gap-2">
+              <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={leadCommissionPaid} onChange={(e)=> setLeadCommissionPaid(e.target.checked)} /> Commission Paid</label>
+              <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={leadCommissionNil} onChange={(e)=> setLeadCommissionNil(e.target.checked)} /> Commission Nil</label>
+            </div>
+            <div>
+              <label className="block font-semibold mb-1">Pickup Commission to Give</label>
+              <input type="number" step="0.01" value={pickupCommission} onChange={(e)=> setPickupCommission(e.target.value)} className="w-full border p-2 rounded" placeholder="0" />
+            </div>
+            <div className="flex flex-col justify-end gap-2">
+              <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={pickupCommissionPaid} onChange={(e)=> setPickupCommissionPaid(e.target.checked)} /> Commission Paid</label>
+              <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={pickupCommissionNil} onChange={(e)=> setPickupCommissionNil(e.target.checked)} /> Commission Nil</label>
             </div>
           </div>
           {/* One row: Bank, Class, Barcode, Owner */}
@@ -576,14 +632,17 @@ export default function CreateSubTicketFullModal({
               </select>
             </div>
             <div>
-              <label className="block font-semibold mb-1">FASTag Class</label>
+              <label className="block font-semibold mb-1">VEHICLE CLASS</label>
               <select className="w-full border rounded p-2" value={fastagClass} onChange={(e) => setFastagClass(e.target.value)}>
-                <option value="">Select bank first</option>
-                <option value="class4">Class 4 (Car/Jeep/Van)</option>
-                <option value="class5">Class 5 (LCV)</option>
-                <option value="class6">Class 6 (Bus/Truck)</option>
-                <option value="class7">Class 7 (Multi-Axle)</option>
-                <option value="class12">Class 12 (Oversize)</option>
+                <option value="">Select Vehicle Class</option>
+                <option>Class 4 (Car/Jeep/Van)</option>
+                <option>Class 20 (TATA Ace/Dost/Pickup)</option>
+                <option>Class 5/9 (LCV/Mini-Bus 2Axle)</option>
+                <option>Class 6/8/11 (3Axle)</option>
+                <option>Class 7/10 (Truck/Bus 2Axle)</option>
+                <option>Class 12/13/14 (Axle4/5/6)</option>
+                <option>Class 15 (Axle7&above)</option>
+                <option>Class 16/17 (Earth-Moving-Heavy)</option>
               </select>
             </div>
             <div>

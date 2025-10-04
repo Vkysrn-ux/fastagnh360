@@ -232,7 +232,7 @@ export default function TicketDetailPage() {
               <div className="space-y-4">
                 <div>
                   <p className="text-sm text-gray-500">Assigned To</p>
-                  <p className="font-medium">{ticket.assigned_to || 'Unassigned'}</p>
+                  <p className="font-medium">{(ticket as any).assigned_to_name || (ticket.assigned_to ? `#${ticket.assigned_to}` : 'Unassigned')}</p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">Source</p>
