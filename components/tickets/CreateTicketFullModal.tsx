@@ -32,10 +32,11 @@ export default function CreateTicketFullModal({
     alt_vehicle_reg_no: "",
     phone: "",
     alt_phone: "",
-    subject: "ADD new fastag",
+    subject: "New Fastag",
     details: "",
-    status: "ACTIVATION PENDING",
-    kyv_status: "pending",
+    status: "New Lead",
+    kyv_status: "KYV pending",
+    npci_status: "Activation Pending",
     assigned_to: "",
     lead_received_from: "",
     role_user_id: "",
@@ -67,7 +68,8 @@ export default function CreateTicketFullModal({
   const [currentUser, setCurrentUser] = useState<{ id: number; name: string } | null>(null);
   const [assignedUser, setAssignedUser] = useState<{ id: number; name: string } | null>(null);
   const [banks, setBanks] = useState<string[]>([]);
-  const [fastagClass, setFastagClass] = useState<string>("class4");
+  // Store human-readable vehicle class label; map to API classes for search when needed
+  const [fastagClass, setFastagClass] = useState<string>("");
   const [fastagSerialInput, setFastagSerialInput] = useState("");
   const [fastagOptions, setFastagOptions] = useState<any[]>([]);
   const [fastagOwner, setFastagOwner] = useState<string>("");
@@ -86,6 +88,7 @@ export default function CreateTicketFullModal({
   const [selectedUserNotes, setSelectedUserNotes] = useState<string>("");
   const [pickupNotes, setPickupNotes] = useState<string>("");
   const [shopNotes, setShopNotes] = useState<string>("");
+  const [pickupSameAsLead, setPickupSameAsLead] = useState<boolean>(false);
   const paidViaOptions = [
     'Pending',
     'Paytm QR',
@@ -106,6 +109,7 @@ export default function CreateTicketFullModal({
     setForm(initialForm);
     setSelectedShop(null);
     setSelectedPickup(null);
+    setPickupSameAsLead(false);
     setError(null);
   }, [open, initialForm]);
 
@@ -130,6 +134,15 @@ export default function CreateTicketFullModal({
   useEffect(() => {
     setForm((f) => ({ ...f, role_user_id: selectedShop ? String(selectedShop.id) : "" }));
   }, [selectedShop?.id]);
+
+  // If checkbox is on, keep pickup in sync with lead selection
+  useEffect(() => {
+    if (pickupSameAsLead && selectedShop?.id) {
+      const p = { id: Number(selectedShop.id), name: String(selectedShop.name || ''), type: 'user' } as any;
+      setSelectedPickup(p);
+      setForm((f) => ({ ...f, pickup_point_name: p.name }));
+    }
+  }, [selectedShop?.id, selectedShop?.name, pickupSameAsLead]);
 
   // Shop notes display
   useEffect(() => {
@@ -179,6 +192,7 @@ export default function CreateTicketFullModal({
 
   // Load banks
   useEffect(() => {
+    // Keep any dynamic banks if API provides, but UI will show predefined list per requirements
     fetch('/api/banks')
       .then(r => r.json())
       .then(setBanks)
@@ -192,7 +206,17 @@ export default function CreateTicketFullModal({
     const q = new URLSearchParams();
     q.set('query', term);
     if (form.bank_name) q.set('bank', form.bank_name);
-    if (fastagClass) q.set('class', fastagClass);
+    // Map human label to API class code for search
+    const labelToCode: Record<string, string> = {
+      'Class 4 (Car/Jeep/Van)': 'class4',
+      'Class 5/9 (LCV/Mini-Bus 2Axle)': 'class5',
+      'Class 6/8/11 (3Axle)': 'class6',
+      'Class 7/10 (Truck/Bus 2Axle)': 'class7',
+      'Class 12/13/14 (Axle4/5/6)': 'class12',
+      // Others intentionally not mapped to avoid filtering incorrectly
+    };
+    const apiClass = labelToCode[fastagClass];
+    if (apiClass) q.set('class', apiClass);
     fetch(`/api/fastags?${q.toString()}`)
       .then(r => r.json())
       .then(rows => setFastagOptions(Array.isArray(rows) ? rows : []))
@@ -203,7 +227,17 @@ export default function CreateTicketFullModal({
     setFastagSerialInput(row.tag_serial || "");
     setFastagOwner(row.holder ? String(row.holder) : (row.assigned_to_name || ""));
     setForm((f) => ({ ...f, fastag_serial: row.tag_serial || "", bank_name: row.bank_name || f.bank_name }));
-    if (row.fastag_class) setFastagClass(String(row.fastag_class));
+    if (row.fastag_class) {
+      const code = String(row.fastag_class).toLowerCase();
+      const codeToLabel: Record<string, string> = {
+        'class4': 'Class 4 (Car/Jeep/Van)',
+        'class5': 'Class 5/9 (LCV/Mini-Bus 2Axle)',
+        'class6': 'Class 6/8/11 (3Axle)',
+        'class7': 'Class 7/10 (Truck/Bus 2Axle)',
+        'class12': 'Class 12/13/14 (Axle4/5/6)'
+      };
+      setFastagClass(codeToLabel[code] || fastagClass);
+    }
     setFastagOptions([]);
   }
 
@@ -280,6 +314,25 @@ export default function CreateTicketFullModal({
     setSaving(true);
     setError(null);
     try {
+      // Guard: determine if ticket can be closed based on checklists
+      const paymentOK = !!paymentReceived || !!paymentNil;
+      const leadOK = !!leadCommissionPaid || !!leadCommissionNil;
+      const pickupOK = !!pickupCommissionPaid || !!pickupCommissionNil;
+      const kyvText = String(form.kyv_status || '').toLowerCase();
+      const kyvOK = kyvText.includes('compliant') || kyvText === 'nil' || kyvText === 'kyv compliant';
+      const deliveryOK = !!deliveryDone || !!deliveryNil;
+      const allOK = paymentOK && leadOK && pickupOK && kyvOK && deliveryOK;
+
+      let chosenStatus = form.status;
+      if (String(form.status).toLowerCase() === 'closed' && !allOK) {
+        setError('Cannot mark ticket Closed until Payment, Lead Commission, Pickup Commission, KYV and Delivery conditions are satisfied.');
+        setSaving(false);
+        return;
+      }
+      if (!paymentOK && !leadOK && !pickupOK && !kyvOK && !deliveryOK) {
+        // If nothing is marked, default status to Pending/New Lead as per requirement
+        chosenStatus = 'New Lead';
+      }
       const effectiveLeadBy =
         form.lead_received_from === "Shop"
           ? selectedShop?.id || form.lead_by || form.role_user_id || ""
@@ -292,8 +345,9 @@ export default function CreateTicketFullModal({
         alt_phone: altNorm,
         subject: form.subject,
         details: form.details,
-        status: form.status,
+        status: chosenStatus,
         kyv_status: form.kyv_status || null,
+        npci_status: (form as any).npci_status || null,
         assigned_to: normalizeAssignedTo(form.assigned_to),
         lead_received_from: form.lead_received_from,
         lead_by: effectiveLeadBy,
@@ -313,7 +367,7 @@ export default function CreateTicketFullModal({
       payload.commission_done = !!commissionDone;
       if (form.fastag_serial) payload.fastag_serial = form.fastag_serial;
       if (form.bank_name) payload.fastag_bank = form.bank_name;
-      if (fastagClass) payload.fastag_class = fastagClass;
+      if (fastagClass) payload.fastag_class = fastagClass; // store human label on ticket
       if (fastagOwner) payload.fastag_owner = fastagOwner;
       if (leadCommission !== "") payload.lead_commission = Number(leadCommission) || 0;
       payload.lead_commission_paid = !!leadCommissionPaid;
@@ -369,235 +423,231 @@ export default function CreateTicketFullModal({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Left: main form */}
           <div className="md:col-span-2">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div>
-            <label className="block font-semibold mb-1">Subject *</label>
-            <AutocompleteInput
-              value={form.subject}
-              onChange={(v) => setForm((f) => ({ ...f, subject: v }))}
-              options={[
-                "ADD new fastag",
-                "New FASTag",
-                "ADD-ON NEWTAG",
-                "Replacement FASTag",
-                "Hotlisted FASTag",
-                "KYC PROCESS",
-                "ONLY KYV",
-                "ANNUAL PASS",
-                "PHONE UPDATE",
-                "TAG CLOSING",
-                "VRN UPDATE",
-                "HOLDER",
-                "HOTLIST REMOVING",
-                "LOWBALANCE CLEARING",
-                "ONLY RECHARGE",
-                "OTHER",
-              ]}
-              placeholder="Type subject"
-            />
-          </div>
-          <div>
-            <label className="block font-semibold mb-1">Vehicle Reg. No (VRN)</label>
-            <input
-              name="vehicle_reg_no"
-              value={form.vehicle_reg_no}
-              onChange={handleChange}
-              className="w-full border p-2 rounded"
-            />
-          </div>
-          <div>
-            <label className="block font-semibold mb-1">Alt Reg Number</label>
-            <input
-              name="alt_vehicle_reg_no"
-              value={form.alt_vehicle_reg_no}
-              onChange={handleChange}
-              className="w-full border p-2 rounded"
-              placeholder="Optional"
-            />
-          </div>
-          <div>
-            <label className="block font-semibold mb-1">Mobile</label>
-            <input name="phone" value={form.phone} onChange={handleChange} className="w-full border p-2 rounded" />
-          </div>
-          <div>
-            <label className="block font-semibold mb-1">Alt Phone</label>
-            <input name="alt_phone" value={form.alt_phone} onChange={handleChange} className="w-full border p-2 rounded" />
-          </div>
-
-          <div>
-            <label className="block font-semibold mb-1">Assigned To</label>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <UsersAutocomplete
-                  value={assignedUser}
-                  onSelect={(u) => { setAssignedUser(u as any); setForm((f) => ({ ...f, assigned_to: u ? String(u.id) : "" })); }}
-                  placeholder="Type user name"
-                />
+            {/* Row 1 */}
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div>
+                <label className="block font-semibold mb-1">Subject *</label>
+                <select className="w-full border rounded p-2" value={form.subject} onChange={(e)=> setForm((f)=> ({...f, subject: e.target.value}))}>
+                  <option value="New Fastag">New Fastag</option>
+                  <option value="Add-on Tag">Add-on Tag</option>
+                  <option value="Replacement Tag">Replacement Tag</option>
+                  <option value="Hotlisted Case">Hotlisted Case</option>
+                  <option value="Annual Pass">Annual Pass</option>
+                  <option value="Phone Num Update">Phone Num Update</option>
+                  <option value="Tag Closing">Tag Closing</option>
+                  <option value="Chassis VRN Update">Chassis VRN Update</option>
+                  <option value="VRN Update">VRN Update</option>
+                  <option value="Low Balance Case">Low Balance Case</option>
+                  <option value="Only Recharge">Only Recharge</option>
+                  <option value="Holder">Holder</option>
+                  <option value="MinKYC Process">MinKYC Process</option>
+                  <option value="Full KYC Process">Full KYC Process</option>
+                </select>
               </div>
-              <button type="button" className="px-3 py-2 border rounded" onClick={() => { if (currentUser) { setAssignedUser(currentUser); setForm((f) => ({ ...f, assigned_to: String(currentUser.id) })); } }}>Self</button>
+              <div>
+                <label className="block font-semibold mb-1">Vehicle Reg. No (VRN)</label>
+                <input name="vehicle_reg_no" value={form.vehicle_reg_no} onChange={handleChange} className="w-full border p-2 rounded" />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Mobile</label>
+                <input name="phone" value={form.phone} onChange={handleChange} className="w-full border p-2 rounded" />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Alt Reg Number</label>
+                <input name="alt_vehicle_reg_no" value={form.alt_vehicle_reg_no} onChange={handleChange} className="w-full border p-2 rounded" placeholder="Optional" />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Customer Name</label>
+                <input name="customer_name" value={form.customer_name} onChange={handleChange} className="w-full border p-2 rounded" />
+              </div>
             </div>
-            {selectedUserNotes && (
-              <div className="text-xs text-gray-600 mt-1 whitespace-pre-wrap border rounded p-2 bg-gray-50">{selectedUserNotes}</div>
-            )}
-          </div>
 
-          <div>
-            <label className="block font-semibold mb-1">Status</label>
-            <AutocompleteInput
-              value={form.status}
-              onChange={(v) => setForm((f) => ({ ...f, status: v }))}
-              options={[
-                "ACTIVATION PENDING",
-                "ACTIVATED",
-                "CUST CANCELLED",
-                "CLOSED",
-              ]}
-              placeholder="Type status"
-            />
-          </div>
-
-          <div>
-            <label className="block font-semibold mb-1">KYV Status</label>
-            <AutocompleteInput
-              value={form.kyv_status}
-              onChange={(v) => setForm((f) => ({ ...f, kyv_status: v }))}
-              options={["pending","kyv_pending_approval","kyv_success","kyv_hotlisted"]}
-              placeholder="Type KYV status"
-            />
-          </div>
-
-          {/* Row 2 */}
-          <div>
-            <label className="block font-semibold mb-1">Payment To Be Collected</label>
-            <input name="payment_to_collect" type="number" step="0.01" value={form.payment_to_collect} onChange={handleChange} className="w-full border p-2 rounded" placeholder="0.00" />
-          </div>
-          <div>
-            <label className="block font-semibold mb-1">Payment To Be Sent</label>
-            <input name="payment_to_send" type="number" step="0.01" value={form.payment_to_send} onChange={handleChange} className="w-full border p-2 rounded" placeholder="0.00" />
-          </div>
-          <div>
-            <label className="block font-semibold mb-1">Net Value</label>
-            <input name="net_value" type="number" step="0.01" value={form.net_value} onChange={handleChange} readOnly className="w-full border p-2 rounded bg-gray-50" placeholder="0.00" />
-          </div>
-          <div>
-            <label className="block font-semibold mb-1">Lead Received From (Shop/Agent)</label>
-            <UsersAutocomplete
-              value={selectedShop ? { id: selectedShop.id, name: selectedShop.name } as any : null}
-              onSelect={(u) => {
-                setSelectedShop(u as any);
-                setForm((f) => ({
-                  ...f,
-                  role_user_id: u ? String((u as any).id) : "",
-                  lead_received_from: u ? String((u as any).name) : f.lead_received_from,
-                }));
-              }}
-              placeholder="Type shop/agent name"
-            />
-            {selectedShop && (
-              <div className="text-xs text-gray-600 mt-1">Selected: {(selectedShop as any).name}</div>
-            )}
-            {shopNotes && (
-              <div className="text-xs text-gray-600 mt-1 whitespace-pre-wrap border rounded p-2 bg-gray-50">{shopNotes}</div>
-            )}
-          </div>
-
-          {/* Row 3 */}
-          <div>
-            <label className="block font-semibold mb-1">Customer Name</label>
-            <input name="customer_name" value={form.customer_name} onChange={handleChange} className="w-full border p-2 rounded" />
-          </div>
-          <div>
-            <label className="block font-semibold mb-1">Pick-up Point</label>
-            <PickupPointAutocomplete value={selectedPickup} onSelect={(p) => { setSelectedPickup(p); setForm((f) => ({ ...f, pickup_point_name: p ? p.name : "" })); }} />
-            <div className="text-xs text-gray-500 mt-1">Type to search (Agent, Shop, Warehouse)</div>
-            {pickupNotes && (
-              <div className="text-xs text-gray-600 mt-1 whitespace-pre-wrap border rounded p-2 bg-gray-50">{pickupNotes}</div>
-            )}
-          </div>
-          <div>
-            <label className="block font-semibold mb-1">Commission Amount</label>
-            <input type="number" step="0.01" value={commissionAmount} onChange={(e) => setCommissionAmount(e.target.value)} className="w-full border p-2 rounded" placeholder="0" />
-            <div className="text-xs text-gray-500 mt-1">Defaults to 0 if no commission is due.</div>
-          </div>
-          <div className="col-span-1 md:col-span-2 lg:col-span-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 mt-1">
-            <CheckboxItem label="Payment Received" checked={paymentReceived} onChange={setPaymentReceived} />
-            <CheckboxItem label="Payment Nil" checked={paymentNil} onChange={setPaymentNil} />
-            <CheckboxItem label="Delivery Done" checked={deliveryDone} onChange={setDeliveryDone} />
-            <CheckboxItem label="Delivery Nil" checked={deliveryNil} onChange={setDeliveryNil} />
-            <CheckboxItem label="Commission Done" checked={commissionDone} onChange={setCommissionDone} />
-          </div>
-          {/* Paid via */}
-          <div className="lg:col-span-2">
-            <label className="block font-semibold mb-1">Paid via</label>
-            <select className="w-full border rounded p-2" value={paidVia} onChange={(e)=> setPaidVia(e.target.value)}>
-              {paidViaOptions.map(opt => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
-            <div className="text-xs text-gray-500 mt-1">Defaults to Pending.</div>
-          </div>
-          {/* One row: Bank, Class, Barcode, Owner */}
-          <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <label className="block font-semibold mb-1">FASTag Bank</label>
-              <select className="w-full border rounded p-2" value={form.bank_name} onChange={(e) => setForm((f) => ({ ...f, bank_name: e.target.value }))}>
-                <option value="">Select bank</option>
-                {banks.map((b) => (<option key={b} value={b}>{b}</option>))}
-              </select>
-            </div>
-            <div>
-              <label className="block font-semibold mb-1">FASTag Class</label>
-              <select className="w-full border rounded p-2" value={fastagClass} onChange={(e) => setFastagClass(e.target.value)}>
-                <option value="">Select bank first</option>
-                <option value="class4">Class 4 (Car/Jeep/Van)</option>
-                <option value="class5">Class 5 (LCV)</option>
-                <option value="class6">Class 6 (Bus/Truck)</option>
-                <option value="class7">Class 7 (Multi-Axle)</option>
-                <option value="class12">Class 12 (Oversize)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block font-semibold mb-1">FASTag Barcode</label>
-              <input value={fastagSerialInput} onChange={(e) => setFastagSerialInput(e.target.value)} className="w-full border p-2 rounded" placeholder="Type FASTag barcode" />
-              {fastagOptions.length > 0 && (
-                <div className="mt-1 max-h-40 overflow-auto border rounded">
-                  {fastagOptions.map((row) => (
-                    <div key={row.id} className="px-3 py-2 cursor-pointer hover:bg-orange-50 border-b last:border-b-0" onMouseDown={() => pickFastag(row)}>
-                      {row.tag_serial} — {row.bank_name} / {row.fastag_class}
-                    </div>
+            {/* Row 2 */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="block font-semibold mb-1">Lead Received From (Shop/Agent)</label>
+                <UsersAutocomplete value={selectedShop ? { id: selectedShop.id, name: selectedShop.name } as any : null}
+                  onSelect={(u) => {
+                    setSelectedShop(u as any);
+                    setForm((f) => ({ ...f, role_user_id: u ? String((u as any).id) : "", lead_received_from: u ? String((u as any).name) : f.lead_received_from }));
+                    if (pickupSameAsLead && u) {
+                      const p = { id: Number((u as any).id), name: String((u as any).name || ''), type: 'user' } as any;
+                      setSelectedPickup(p);
+                      setForm((f) => ({ ...f, pickup_point_name: p.name }));
+                    }
+                  }}
+                  placeholder="Type shop/agent name" />
+                {selectedShop && (<div className="text-xs text-gray-600 mt-1">Selected: {(selectedShop as any).name}</div>)}
+                {shopNotes && (<div className="text-xs text-gray-600 mt-1 whitespace-pre-wrap border rounded p-2 bg-gray-50">{shopNotes}</div>)}
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Pick-up Point</label>
+                <PickupPointAutocomplete value={selectedPickup} onSelect={(p) => {
+                  setSelectedPickup(p);
+                  setForm((f) => ({ ...f, pickup_point_name: p ? p.name : "" }));
+                  if (pickupSameAsLead && (!p || (selectedShop && p.id !== selectedShop.id))) {
+                    setPickupSameAsLead(false);
+                  }
+                }} />
+                <div className="text-xs text-gray-500 mt-1">Type to search (Agent, Shop, Warehouse)</div>
+                <label className="inline-flex items-center gap-2 text-xs mt-2">
+                  <input type="checkbox" checked={pickupSameAsLead} onChange={(e)=> {
+                    const v = e.target.checked;
+                    setPickupSameAsLead(v);
+                    if (v && selectedShop?.id) {
+                      const p = { id: Number(selectedShop.id), name: String(selectedShop.name || ''), type: 'user' } as any;
+                      setSelectedPickup(p);
+                      setForm((f) => ({ ...f, pickup_point_name: p.name }));
+                    }
+                  }} />
+                  <span>Same as Lead</span>
+                </label>
+                {pickupNotes && (<div className="text-xs text-gray-600 mt-1 whitespace-pre-wrap border rounded p-2 bg-gray-50">{pickupNotes}</div>)}
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Bank</label>
+                <select className="w-full border rounded p-2" value={form.bank_name} onChange={(e) => setForm((f) => ({ ...f, bank_name: e.target.value }))}>
+                  <option value="">Select Bank</option>
+                  {['SBI','IDFC','ICICI','EQUITAS','INDUSIND','QUIKWALLET','Bajaj','Axis','HDFC','KVB','KOTAK'].map((b) => (
+                    <option key={b} value={b}>{b}</option>
                   ))}
+                </select>
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">VEHICLE CLASS</label>
+                <select className="w-full border rounded p-2" value={fastagClass} onChange={(e) => setFastagClass(e.target.value)}>
+                  <option value="">Select Vehicle Class</option>
+                  <option>Class 4 (Car/Jeep/Van)</option>
+                  <option>Class 20 (TATA Ace/Dost/Pickup)</option>
+                  <option>Class 5/9 (LCV/Mini-Bus 2Axle)</option>
+                  <option>Class 6/8/11 (3Axle)</option>
+                  <option>Class 7/10 (Truck/Bus 2Axle)</option>
+                  <option>Class 12/13/14 (Axle4/5/6)</option>
+                  <option>Class 15 (Axle7&above)</option>
+                  <option>Class 16/17 (Earth-Moving-Heavy)</option>
+                </select>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-semibold mb-1">FASTag Barcode</label>
+                <input value={fastagSerialInput} onChange={(e) => setFastagSerialInput(e.target.value)} className="w-full border p-2 rounded" placeholder="Type FASTag barcode" />
+                {fastagOptions.length > 0 && (
+                  <div className="mt-1 max-h-40 overflow-auto border rounded">
+                    {fastagOptions.map((row) => (
+                      <div key={row.id} className="px-3 py-2 cursor-pointer hover:bg-orange-50 border-b last:border-b-0" onMouseDown={() => pickFastag(row)}>
+                        {row.tag_serial} — {row.bank_name} / {row.fastag_class}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">FASTag Owner</label>
+                <input value={fastagOwner} readOnly className="w-full border p-2 rounded bg-gray-50" placeholder="Owner appears after picking" />
+              </div>
+            </div>
+
+            {/* Row 3 */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div>
+                <label className="block font-semibold mb-1">Payment To Be Collected</label>
+                <input name="payment_to_collect" type="number" step="0.01" value={form.payment_to_collect} onChange={handleChange} className="w-full border p-2 rounded" placeholder="0.00" />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Payment To Be Sent</label>
+                <input name="payment_to_send" type="number" step="0.01" value={form.payment_to_send} onChange={handleChange} className="w-full border p-2 rounded" placeholder="0.00" />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Net Value</label>
+                <input name="net_value" type="number" step="0.01" value={form.net_value} onChange={handleChange} readOnly className="w-full border p-2 rounded bg-gray-50" placeholder="0.00" />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Paid via</label>
+                <select className="w-full border rounded p-2" value={paidVia} onChange={(e)=> setPaidVia(e.target.value)}>
+                  {paidViaOptions.map(opt => (<option key={opt} value={opt}>{opt}</option>))}
+                </select>
+              </div>
+              <div className="flex flex-col justify-end gap-2">
+                <CheckboxItem label="Payment Received" checked={paymentReceived} onChange={setPaymentReceived} />
+                <CheckboxItem label="Payment Nil" checked={paymentNil} onChange={setPaymentNil} />
+              </div>
+            </div>
+
+            {/* Row 4 */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="block font-semibold mb-1">Lead Commission to Give</label>
+                <input type="number" step="0.01" value={leadCommission} onChange={(e)=> setLeadCommission(e.target.value)} className="w-full border p-2 rounded" placeholder="0" />
+              </div>
+              <div className="flex flex-col justify-end gap-2">
+                <CheckboxItem label="Commission Paid" checked={leadCommissionPaid} onChange={setLeadCommissionPaid} className="text-xs" />
+                <CheckboxItem label="Commission Nil" checked={leadCommissionNil} onChange={setLeadCommissionNil} className="text-xs" />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Pickup Commission to Give</label>
+                <input type="number" step="0.01" value={pickupCommission} onChange={(e)=> setPickupCommission(e.target.value)} className="w-full border p-2 rounded" placeholder="0" />
+              </div>
+              <div className="flex flex-col justify-end gap-2">
+                <CheckboxItem label="Commission Paid" checked={pickupCommissionPaid} onChange={setPickupCommissionPaid} className="text-xs" />
+                <CheckboxItem label="Commission Nil" checked={pickupCommissionNil} onChange={setPickupCommissionNil} className="text-xs" />
+              </div>
+            </div>
+
+            {/* Row 5 */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block font-semibold mb-1">Assigned To</label>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <UsersAutocomplete value={assignedUser} onSelect={(u) => { setAssignedUser(u as any); setForm((f) => ({ ...f, assigned_to: u ? String(u.id) : "" })); }} placeholder="Type user name" />
+                  </div>
+                  <button type="button" className="px-3 py-2 border rounded" onClick={() => { if (currentUser) { setAssignedUser(currentUser); setForm((f) => ({ ...f, assigned_to: String(currentUser.id) })); } }}>Self</button>
                 </div>
-              )}
+                {selectedUserNotes && (<div className="text-xs text-gray-600 mt-1 whitespace-pre-wrap border rounded p-2 bg-gray-50">{selectedUserNotes}</div>)}
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">NPCI Status</label>
+                <select className="w-full border rounded p-2" value={(form as any).npci_status || "Activation Pending"} onChange={(e)=> setForm((f:any)=> ({...f, npci_status: e.target.value}))}>
+                  <option>Activation Pending</option>
+                  <option>Active</option>
+                  <option>Low Balance</option>
+                  <option>Hotlist</option>
+                  <option>Closed</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Ticket Status</label>
+                <select className="w-full border rounded p-2" value={form.status} onChange={(e)=> setForm((f)=> ({...f, status: e.target.value}))}>
+                  <option>New Lead</option>
+                  <option>Working</option>
+                  <option>Completed</option>
+                  <option>Cancelled</option>
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="block font-semibold mb-1">FASTag Owner</label>
-              <input value={fastagOwner} readOnly className="w-full border p-2 rounded bg-gray-50" placeholder="Owner appears after picking" />
-            </div>
-          </div>
 
-          {/* Lead & Pickup Commissions */}
-          <div>
-            <label className="block font-semibold mb-1">Lead Commission to Give</label>
-            <input type="number" step="0.01" value={leadCommission} onChange={(e)=> setLeadCommission(e.target.value)} className="w-full border p-2 rounded" placeholder="0" />
-            <div className="grid grid-cols-2 gap-3 mt-2">
-              <CheckboxItem label="Commission Paid" checked={leadCommissionPaid} onChange={setLeadCommissionPaid} className="text-xs" />
-              <CheckboxItem label="Commission Nil" checked={leadCommissionNil} onChange={setLeadCommissionNil} className="text-xs" />
+            {/* Row 6 */}
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-semibold mb-1">KYV Status</label>
+                <select className="w-full border rounded p-2" value={form.kyv_status} onChange={(e)=> setForm((f)=> ({...f, kyv_status: e.target.value}))}>
+                  <option>KYV pending</option>
+                  <option>KYV submitted</option>
+                  <option>KYV compliant</option>
+                  <option>Nil</option>
+                </select>
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Details</label>
+                <textarea name="details" value={form.details} onChange={handleChange} className="w-full border p-2 rounded" rows={3} />
+              </div>
             </div>
-          </div>
-          <div>
-            <label className="block font-semibold mb-1">Pickup Commission to Give</label>
-            <input type="number" step="0.01" value={pickupCommission} onChange={(e)=> setPickupCommission(e.target.value)} className="w-full border p-2 rounded" placeholder="0" />
-            <div className="grid grid-cols-2 gap-3 mt-2">
-              <CheckboxItem label="Commission Paid" checked={pickupCommissionPaid} onChange={setPickupCommissionPaid} className="text-xs" />
-              <CheckboxItem label="Commission Nil" checked={pickupCommissionNil} onChange={setPickupCommissionNil} className="text-xs" />
-            </div>
-          </div>
 
-          {/* Details full width */}
-          <div className="lg:col-span-4 md:col-span-2">
-            <label className="block font-semibold mb-1">Details</label>
-            <textarea name="details" value={form.details} onChange={handleChange} className="w-full border p-2 rounded" rows={3} />
-          </div>
+            {/* Row 7: Delivery flags */}
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4">
+              <CheckboxItem label="Delivery / Pickup Completed" checked={deliveryDone} onChange={setDeliveryDone} />
+              <CheckboxItem label="Delivery / Pickup Nil" checked={deliveryNil} onChange={setDeliveryNil} />
             </div>
           </div>
 

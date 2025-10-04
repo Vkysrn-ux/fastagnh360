@@ -11,7 +11,13 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const id = Number(params.id);
   if (!id) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
 
-  const [rows] = await pool.query(`SELECT * FROM tickets_nh WHERE id = ?`, [id]);
+  const [rows] = await pool.query(
+    `SELECT t.*, COALESCE(u.name,'') AS assigned_to_name
+       FROM tickets_nh t
+       LEFT JOIN users u ON t.assigned_to = u.id
+      WHERE t.id = ?`,
+    [id]
+  );
   // @ts-ignore
   const row = rows?.[0];
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });

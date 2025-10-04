@@ -88,6 +88,23 @@ export async function GET(
         [agentId, agentId]
       );
       salesGroups = Array.isArray(groups) ? (groups as any[]) : [];
+      if (!salesGroups.length) {
+        const [fallback] = await pool.query(
+          `SELECT 
+              COALESCE(f.bank_name, '') AS bank_name,
+              CASE 
+                WHEN f.tag_serial LIKE '%-%-%' THEN SUBSTRING_INDEX(f.tag_serial, '-', 2)
+                ELSE ''
+              END AS serial_prefix,
+              COALESCE(f.fastag_class, '') AS fastag_class,
+              COUNT(*) AS sold_count
+           FROM fastags f
+           WHERE f.status = 'sold' AND f.sold_by_user_id = ?
+           GROUP BY bank_name, serial_prefix, fastag_class`,
+          [agentId]
+        );
+        salesGroups = Array.isArray(fallback) ? (fallback as any[]) : [];
+      }
     } catch {}
 
     return NextResponse.json({

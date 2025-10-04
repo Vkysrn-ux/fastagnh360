@@ -165,7 +165,7 @@ export default function TicketsReportPage() {
                 <td className="p-2">{t.vehicle_reg_no || '-'}</td>
                 <td className="p-2">{(String(t.status||'').toLowerCase()==='completed') ? 'closed' : (t.status || '-')}</td>
                 <td className="p-2">{(t as any).paid_via || '-'}</td>
-                <td className="p-2">{t.assigned_to || '-'}</td>
+                <td className="p-2">{(t as any).assigned_to_name || (t.assigned_to ? `#${t.assigned_to}` : '-') }</td>
                 <td className="p-2">{t.lead_received_from || '-'}</td>
               </tr>
             ))}

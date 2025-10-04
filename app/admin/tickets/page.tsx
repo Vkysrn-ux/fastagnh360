@@ -252,7 +252,7 @@ export default function TicketListPage() {
                   scope="col"
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
-                  Ticket No
+                  Ticket Number
                 </th>
                 <th
                   scope="col"
@@ -270,19 +270,49 @@ export default function TicketListPage() {
                   scope="col"
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
-                  Vehicle
+                  Vehicle Number
                 </th>
                 <th
                   scope="col"
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
-                  Status
+                  Lead From
                 </th>
                 <th
                   scope="col"
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
-                  Created
+                  Ticket Status
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  NPCI Status
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  KYV Status
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Assigned To
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Created By
+                </th>
+                <th
+                  scope="col"
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  Created Date
                 </th>
                 <th
                   scope="col"
@@ -297,7 +327,7 @@ export default function TicketListPage() {
                 <React.Fragment key={String(ticket.id)}>
                 <tr className="hover:bg-gray-50 cursor-pointer" onClick={() => toggleExpand(ticket)}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {ticket.ticket_no}
+                    {ticket.ticket_no || `TK-A${String(ticket.id).padStart(3,'0')}`}
                     {Number(ticket.subs_count || 0) > 0 && (
                       <span className="ml-2 text-xs text-gray-500">({ticket.subs_count} subs)</span>
                     )}
@@ -321,9 +351,16 @@ export default function TicketListPage() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {ticket.vehicle_reg_no || ticket.vehicle_number || "-"}
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {ticket.lead_received_from || '-'}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <StatusBadge status={ticket.status || "open"} />
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{(ticket as any).npci_status || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{ticket.kyv_status || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{(ticket as any).assigned_to_name || (ticket.assigned_to ? `#${ticket.assigned_to}` : '-')}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{(ticket as any).created_by_name || '-'} </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {ticket.created_at ? formatERPDate(ticket.created_at as any) : "-"}
                   </td>
@@ -344,7 +381,7 @@ export default function TicketListPage() {
                 </tr>
                 {expanded[String(ticket.id)] && (
                   <tr>
-                    <td colSpan={7} className="bg-gray-50 px-6 py-4">
+                    <td colSpan={12} className="bg-gray-50 px-6 py-4">
                       {loadingChildFor === String(ticket.id) ? (
                         <div className="text-sm text-gray-500">Loading sub-tickets...</div>
                       ) : (childrenMap[String(ticket.id)] || []).length === 0 ? (
@@ -612,38 +649,51 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
           <div>
             <label className="block text-sm font-medium mb-1">Subject</label>
             <select className="w-full border rounded p-2" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })}>
-              <option value="">Select Subject</option>
-              <option value="new_fastag">New FASTag</option>
-              <option value="replacement_fastag">Replacement FASTag</option>
-              <option value="hotlisted_fastag">Hotlisted FASTag</option>
-              <option value="kyc_related">KYC Related</option>
-              <option value="mobile_update">Mobile Number Updation</option>
-              <option value="other">Other</option>
+              <option value="New Fastag">New Fastag</option>
+              <option value="Add-on Tag">Add-on Tag</option>
+              <option value="Replacement Tag">Replacement Tag</option>
+              <option value="Hotlisted Case">Hotlisted Case</option>
+              <option value="Annual Pass">Annual Pass</option>
+              <option value="Phone Num Update">Phone Num Update</option>
+              <option value="Tag Closing">Tag Closing</option>
+              <option value="Chassis VRN Update">Chassis VRN Update</option>
+              <option value="VRN Update">VRN Update</option>
+              <option value="Low Balance Case">Low Balance Case</option>
+              <option value="Only Recharge">Only Recharge</option>
+              <option value="Holder">Holder</option>
+              <option value="MinKYC Process">MinKYC Process</option>
+              <option value="Full KYC Process">Full KYC Process</option>
             </select>
           </div>
         </div>
         {/* Row 3 */}
         <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-4 gap-4 py-2">
           <div>
-            <label className="block text-sm font-medium mb-1">Status</label>
+            <label className="block text-sm font-medium mb-1">Ticket Status</label>
             <select className="w-full border rounded p-2" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-              <option value="open">Open</option>
-              <option value="processing">Processing</option>
-              <option value="kyc_pending">KYC Pending</option>
-              <option value="done">Done</option>
-              <option value="waiting">Waiting</option>
-              <option value="closed">Closed</option>
-              <option value="completed">Completed</option>
+              <option>New Lead</option>
+              <option>Working</option>
+              <option>Completed</option>
+              <option>Cancelled</option>
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">KYV Status</label>
             <select className="w-full border rounded p-2" value={form.kyv_status} onChange={(e) => setForm({ ...form, kyv_status: e.target.value })}>
-              <option value="">Select KYV status</option>
-              <option value="kyv_pending">KYV Pending</option>
-              <option value="kyv_pending_approval">KYV Pending Approval</option>
-              <option value="kyv_success">KYV Success</option>
-              <option value="kyv_hotlisted">KYV Hotlisted</option>
+              <option>KYV pending</option>
+              <option>KYV submitted</option>
+              <option>KYV compliant</option>
+              <option>Nil</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">NPCI Status</label>
+            <select className="w-full border rounded p-2" value={(form as any).npci_status || 'Activation Pending'} onChange={(e)=> setForm({ ...form, npci_status: e.target.value } as any)}>
+              <option>Activation Pending</option>
+              <option>Active</option>
+              <option>Low Balance</option>
+              <option>Hotlist</option>
+              <option>Closed</option>
             </select>
           </div>
           <div>
@@ -724,18 +774,42 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
             <label className="block text-sm font-medium mb-1">Commission Amount</label>
             <Input type="number" step="0.01" value={form.commission_amount as any} onChange={(e) => setForm({ ...form, commission_amount: e.target.value })} placeholder="0" />
           </div>
-          <div className="col-span-2 lg:col-span-3 flex items-center gap-6">
+          <div className="col-span-2 lg:col-span-3 grid grid-cols-2 gap-2 items-start">
             <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
               <input type="checkbox" checked={!!form.payment_received} onChange={(e) => setForm({ ...form, payment_received: e.target.checked })} />
               Payment Received
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+              <input type="checkbox" checked={!!(form as any).payment_nil} onChange={(e) => setForm({ ...form, payment_nil: e.target.checked } as any)} />
+              Payment Nil
             </label>
             <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
               <input type="checkbox" checked={!!form.delivery_done} onChange={(e) => setForm({ ...form, delivery_done: e.target.checked })} />
               Delivery Done
             </label>
             <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+              <input type="checkbox" checked={!!(form as any).delivery_nil} onChange={(e) => setForm({ ...form, delivery_nil: e.target.checked } as any)} />
+              Delivery Nil
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
               <input type="checkbox" checked={!!form.commission_done} onChange={(e) => setForm({ ...form, commission_done: e.target.checked })} />
               Commission Done
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+              <input type="checkbox" checked={!!(form as any).lead_commission_paid} onChange={(e) => setForm({ ...form, lead_commission_paid: e.target.checked } as any)} />
+              Lead Commission Paid
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+              <input type="checkbox" checked={!!(form as any).lead_commission_nil} onChange={(e) => setForm({ ...form, lead_commission_nil: e.target.checked } as any)} />
+              Lead Commission Nil
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+              <input type="checkbox" checked={!!(form as any).pickup_commission_paid} onChange={(e) => setForm({ ...form, pickup_commission_paid: e.target.checked } as any)} />
+              Pickup Commission Paid
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+              <input type="checkbox" checked={!!(form as any).pickup_commission_nil} onChange={(e) => setForm({ ...form, pickup_commission_nil: e.target.checked } as any)} />
+              Pickup Commission Nil
             </label>
           </div>
         </div>

@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { hasTableColumn } from "@/lib/db-helpers";
 
 export async function POST(req: NextRequest) {
   const transfers = await req.json();
 
   try {
+    // Check optional bank mapping column once
+    let hasBankMappingStatus = false;
+    try { hasBankMappingStatus = await hasTableColumn('fastags', 'bank_mapping_status'); } catch {}
+    // Attempt to add column if missing
+    if (!hasBankMappingStatus) {
+      try {
+        await pool.query(`ALTER TABLE fastags ADD COLUMN bank_mapping_status ENUM('pending','done') NULL`);
+        hasBankMappingStatus = true;
+      } catch {}
+    }
     // Ensure audit table exists
     try {
       await pool.query(`
@@ -47,13 +58,24 @@ export async function POST(req: NextRequest) {
       // Set values
       let assignedToAgentId = row.agentId === 'admin' ? null : Number(row.agentId);
       let statusValue = row.agentId === 'admin' ? 'in_stock' : 'assigned';
+      const mappingRaw = typeof row.mapping === 'string' ? String(row.mapping).toLowerCase() : '';
+      const mappingValue = mappingRaw === 'done' ? 'done' : (mappingRaw === 'pending' ? 'pending' : null);
 
-      // Update assigned_to_agent_id, status, assigned_date, assigned_at
-      await pool.query(
-        `UPDATE fastags SET assigned_to_agent_id = ?, status = ?, assigned_date = CURDATE(), assigned_at = NOW()
-         WHERE tag_serial IN (${row.serials.map(() => '?').join(",")})`,
-        [assignedToAgentId, statusValue, ...row.serials]
-      );
+      // Build dynamic update to include mapping status if column exists
+      const setParts: string[] = [
+        `assigned_to_agent_id = ?`,
+        `status = ?`,
+        `assigned_date = CURDATE()`,
+        `assigned_at = NOW()`
+      ];
+      const params: any[] = [assignedToAgentId, statusValue];
+      if (hasBankMappingStatus) {
+        setParts.push(`bank_mapping_status = ?`);
+        params.push(mappingValue);
+      }
+      const inClause = row.serials.map(() => '?').join(',');
+      const sql = `UPDATE fastags SET ${setParts.join(', ')} WHERE tag_serial IN (${inClause})`;
+      await pool.query(sql, [...params, ...row.serials]);
 
       // Audit log per serial
       const fromUserId = row.from === 'admin' ? null : (row.from ? Number(row.from) : null);

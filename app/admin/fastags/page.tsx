@@ -12,6 +12,7 @@ import BulkFastagUploadForm from "@/components/BulkFastagUploadForm";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import BulkTransferModal from "@/components/admin/BulkTransferModal";
 import BulkMarkSoldModal from "@/components/admin/BulkMarkSoldModal";
+import BulkMappingModal from "@/components/admin/BulkMappingModal";
 import { PieChart, Pie, Cell, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
 
 const COLORS = ["#2ecc40", "#0074d9", "#ff4136", "#ffb347", "#a569bd", "#5dade2"];
@@ -264,7 +265,12 @@ export default function AdminFastagsPage() {
         agentIdFilter === "all" ||
         String(fastag.assigned_to_agent_id ?? "") === String(agentIdFilter) ||
         String(fastag.assigned_to ?? "") === String(agentIdFilter) ||
-        (String(fastag.status || '').toLowerCase() === 'sold' && String((fastag as any).sold_by_user_id ?? '') === String(agentIdFilter))
+        (
+          String(fastag.status || '').toLowerCase() === 'sold' && (
+            String((fastag as any).sold_by_user_id ?? '') === String(agentIdFilter) ||
+            String((fastag as any).sold_by_agent_id ?? '') === String(agentIdFilter)
+          )
+        )
       );
 
       return matchesSearch && matchesBank && matchesType && matchesStatus && matchesAgent;
@@ -385,6 +391,7 @@ export default function AdminFastagsPage() {
               Bulk Transfer
             </Button>
             <BulkMarkSoldModal onSuccess={() => window.location.reload()} />
+            <BulkMappingModal onSuccess={() => window.location.reload()} />
             {/* Dashboard/Table toggle */}
             <Button variant={view === "dashboard" ? "default" : "outline"} onClick={() => setView("dashboard")}>
               Dashboard View
