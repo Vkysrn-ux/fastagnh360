@@ -68,21 +68,22 @@ async function markFastagAsUsed(conn: PoolConnection, fastagSerial: string | nul
   }
 }
 
-// Generate daily ticket number: NH360-YYYYMMDD-###
+// Generate ticket number: TK-A0001 using next AUTO_INCREMENT
 async function generateTicketNo(conn: PoolConnection): Promise<string> {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  const todayStr = `${yyyy}${mm}${dd}`;
-
-  const [rows] = await conn.query(
-    "SELECT COUNT(*) AS count FROM tickets_nh WHERE DATE(created_at) = CURDATE()"
-  );
-  // @ts-ignore - RowDataPacket
-  const todayCount = rows?.[0]?.count ?? 0;
-  const seq = String(todayCount + 1).padStart(3, "0");
-  return `NH360-${todayStr}-${seq}`;
+  try {
+    const [rows]: any = await conn.query(
+      `SELECT AUTO_INCREMENT AS nextId FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1`,
+      [TICKETS_TABLE]
+    );
+    const nextId = Number(rows?.[0]?.nextId || 1);
+    const seq = String(nextId).padStart(4, '0');
+    return `TK-A${seq}`;
+  } catch {
+    const [rows2]: any = await conn.query(`SELECT COALESCE(MAX(id), 0) + 1 AS nextId FROM ${TICKETS_TABLE}`);
+    const nextId2 = Number(rows2?.[0]?.nextId || 1);
+    const seq2 = String(nextId2).padStart(4, '0');
+    return `TK-A${seq2}`;
+  }
 }
 
 async function recordFastagSale(opts: {

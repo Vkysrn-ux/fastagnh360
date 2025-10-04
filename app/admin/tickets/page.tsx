@@ -288,7 +288,7 @@ export default function TicketListPage() {
                   scope="col"
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
-                  NPCI Status
+                  Commission / Delivery
                 </th>
                 <th
                   scope="col"
@@ -308,12 +308,7 @@ export default function TicketListPage() {
                 >
                   Created By
                 </th>
-                <th
-                  scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Created Date
-                </th>
+                
                 <th
                   scope="col"
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
@@ -327,10 +322,17 @@ export default function TicketListPage() {
                 <React.Fragment key={String(ticket.id)}>
                 <tr className="hover:bg-gray-50 cursor-pointer" onClick={() => toggleExpand(ticket)}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {ticket.ticket_no || `TK-A${String(ticket.id).padStart(3,'0')}`}
-                    {Number(ticket.subs_count || 0) > 0 && (
-                      <span className="ml-2 text-xs text-gray-500">({ticket.subs_count} subs)</span>
-                    )}
+                    <div className="flex flex-col">
+                      <span>
+                        {ticket.ticket_no || `TK-A${String(ticket.id).padStart(4,'0')}`}
+                        {Number(ticket.subs_count || 0) > 0 && (
+                          <span className="ml-2 text-xs text-gray-500">({ticket.subs_count} subs)</span>
+                        )}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {ticket.created_at ? formatERPDate(ticket.created_at as any) : "-"}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-900">
@@ -341,15 +343,21 @@ export default function TicketListPage() {
                     )}
                   </td>
                   <td className="px-6 py-4">
-                    <div className="text-sm text-gray-900">{ticket.subject}</div>
-                    {ticket.details && (
-                      <div className="text-sm text-gray-500 truncate max-w-xs">
-                        {ticket.details}
-                      </div>
-                    )}
+                    <div className="flex flex-col">
+                      <div className="text-sm text-gray-900">{ticket.subject}</div>
+                      <div className="text-xs text-gray-500">{(ticket as any).fastag_bank || (ticket as any).bank_name || '-'}</div>
+                      {ticket.details && (
+                        <div className="text-sm text-gray-500 truncate max-w-xs">
+                          {ticket.details}
+                        </div>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {ticket.vehicle_reg_no || ticket.vehicle_number || "-"}
+                    <div className="flex flex-col">
+                      <span>{ticket.vehicle_reg_no || ticket.vehicle_number || "-"}</span>
+                      <span className="text-xs text-gray-500">{(ticket as any).npci_status || '-'}</span>
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     {ticket.lead_received_from || '-'}
@@ -357,13 +365,21 @@ export default function TicketListPage() {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <StatusBadge status={ticket.status || "open"} />
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{(ticket as any).npci_status || '-'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{ticket.kyv_status || '-'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <div className="flex flex-col">
+                      <span>Commission: {((ticket as any).commission_done ? 'Done' : 'Pending')}</span>
+                      <span>Delivery: {((ticket as any).delivery_done ? 'Done' : ((ticket as any).delivery_nil ? 'Nil' : 'Pending'))}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <div className="flex flex-col">
+                      <span>{ticket.kyv_status || '-'}</span>
+                      <span className="text-xs text-gray-500">Payment: {((ticket as any).payment_received ? 'Received' : ((ticket as any).payment_nil ? 'Nil' : 'Pending'))}</span>
+                    </div>
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{(ticket as any).assigned_to_name || (ticket.assigned_to ? `#${ticket.assigned_to}` : '-')}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{(ticket as any).created_by_name || '-'} </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {ticket.created_at ? formatERPDate(ticket.created_at as any) : "-"}
-                  </td>
+                  
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <Link href={`/admin/tickets/${ticket.id}`} className="text-blue-600 hover:text-blue-900 mr-4" onClick={(e) => e.stopPropagation()}>
                       View
@@ -381,7 +397,7 @@ export default function TicketListPage() {
                 </tr>
                 {expanded[String(ticket.id)] && (
                   <tr>
-                    <td colSpan={12} className="bg-gray-50 px-6 py-4">
+                    <td colSpan={11} className="bg-gray-50 px-6 py-4">
                       {loadingChildFor === String(ticket.id) ? (
                         <div className="text-sm text-gray-500">Loading sub-tickets...</div>
                       ) : (childrenMap[String(ticket.id)] || []).length === 0 ? (
@@ -402,7 +418,12 @@ export default function TicketListPage() {
                               {(childrenMap[String(ticket.id)] || []).map((child) => (
                                 <tr key={child.id}>
                                   <td className="px-4 py-2 text-sm font-medium text-gray-900">{child.ticket_no}</td>
-                                  <td className="px-4 py-2 text-sm">{child.subject}</td>
+                                  <td className="px-4 py-2 text-sm">
+                                    <div className="flex flex-col">
+                                      <span>{child.subject}</span>
+                                      <span className="text-xs text-gray-500">{(child as any).fastag_bank || '-'}</span>
+                                    </div>
+                                  </td>
                                   <td className="px-4 py-2 text-sm"><StatusBadge status={child.status || "open"} /></td>
                                   <td className="px-4 py-2 text-sm text-gray-500">{child.created_at ? formatERPDate(child.created_at as any) : '-'}</td>
                                   <td className="px-4 py-2 text-sm">
@@ -482,6 +503,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     net_value: ticket?.net_value ?? "",
     pickup_point_name: ticket?.pickup_point_name || "",
     commission_amount: (ticket as any)?.commission_amount ?? "",
+    paid_via: (ticket as any)?.paid_via || 'Pending',
     payment_received: !!(ticket as any)?.payment_received,
     delivery_done: !!(ticket as any)?.delivery_done,
     commission_done: !!(ticket as any)?.commission_done,
@@ -513,6 +535,13 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
       })
       .catch(() => {});
   }, []);
+
+  // If payment is marked received, default paid_via away from 'Pending'
+  React.useEffect(() => {
+    if (form.payment_received && String((form as any).paid_via || '').trim() === 'Pending') {
+      setForm(f => ({ ...(f as any), paid_via: 'Cash' } as any));
+    }
+  }, [form.payment_received]);
 
   React.useEffect(() => {
     // auto-calc net value when payments change
@@ -572,6 +601,13 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
         if (!ma) { setError("Enter a valid 10-digit alt mobile (starts 6–9)"); setSaving(false); return; }
         altNorm = ma[1];
       }
+      // Business rule: if payment is received, Paid via cannot be 'Pending'
+      if (!!form.payment_received && String((form as any).paid_via || '').trim() === 'Pending') {
+        setError("Paid via cannot be 'Pending' when Payment Received is checked.");
+        setSaving(false);
+        return;
+      }
+
       const payload: any = {
         id: Number(ticket.id),
         vehicle_reg_no: form.vehicle_reg_no,
@@ -592,6 +628,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
         net_value: form.net_value === "" ? null : Number(form.net_value),
         commission_amount: form.commission_amount === "" ? null : Number(form.commission_amount),
         fastag_serial: form.fastag_serial || null,
+        paid_via: (form as any).paid_via,
         payment_received: !!form.payment_received,
         delivery_done: !!form.delivery_done,
         commission_done: !!form.commission_done,
@@ -758,6 +795,18 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
           <div>
             <label className="block text-sm font-medium mb-1">Net Value</label>
             <Input type="number" step="0.01" value={form.net_value as any} readOnly className="bg-gray-50" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Paid via</label>
+            <select
+              className="w-full border rounded p-2"
+              value={(form as any).paid_via}
+              onChange={(e) => setForm({ ...form, paid_via: e.target.value } as any)}
+            >
+              {['Pending','Paytm QR','GPay Box','IDFC Box','Cash','Sriram Gpay','Lakshman Gpay','Arjunan Gpay','Vishnu GPay','Vimal GPay'].map(opt => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
           </div>
         </div>
         <div className="py-2">
