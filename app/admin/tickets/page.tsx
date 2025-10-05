@@ -565,6 +565,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
   });
   const [fastagQuery, setFastagQuery] = React.useState<string>(String((ticket as any)?.fastag_serial || ""));
   const [fastagOptions, setFastagOptions] = React.useState<any[]>([]);
+  const [showFastagSuggestions, setShowFastagSuggestions] = React.useState<boolean>(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   // Auto-save state
@@ -572,11 +573,21 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
   const [autoSaving, setAutoSaving] = React.useState(false);
   const [autoSavedAt, setAutoSavedAt] = React.useState<number | null>(null);
   const [autoSaveError, setAutoSaveError] = React.useState<string | null>(null);
+  // Notes state
+  const [selectedUserNotes, setSelectedUserNotes] = React.useState<string>("");
+  const [leadNotes, setLeadNotes] = React.useState<string>("");
   const [currentUser, setCurrentUser] = React.useState<{ id: number; name: string } | null>(null);
   const [assignedUser, setAssignedUser] = React.useState<UserOption | null>(() => {
     const idNum = Number(ticket?.assigned_to);
     if (!isNaN(idNum) && idNum > 0) {
       return { id: idNum, name: ticket?.assigned_to_name || `User #${idNum}` } as any;
+    }
+    return null;
+  });
+  const [leadUser, setLeadUser] = React.useState<UserOption | null>(() => {
+    const idNum = Number((ticket as any)?.lead_by);
+    if (!isNaN(idNum) && idNum > 0) {
+      return { id: idNum, name: (ticket as any)?.lead_received_from || `User #${idNum}` } as any;
     }
     return null;
   });
@@ -651,6 +662,47 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
       })
       .catch(() => {});
   }, []);
+
+  // Fetch notes when Assigned user changes
+  React.useEffect(() => {
+    if (!assignedUser?.id) { setSelectedUserNotes(""); return; }
+    fetch(`/api/users?id=${assignedUser.id}`)
+      .then(r => r.json())
+      .then((row) => {
+        const arr = Array.isArray(row) ? row : (row ? [row] : []);
+        setSelectedUserNotes(arr[0]?.notes || "");
+      })
+      .catch(() => setSelectedUserNotes(""));
+  }, [assignedUser?.id]);
+
+  // Fetch notes when Lead user changes
+  React.useEffect(() => {
+    if (!leadUser?.id) { setLeadNotes(""); return; }
+    fetch(`/api/users?id=${leadUser.id}`)
+      .then(r => r.json())
+      .then((row) => {
+        const arr = Array.isArray(row) ? row : (row ? [row] : []);
+        setLeadNotes(arr[0]?.notes || "");
+      })
+      .catch(() => setLeadNotes(""));
+  }, [leadUser?.id]);
+
+  // Fallback: If ticket has only lead_received_from name (no id), try fetching by name to show notes
+  React.useEffect(() => {
+    if (leadUser?.id) return; // primary effect handles id case
+    const name = String(form.lead_received_from || '').trim();
+    if (!name) { setLeadNotes(''); return; }
+    const ctrl = new AbortController();
+    fetch(`/api/users?name=${encodeURIComponent(name)}`, { signal: ctrl.signal })
+      .then(r => r.json())
+      .then((rows) => {
+        const arr = Array.isArray(rows) ? rows : [];
+        setLeadNotes(arr[0]?.notes || '');
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.lead_received_from]);
 
   // If payment is marked received, default paid_via away from 'Pending'
   React.useEffect(() => {
@@ -773,10 +825,15 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form]);
 
-  // Load FASTag info from DB when user types a barcode (>= 2 chars) and fill bank/class/owner
+  // Reset suggestions visibility when ticket changes (modal opens)
+  React.useEffect(() => {
+    setShowFastagSuggestions(false);
+  }, [ticket?.id]);
+
+  // Load FASTag info from DB when user interacts with barcode field (>= 2 chars)
   React.useEffect(() => {
     const term = (fastagQuery || form.fastag_serial || "").toString().trim();
-    if (term.length < 2) { setFastagOptions([]); return; }
+    if (term.length < 2 || !showFastagSuggestions) { setFastagOptions([]); return; }
     const params = new URLSearchParams();
     params.set('query', term);
         if ((form as any).fastag_bank) params.set('bank', String((form as any).fastag_bank));
@@ -785,20 +842,10 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
       .then(rows => {
         const list = Array.isArray(rows) ? rows : [];
         setFastagOptions(list);
-        const exact = list.find((r: any) => String(r.tag_serial) === term);
-        if (exact) {
-          setForm((f) => ({
-            ...f,
-            fastag_serial: exact.tag_serial || f.fastag_serial,
-            fastag_bank: exact.bank_name || (f as any).fastag_bank,
-            fastag_class: exact.fastag_class || (f as any).fastag_class,
-            fastag_owner: (exact as any).assigned_to_name || (exact.holder ? String(exact.holder) : ((f as any).fastag_owner || "")),
-          } as any));
-        }
       })
       .catch(() => setFastagOptions([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fastagQuery]);
+  }, [fastagQuery, showFastagSuggestions, (form as any).fastag_bank]);
 
   async function save() {
     try {
@@ -929,8 +976,25 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
             {/* Row 2: Lead From, Pickup, Bank, Vehicle Class */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 py-2">
               <div>
-                <label className="block text-sm font-medium mb-1">Lead Received From</label>
-                <Input value={form.lead_received_from} onChange={(e) => setForm({ ...form, lead_received_from: e.target.value })} placeholder="Type source or name" />
+                <label className="block text-sm font-medium mb-1">Lead Received From (Shop/Agent)</label>
+                <UsersAutocomplete
+                  value={leadUser}
+                  onSelect={(u) => {
+                    setLeadUser(u as any);
+                    setForm((f) => ({
+                      ...f,
+                      lead_by: u ? String((u as any).id) : "",
+                      lead_received_from: u ? String((u as any).name) : "",
+                    } as any));
+                    if (pickupSameAsLead && u) {
+                      setForm((f) => ({ ...f, pickup_point_name: String((u as any).name) }));
+                    }
+                  }}
+                  placeholder="Type shop/agent name"
+                />
+                {leadNotes && (
+                  <div className="text-xs text-gray-600 mt-1 whitespace-pre-wrap border rounded p-2 bg-gray-50">{leadNotes}</div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Pick-up Point</label>
@@ -980,8 +1044,13 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
             <div className="mt-0 grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
               <div>
                 <label className="block text-sm font-medium mb-1">FASTag Barcode</label>
-                <Input value={form.fastag_serial as any} onChange={(e) => { setForm({ ...form, fastag_serial: e.target.value }); setFastagQuery(e.target.value); }} placeholder="Type FASTag barcode" />
-                {fastagOptions.length > 0 && (
+                <Input
+                  value={form.fastag_serial as any}
+                  onFocus={() => setShowFastagSuggestions(true)}
+                  onChange={(e) => { setForm({ ...form, fastag_serial: e.target.value }); setFastagQuery(e.target.value); setShowFastagSuggestions(true); }}
+                  placeholder="Type FASTag barcode"
+                />
+            {showFastagSuggestions && fastagOptions.length > 0 && (
                   <div className="mt-1 max-h-40 overflow-auto border rounded">
                     {fastagOptions.map((row) => (
                       <div
@@ -1071,6 +1140,9 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
                     Self
                   </button>
                 </div>
+                {selectedUserNotes && (
+                  <div className="text-xs text-gray-600 mt-1 whitespace-pre-wrap border rounded p-2 bg-gray-50">{selectedUserNotes}</div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">NPCI Status</label>
