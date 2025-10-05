@@ -17,7 +17,9 @@ function normalizeFastagRow(row: any) {
         : null,
     assigned_to:
       row.assigned_to !== undefined && row.assigned_to !== null ? Number(row.assigned_to) : null,
-    assigned_to_name: row.assigned_to_name ? String(row.assigned_to_name) : "",
+    assigned_to_name: row.assigned_to_name
+      ? String(row.assigned_to_name)
+      : (row.owner_name ? String(row.owner_name) : ""),
     holder: row.holder ? String(row.holder) : "",
     supplier_id: row.supplier_id !== undefined && row.supplier_id !== null ? Number(row.supplier_id) : null,
     supplier_name: row.supplier_name ? String(row.supplier_name) : "",
@@ -53,6 +55,84 @@ export async function GET(req: NextRequest) {
   const assignedTo = (searchParams.get("assigned_to") || "").trim();
   const soldFrom = (searchParams.get("sold_from") || "").trim();
   const soldTo = (searchParams.get("sold_to") || "").trim();
+
+  // If the request is a simple barcode search (no heavy filters), serve a fast path
+  const isSimpleLookup =
+    !!queryTerm &&
+    !bankFilter && !classFilter && !ownerFilter && !statusFilter && !supplierFilter &&
+    !bankLike && !classLike && !mappingFilter && !createdFrom && !createdTo &&
+    !assignedFrom && !assignedTo && !soldFrom && !soldTo && !limitParamRaw && !offsetParamRaw;
+
+  // Short-circuit: trivial queries with very short term return nothing
+  if (queryTerm.length > 0 && queryTerm.length < 2) {
+    return NextResponse.json([]);
+  }
+
+  if (isSimpleLookup) {
+    try {
+      // Prefix search to utilize index; cap results
+      let [rows] = await pool.query<RowDataPacket[]>(
+        `SELECT f.id, f.tag_serial, f.fastag_class, f.bank_name, f.status,
+                f.assigned_to_agent_id, f.assigned_to,
+                COALESCE(ua.name,'') AS assigned_to_name,
+                COALESCE(
+                  CASE WHEN f.status = 'sold' THEN (
+                    SELECT t.customer_name FROM tickets_nh t
+                     WHERE t.fastag_serial = f.tag_serial AND COALESCE(t.customer_name,'') <> ''
+                     ORDER BY t.created_at DESC LIMIT 1
+                  ) END,
+                  ua.name,
+                  uu.name,
+                  ''
+                ) AS owner_name
+           FROM fastags f
+           LEFT JOIN users ua ON f.assigned_to_agent_id = ua.id
+           LEFT JOIN users uu ON f.assigned_to = uu.id
+          WHERE f.tag_serial LIKE ?
+          ORDER BY f.created_at DESC
+          LIMIT 20`,
+        [`${queryTerm}%`]
+      );
+      // If no prefix matches, try a contains search as a fallback
+      if (!Array.isArray(rows) || rows.length === 0) {
+        const [rowsContains] = await pool.query<RowDataPacket[]>(
+          `SELECT f.id, f.tag_serial, f.fastag_class, f.bank_name, f.status,
+                  f.assigned_to_agent_id, f.assigned_to,
+                  COALESCE(ua.name,'') AS assigned_to_name,
+                  COALESCE(
+                    CASE WHEN f.status = 'sold' THEN (
+                      SELECT t.customer_name FROM tickets_nh t
+                       WHERE t.fastag_serial = f.tag_serial AND COALESCE(t.customer_name,'') <> ''
+                       ORDER BY t.created_at DESC LIMIT 1
+                    ) END,
+                    ua.name,
+                    uu.name,
+                    ''
+                  ) AS owner_name
+             FROM fastags f
+             LEFT JOIN users ua ON f.assigned_to_agent_id = ua.id
+             LEFT JOIN users uu ON f.assigned_to = uu.id
+            WHERE f.tag_serial LIKE ?
+            ORDER BY f.created_at DESC
+            LIMIT 20`,
+          [`%${queryTerm}%`]
+        );
+        rows = rowsContains as any;
+      }
+      const normalized = (rows || []).map((row: any) => normalizeFastagRow({
+        ...row,
+        assigned_to_name: '',
+        holder: row.status && String(row.status).toLowerCase() === 'sold'
+          ? 'User'
+          : row.assigned_to_agent_id !== null
+            ? 'Agent'
+            : 'Admin',
+      }));
+      return NextResponse.json(normalized);
+    } catch (e) {
+      // Fall through to primary path on error
+    }
+  }
 
   const conditions: string[] = [];
   const values: any[] = [];
@@ -119,7 +199,11 @@ export async function GET(req: NextRequest) {
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  const limitClause = hasLimit ? 'LIMIT ? OFFSET ?' : '';
+  // If a search term is present but no limit specified, default to a bounded page
+  const effectiveHasLimit = hasLimit || !!queryTerm;
+  const effectiveLimit = hasLimit ? limit : (queryTerm ? 20 : 0);
+  const effectiveOffset = hasLimit ? offset : 0;
+  const limitClause = effectiveHasLimit ? 'LIMIT ? OFFSET ?' : '';
 
   const baseQuery = `
       SELECT
@@ -161,7 +245,7 @@ export async function GET(req: NextRequest) {
   `;
 
   // Prepare query params once for use in both primary and fallback queries
-  const queryParams = hasLimit ? [...values, limit, offset] : values;
+  const queryParams = effectiveHasLimit ? [...values, effectiveLimit, effectiveOffset] : values;
 
   try {
     const [rows] = await pool.query<RowDataPacket[]>(baseQuery, queryParams);
@@ -184,16 +268,8 @@ export async function GET(req: NextRequest) {
           f.created_at,
           f.assigned_at,
           f.assigned_date,
-          (SELECT MIN(fs.created_at)
-             FROM fastag_sales fs
-            WHERE (fs.tag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)
-          ) AS sold_at,
-          (SELECT COALESCE(s.sold_by_user_id, s.sold_by_agent_id)
-             FROM fastag_sales s
-            WHERE (s.tag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)
-            ORDER BY s.created_at DESC
-            LIMIT 1
-          ) AS sold_by_user_id
+          NULL AS sold_at,
+          NULL AS sold_by_user_id
         FROM fastags f
         ${whereClause}
         ORDER BY f.created_at DESC
@@ -219,4 +295,3 @@ export async function GET(req: NextRequest) {
     }
   }
 }
-

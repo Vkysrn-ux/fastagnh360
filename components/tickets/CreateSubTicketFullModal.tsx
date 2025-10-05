@@ -14,6 +14,7 @@ import ShopAutocomplete from "@/components/ShopAutocomplete";
 import AutocompleteInput from "@/components/AutocompleteInput";
 import UsersAutocomplete from "@/components/UsersAutocomplete";
 import PickupPointAutocomplete from "@/components/PickupPointAutocomplete";
+import { parseIndianMobile } from "@/lib/validators";
 
 type User = { id: number; name: string };
 type Ticket = {
@@ -115,6 +116,37 @@ export default function CreateSubTicketFullModal({
     if (paymentReceived && paidVia === 'Pending') setPaidVia('Cash');
   }, [paymentReceived]);
 
+  async function uploadToServer(file: File): Promise<string> {
+    const fd = new FormData();
+    fd.set('file', file);
+    const res = await fetch('/api/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || 'Upload failed');
+    return String(data.url);
+  }
+
+  function UploadField({ label, value, onChange }: { label: string; value: string; onChange: (url: string) => void }) {
+    return (
+      <div>
+        <label className="block font-semibold mb-1">{label}</label>
+        <div className="flex items-center gap-2">
+          <input type="file" onChange={async (e) => {
+            const inputEl = e.currentTarget as HTMLInputElement;
+            const f = inputEl.files?.[0];
+            if (!f) return;
+            try {
+              const url = await uploadToServer(f);
+              onChange(url);
+            } catch (err: any) {
+              alert(err?.message || 'Upload failed');
+            } finally { try { inputEl.value = ''; } catch {} }
+          }} />
+          {value && (<a href={value} target="_blank" rel="noreferrer" className="text-blue-600 underline text-sm">View</a>)}
+        </div>
+      </div>
+    );
+  }
+
   // Reset when modal opens (apply desired defaults)
   useEffect(() => {
     if (!open) return;
@@ -155,6 +187,15 @@ export default function CreateSubTicketFullModal({
       payment_to_send: "",
       net_value: "",
       pickup_point_name: "",
+      // documents
+      rc_front_url: "",
+      rc_back_url: "",
+      pan_url: "",
+      aadhaar_front_url: "",
+      aadhaar_back_url: "",
+      vehicle_front_url: "",
+      vehicle_side_url: "",
+      sticker_pasted_url: "",
     });
     setSelectedShop(null);
     setSelectedPickup(null);
@@ -274,7 +315,7 @@ export default function CreateSubTicketFullModal({
     const exact = (fastagOptions || []).find((r: any) => String(r.tag_serial) === fastagSerialInput.trim());
     if (exact) {
       setFastagSerialInput(exact.tag_serial || "");
-      setFastagOwner(exact.holder ? String(exact.holder) : (exact.assigned_to_name || ""));
+      setFastagOwner((exact as any).assigned_to_name || (exact.holder ? String(exact.holder) : ""));
       // @ts-ignore
       setForm((f) => ({ ...f, fastag_serial: exact.tag_serial || "", bank_name: exact.bank_name || (f as any).bank_name }));
       if (exact.fastag_class) setFastagClass(String(exact.fastag_class));
@@ -284,7 +325,7 @@ export default function CreateSubTicketFullModal({
 
   function pickFastag(row: any) {
     setFastagSerialInput(row.tag_serial || "");
-    setFastagOwner(row.holder ? String(row.holder) : (row.assigned_to_name || ""));
+    setFastagOwner(row.assigned_to_name || (row.holder ? String(row.holder) : ""));
     // @ts-ignore
     setForm((f) => ({ ...f, fastag_serial: row.tag_serial || "", bank_name: row.bank_name || (f as any).bank_name }));
     if (row.fastag_class) setFastagClass(String(row.fastag_class));
@@ -362,7 +403,6 @@ export default function CreateSubTicketFullModal({
         lead_received_from: form.lead_received_from,
         lead_by: effectiveLeadBy,
         customer_name: form.customer_name,
-        comments: form.comments,
         pickup_point_name: form.pickup_point_name || null,
         payment_to_collect: form.payment_to_collect !== "" ? Number(form.payment_to_collect) : null,
         payment_to_send: form.payment_to_send !== "" ? Number(form.payment_to_send) : null,
@@ -383,6 +423,16 @@ export default function CreateSubTicketFullModal({
       if (pickupCommission !== "") payload.pickup_commission = Number(pickupCommission) || 0;
       payload.pickup_commission_paid = !!pickupCommissionPaid;
       payload.pickup_commission_nil = !!pickupCommissionNil;
+
+      // document urls
+      payload.rc_front_url = (form as any).rc_front_url || null;
+      payload.rc_back_url = (form as any).rc_back_url || null;
+      payload.pan_url = (form as any).pan_url || null;
+      payload.aadhaar_front_url = (form as any).aadhaar_front_url || null;
+      payload.aadhaar_back_url = (form as any).aadhaar_back_url || null;
+      payload.vehicle_front_url = (form as any).vehicle_front_url || null;
+      payload.vehicle_side_url = (form as any).vehicle_side_url || null;
+      payload.sticker_pasted_url = (form as any).sticker_pasted_url || null;
 
       // Use children endpoint to ensure parenting and inheritance behavior
       const res = await fetch(`/api/tickets/${parent.id}/children`, {
@@ -419,7 +469,9 @@ export default function CreateSubTicketFullModal({
           <DialogTitle>Create Sub Ticket for #{parent.id}</DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="md:col-span-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="block font-semibold mb-1">Subject *</label>
             <select className="w-full border rounded p-2" value={form.subject} onChange={(e)=> setForm(f=> ({...f, subject: e.target.value}))}>
@@ -537,7 +589,7 @@ export default function CreateSubTicketFullModal({
             <input name="customer_name" value={form.customer_name} onChange={handleChange} className="w-full border p-2 rounded" />
           </div>
 
-          {/* Payment fields */}
+          
           <div>
             <label className="block font-semibold mb-1">Payment To Be Collected</label>
             <input
@@ -576,7 +628,7 @@ export default function CreateSubTicketFullModal({
             />
           </div>
 
-          {/* Commission + Paid via + Flags (single row) */}
+          
           <div className="lg:col-span-4 md:col-span-2 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
             <div>
               <label className="block font-semibold mb-1">Commission Amount</label>
@@ -629,7 +681,7 @@ export default function CreateSubTicketFullModal({
               <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={pickupCommissionNil} onChange={(e)=> setPickupCommissionNil(e.target.checked)} /> Commission Nil</label>
             </div>
           </div>
-          {/* One row: Bank, Class, Barcode, Owner */}
+          
           <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block font-semibold mb-1">FASTag Bank</label>
@@ -673,7 +725,7 @@ export default function CreateSubTicketFullModal({
             </div>
           </div>
 
-          {/* Pick-up Point (Shop/Agent with notes) */}
+          
         <div className="lg:col-span-2">
           <label className="block font-semibold mb-1">Pick-up Point (Shop/Agent)</label>
           <UsersAutocomplete
@@ -697,9 +749,24 @@ export default function CreateSubTicketFullModal({
             <textarea name="details" value={form.details} onChange={handleChange} className="w-full border p-2 rounded" rows={3} />
           </div>
 
-          <div className="lg:col-span-4 md:col-span-2">
-            <label className="block font-semibold mb-1">Comments</label>
-            <input name="comments" value={form.comments} onChange={handleChange} className="w-full border p-2 rounded" />
+          
+
+          
+          </div>
+          </div>
+          
+          <div className="md:col-span-1">
+            <h3 className="font-semibold mb-2">Documents</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <UploadField label="RC Front" value={(form as any).rc_front_url || ''} onChange={(u)=> setForm(f => ({...(f as any), rc_front_url: u} as any))} />
+              <UploadField label="RC Back" value={(form as any).rc_back_url || ''} onChange={(u)=> setForm(f => ({...(f as any), rc_back_url: u} as any))} />
+              <UploadField label="PAN" value={(form as any).pan_url || ''} onChange={(u)=> setForm(f => ({...(f as any), pan_url: u} as any))} />
+              <UploadField label="Aadhaar" value={(form as any).aadhaar_front_url || ''} onChange={(u)=> setForm(f => ({...(f as any), aadhaar_front_url: u} as any))} />
+              <UploadField label="Aadhaar" value={(form as any).aadhaar_back_url || ''} onChange={(u)=> setForm(f => ({...(f as any), aadhaar_back_url: u} as any))} />
+              <UploadField label="Vehicle Front" value={(form as any).vehicle_front_url || ''} onChange={(u)=> setForm(f => ({...(f as any), vehicle_front_url: u} as any))} />
+              <UploadField label="Vehicle Side" value={(form as any).vehicle_side_url || ''} onChange={(u)=> setForm(f => ({...(f as any), vehicle_side_url: u} as any))} />
+              <UploadField label="Sticker" value={(form as any).sticker_pasted_url || ''} onChange={(u)=> setForm(f => ({...(f as any), sticker_pasted_url: u} as any))} />
+            </div>
           </div>
         </div>
 
@@ -717,3 +784,4 @@ export default function CreateSubTicketFullModal({
     </Dialog>
   );
 }
+

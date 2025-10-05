@@ -234,14 +234,13 @@ export async function GET(req: NextRequest) {
     const createdByJoin = hasCreatedByCol ? " LEFT JOIN users cu ON t.created_by = cu.id" : "";
     if (parentId) {
       // Children of one parent
-      // Try rich join (FASTag info). Fallback to basic if join fails.
+      // Return the same rich columns as root list so UI can show identical columns
       try {
         const [rows] = await pool.query(
           `
           SELECT
-            t.id, t.ticket_no, t.subject, t.status, t.details, t.assigned_to,
-            t.created_at, t.updated_at,
-            t.fastag_serial,
+            t.*,
+            COALESCE(u.name, '') AS assigned_to_name${createdBySelect},
             f.bank_name AS fastag_bank,
             f.fastag_class,
             CASE
@@ -250,6 +249,7 @@ export async function GET(req: NextRequest) {
               ELSE 'Admin'
             END AS fastag_owner
           FROM tickets_nh t
+          LEFT JOIN users u ON t.assigned_to = u.id${createdByJoin}
           LEFT JOIN fastags f ON f.tag_serial = t.fastag_serial
           WHERE t.parent_ticket_id = ?
           ORDER BY t.created_at DESC
@@ -261,9 +261,10 @@ export async function GET(req: NextRequest) {
         const [rows] = await pool.query(
           `
           SELECT
-            t.id, t.ticket_no, t.subject, t.status, t.details, t.assigned_to,
-            t.created_at, t.updated_at
+            t.*,
+            COALESCE(u.name, '') AS assigned_to_name${createdBySelect}
           FROM tickets_nh t
+          LEFT JOIN users u ON t.assigned_to = u.id${createdByJoin}
           WHERE t.parent_ticket_id = ?
           ORDER BY t.created_at DESC
           `,

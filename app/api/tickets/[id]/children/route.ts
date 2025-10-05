@@ -18,10 +18,26 @@ function normalizeStatus(val: any): string | null {
   if (val === null || val === undefined) return null;
   const s = String(val).trim().toLowerCase();
   const map: Record<string, string> = {
+    // Align with canonical app statuses used elsewhere
+    "open": "open",
+    "pending": "open",
     "activation pending": "open",
+    "kyc pending": "open",
+    "waiting": "open",
+    "new lead": "open",
+
+    "in progress": "in_progress",
+    "in_progress": "in_progress",
+    "working": "in_progress",
+
+    "completed": "completed",
+    "done": "completed",
     "activated": "completed",
-    "cust cancelled": "closed",
+    "resolved": "completed",
+
     "closed": "closed",
+    "cancelled": "closed",
+    "cust cancelled": "closed",
   };
   return map[s] || s || null;
 }
@@ -133,10 +149,10 @@ async function recordFastagSale(opts: {
 // GET: list all child sub-tickets for a parent ticket
 export async function GET(
   _req: NextRequest,
-  ctx: { params: { id: string } }
+  ctx: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = ctx.params;
+    const { id } = await ctx.params;
     const parentId = Number(id);
     if (!Number.isFinite(parentId) || parentId <= 0) {
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
@@ -171,11 +187,11 @@ export async function GET(
 // Body: { subject: string, details?: string, ...optional overrides }
 export async function POST(
   req: NextRequest,
-  ctx: { params: { id: string } }
+  ctx: { params: Promise<{ id: string }> }
 ) {
   const conn = await pool.getConnection();
   try {
-    const { id } = ctx.params;
+    const { id } = await ctx.params;
     const parentId = Number(id);
     if (!Number.isFinite(parentId) || parentId <= 0) {
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
@@ -197,19 +213,61 @@ export async function POST(
 
     await conn.beginTransaction();
 
-    // Ensure new field 'paid_via' exists on tickets table
-    try {
-      const hasPaidVia = await hasTableColumn(TICKETS_TABLE, "paid_via", conn);
-      if (!hasPaidVia) {
-        await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN paid_via VARCHAR(64) NOT NULL DEFAULT 'Pending'`);
-      }
-    } catch {}
+    // Ensure optional fields exist on tickets table (best-effort)
+    try { const ok = await hasTableColumn(TICKETS_TABLE, 'paid_via', conn); if (!ok) await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN paid_via VARCHAR(64) NOT NULL DEFAULT 'Pending'`); } catch {}
+    try { const ok = await hasTableColumn(TICKETS_TABLE, 'rc_front_url', conn); if (!ok) await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN rc_front_url VARCHAR(255) NULL`); } catch {}
+    try { const ok = await hasTableColumn(TICKETS_TABLE, 'rc_back_url', conn); if (!ok) await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN rc_back_url VARCHAR(255) NULL`); } catch {}
+    try { const ok = await hasTableColumn(TICKETS_TABLE, 'pan_url', conn); if (!ok) await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN pan_url VARCHAR(255) NULL`); } catch {}
+    try { const ok = await hasTableColumn(TICKETS_TABLE, 'aadhaar_front_url', conn); if (!ok) await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN aadhaar_front_url VARCHAR(255) NULL`); } catch {}
+    try { const ok = await hasTableColumn(TICKETS_TABLE, 'aadhaar_back_url', conn); if (!ok) await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN aadhaar_back_url VARCHAR(255) NULL`); } catch {}
+    try { const ok = await hasTableColumn(TICKETS_TABLE, 'vehicle_front_url', conn); if (!ok) await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN vehicle_front_url VARCHAR(255) NULL`); } catch {}
+    try { const ok = await hasTableColumn(TICKETS_TABLE, 'vehicle_side_url', conn); if (!ok) await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN vehicle_side_url VARCHAR(255) NULL`); } catch {}
+    try { const ok = await hasTableColumn(TICKETS_TABLE, 'sticker_pasted_url', conn); if (!ok) await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN sticker_pasted_url VARCHAR(255) NULL`); } catch {}
+    try { const ok = await hasTableColumn(TICKETS_TABLE, 'fastag_bank', conn); if (!ok) await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN fastag_bank VARCHAR(64) NULL`); } catch {}
+    try { const ok = await hasTableColumn(TICKETS_TABLE, 'fastag_class', conn); if (!ok) await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN fastag_class VARCHAR(32) NULL`); } catch {}
+    try { const ok = await hasTableColumn(TICKETS_TABLE, 'fastag_owner', conn); if (!ok) await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN fastag_owner VARCHAR(64) NULL`); } catch {}
 
     const hasCommissionColumn = await hasTableColumn(TICKETS_TABLE, "commission_amount", conn);
     const hasFastagSerialColumn = await hasTableColumn(TICKETS_TABLE, "fastag_serial", conn);
     const hasPaidViaColumn = await hasTableColumn(TICKETS_TABLE, "paid_via", conn);
+    const hasRcFront = await hasTableColumn(TICKETS_TABLE, 'rc_front_url', conn);
+    const hasRcBack = await hasTableColumn(TICKETS_TABLE, 'rc_back_url', conn);
+    const hasPan = await hasTableColumn(TICKETS_TABLE, 'pan_url', conn);
+    const hasAadhaarFront = await hasTableColumn(TICKETS_TABLE, 'aadhaar_front_url', conn);
+    const hasAadhaarBack = await hasTableColumn(TICKETS_TABLE, 'aadhaar_back_url', conn);
+    const hasVehFront = await hasTableColumn(TICKETS_TABLE, 'vehicle_front_url', conn);
+    const hasVehSide = await hasTableColumn(TICKETS_TABLE, 'vehicle_side_url', conn);
+    const hasSticker = await hasTableColumn(TICKETS_TABLE, 'sticker_pasted_url', conn);
+    const hasFastagBank = await hasTableColumn(TICKETS_TABLE, 'fastag_bank', conn);
+    const hasFastagClass = await hasTableColumn(TICKETS_TABLE, 'fastag_class', conn);
+    const hasFastagOwner = await hasTableColumn(TICKETS_TABLE, 'fastag_owner', conn);
 
-    const ticket_no = await generateTicketNo(conn);
+    // Child ticket number: use parent ticket_no with incremental suffix -01, -02, ...
+    let ticket_no: string;
+    try {
+      const base = String(parent.ticket_no || "").trim();
+      if (!base) {
+        ticket_no = await generateTicketNo(conn);
+      } else {
+        const [childNos]: any = await conn.query(
+          `SELECT ticket_no FROM ${TICKETS_TABLE} WHERE parent_ticket_id = ?`,
+          [parentId]
+        );
+        let maxSuffix = 0;
+        for (const r of (Array.isArray(childNos) ? childNos : [])) {
+          const tn = String(r.ticket_no || "");
+          if (tn.startsWith(base + "-")) {
+            const part = tn.slice((base + "-").length);
+            const n = parseInt(part, 10);
+            if (!isNaN(n) && n > maxSuffix) maxSuffix = n;
+          }
+        }
+        const next = String(maxSuffix + 1).padStart(2, '0');
+        ticket_no = `${base}-${next}`;
+      }
+    } catch {
+      ticket_no = await generateTicketNo(conn);
+    }
 
     // Inherit/override fields
     const vehicle_reg_no = body.vehicle_reg_no ?? parent.vehicle_reg_no ?? "";
@@ -239,7 +297,7 @@ export async function POST(
     const commissionValue =
       commissionRaw === undefined || commissionRaw === null ? 0 : Number(commissionRaw);
 
-    // Normalize paid_via to allowed options
+    // Normalize paid_via to allowed options and validate against payment_received
     const allowedPaidVia = new Set([
       'Pending',
       'Paytm QR',
@@ -254,6 +312,10 @@ export async function POST(
     ]);
     let paid_via: string = String(body.paid_via ?? parent.paid_via ?? 'Pending').trim();
     if (!allowedPaidVia.has(paid_via)) paid_via = 'Pending';
+    if (body?.payment_received && paid_via === 'Pending') {
+      await conn.rollback();
+      return NextResponse.json({ error: "Paid via cannot be 'Pending' when Payment Received is checked." }, { status: 400 });
+    }
 
     // Duplicate guard: do not allow creating a ticket with same phone + VRN
     try {
@@ -330,6 +392,18 @@ export async function POST(
       placeholders.push("?");
       insertValues.push(fastag_serial ?? null);
     }
+
+    if (hasFastagBank) { columns.push('fastag_bank'); placeholders.push('?'); insertValues.push(body.fastag_bank ?? null); }
+    if (hasFastagClass) { columns.push('fastag_class'); placeholders.push('?'); insertValues.push(body.fastag_class ?? null); }
+    if (hasFastagOwner) { columns.push('fastag_owner'); placeholders.push('?'); insertValues.push(body.fastag_owner ?? null); }
+    if (hasRcFront) { columns.push('rc_front_url'); placeholders.push('?'); insertValues.push(body.rc_front_url ?? null); }
+    if (hasRcBack) { columns.push('rc_back_url'); placeholders.push('?'); insertValues.push(body.rc_back_url ?? null); }
+    if (hasPan) { columns.push('pan_url'); placeholders.push('?'); insertValues.push(body.pan_url ?? null); }
+    if (hasAadhaarFront) { columns.push('aadhaar_front_url'); placeholders.push('?'); insertValues.push(body.aadhaar_front_url ?? null); }
+    if (hasAadhaarBack) { columns.push('aadhaar_back_url'); placeholders.push('?'); insertValues.push(body.aadhaar_back_url ?? null); }
+    if (hasVehFront) { columns.push('vehicle_front_url'); placeholders.push('?'); insertValues.push(body.vehicle_front_url ?? null); }
+    if (hasVehSide) { columns.push('vehicle_side_url'); placeholders.push('?'); insertValues.push(body.vehicle_side_url ?? null); }
+    if (hasSticker) { columns.push('sticker_pasted_url'); placeholders.push('?'); insertValues.push(body.sticker_pasted_url ?? null); }
 
     columns.push("parent_ticket_id");
     placeholders.push("?");

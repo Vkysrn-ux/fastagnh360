@@ -229,7 +229,7 @@ export default function CreateTicketFullModal({
 
   function pickFastag(row: any) {
     setFastagSerialInput(row.tag_serial || "");
-    setFastagOwner(row.holder ? String(row.holder) : (row.assigned_to_name || ""));
+    setFastagOwner(row.assigned_to_name || (row.holder ? String(row.holder) : ""));
     setForm((f) => ({ ...f, fastag_serial: row.tag_serial || "", bank_name: row.bank_name || f.bank_name }));
     if (row.fastag_class) {
       const code = String(row.fastag_class).toLowerCase();
@@ -361,7 +361,6 @@ export default function CreateTicketFullModal({
         lead_received_from: form.lead_received_from,
         lead_by: effectiveLeadBy,
         customer_name: form.customer_name,
-        comments: form.comments,
         pickup_point_name: form.pickup_point_name || null,
         payment_to_collect: form.payment_to_collect !== "" ? Number(form.payment_to_collect) : null,
         payment_to_send: form.payment_to_send !== "" ? Number(form.payment_to_send) : null,
