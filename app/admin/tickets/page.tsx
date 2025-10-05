@@ -567,6 +567,11 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
   const [fastagOptions, setFastagOptions] = React.useState<any[]>([]);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // Auto-save state
+  const autoSaveTimer = React.useRef<any>(null);
+  const [autoSaving, setAutoSaving] = React.useState(false);
+  const [autoSavedAt, setAutoSavedAt] = React.useState<number | null>(null);
+  const [autoSaveError, setAutoSaveError] = React.useState<string | null>(null);
   const [currentUser, setCurrentUser] = React.useState<{ id: number; name: string } | null>(null);
   const [assignedUser, setAssignedUser] = React.useState<UserOption | null>(() => {
     const idNum = Number(ticket?.assigned_to);
@@ -669,6 +674,104 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     if (form.net_value !== sumStr) setForm((f) => ({ ...f, net_value: sumStr }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.payment_to_collect, form.payment_to_send]);
+
+  function canAutoSave(f: typeof form): { ok: boolean; reason?: string; phone?: string; alt?: string | null } {
+    try {
+      const phoneStr = String(f.phone || "");
+      const altStr = String(f.alt_phone || "");
+      const re = /^(?:\+?91[\-\s]?|0)?([6-9]\d{9})$/;
+      const m = phoneStr.match(re);
+      if (!m) return { ok: false, reason: 'invalid_phone' };
+      let altNorm: string | null = null;
+      if (altStr.trim() !== "") {
+        const ma = altStr.match(re);
+        if (!ma) return { ok: false, reason: 'invalid_alt' };
+        altNorm = ma[1];
+      }
+      if (!!f.payment_received && String((f as any).paid_via || '').trim() === 'Pending') {
+        return { ok: false, reason: 'paid_via_pending' };
+      }
+      return { ok: true, phone: m[1], alt: altNorm };
+    } catch {
+      return { ok: false };
+    }
+  }
+
+  async function autoSaveNow(valid: { phone: string; alt: string | null } | null = null) {
+    try {
+      setAutoSaving(true);
+      setAutoSaveError(null);
+      // Compute basics and reuse validation if not provided
+      const v = valid || (canAutoSave(form).ok ? (canAutoSave(form) as any) : null);
+      if (!v) { setAutoSaving(false); return; }
+      const payload: any = {
+        id: Number(ticket.id),
+        vehicle_reg_no: form.vehicle_reg_no,
+        alt_vehicle_reg_no: (form as any).alt_vehicle_reg_no || null,
+        phone: v.phone,
+        alt_phone: v.alt,
+        subject: form.subject,
+        details: form.details,
+        status: form.status,
+        kyv_status: form.kyv_status || null,
+        npci_status: (form as any).npci_status || null,
+        assigned_to: form.assigned_to === "" ? null : (isNaN(Number(form.assigned_to)) ? null : Number(form.assigned_to)),
+        lead_received_from: form.lead_received_from,
+        lead_by: form.lead_by === "" ? null : form.lead_by,
+        customer_name: form.customer_name,
+        pickup_point_name: form.pickup_point_name || null,
+        payment_to_collect: form.payment_to_collect === "" ? null : Number(form.payment_to_collect),
+        payment_to_send: form.payment_to_send === "" ? null : Number(form.payment_to_send),
+        net_value: form.net_value === "" ? null : Number(form.net_value),
+        commission_amount: form.commission_amount === "" ? null : Number(form.commission_amount),
+        lead_commission: (form as any).lead_commission === "" ? null : Number((form as any).lead_commission),
+        pickup_commission: (form as any).pickup_commission === "" ? null : Number((form as any).pickup_commission),
+        fastag_serial: form.fastag_serial || null,
+        fastag_bank: (form as any).fastag_bank || null,
+        fastag_class: (form as any).fastag_class || null,
+        fastag_owner: (form as any).fastag_owner || null,
+        paid_via: (form as any).paid_via,
+        payment_received: !!form.payment_received,
+        delivery_done: !!form.delivery_done,
+        commission_done: !!form.commission_done,
+        // documents
+        rc_front_url: (form as any).rc_front_url || null,
+        rc_back_url: (form as any).rc_back_url || null,
+        pan_url: (form as any).pan_url || null,
+        aadhaar_front_url: (form as any).aadhaar_front_url || null,
+        aadhaar_back_url: (form as any).aadhaar_back_url || null,
+        vehicle_front_url: (form as any).vehicle_front_url || null,
+        vehicle_side_url: (form as any).vehicle_side_url || null,
+        sticker_pasted_url: (form as any).sticker_pasted_url || null,
+      };
+      const res = await fetch("/api/tickets", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Failed to update ticket");
+      setAutoSavedAt(Date.now());
+    } catch (e: any) {
+      setAutoSaveError(e?.message || 'Auto-save failed');
+    } finally {
+      setAutoSaving(false);
+    }
+  }
+
+  // Debounced auto-save on form changes
+  React.useEffect(() => {
+    // Only attempt autosave when data is valid enough and ticket exists
+    if (!ticket) return;
+    const v = canAutoSave(form);
+    if (!v.ok) { return; }
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      autoSaveNow({ phone: v.phone as string, alt: (v as any).alt ?? null });
+    }, 1200);
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form]);
 
   // Load FASTag info from DB when user types a barcode (>= 2 chars) and fill bank/class/owner
   React.useEffect(() => {
@@ -1048,6 +1151,15 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
           </div>
         </div>
         {error && <div className="text-sm text-red-600 mt-2">{error}</div>}
+        <div className="text-xs mt-1">
+          {autoSaving && <span className="text-gray-500">Auto-saving…</span>}
+          {!autoSaving && autoSavedAt && !autoSaveError && (
+            <span className="text-gray-500">Auto-saved at {new Date(autoSavedAt).toLocaleTimeString()}</span>
+          )}
+          {!autoSaving && autoSaveError && (
+            <span className="text-red-600">{autoSaveError}</span>
+          )}
+        </div>
         <DialogFooter>
           <button className="px-4 py-2 border rounded" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={save} disabled={saving}>{saving ? "Saving..." : "Save"}</button>
