@@ -407,25 +407,60 @@ export default function TicketListPage() {
                           <table className="min-w-full divide-y divide-gray-200">
                             <thead>
                               <tr className="bg-gray-100">
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket No</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket Number</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vehicle Number</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lead From</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket Status</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Commission / Delivery</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">KYV Status</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assigned To</th>
+                                <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                               </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                              {(childrenMap[String(ticket.id)] || []).map((child) => (
+                              {(childrenMap[String(ticket.id)] || []).map((child: any) => (
                                 <tr key={child.id}>
-                                  <td className="px-4 py-2 text-sm font-medium text-gray-900">{child.ticket_no}</td>
-                                  <td className="px-4 py-2 text-sm">
+                                  <td className="px-4 py-2 text-sm font-medium text-gray-900">
                                     <div className="flex flex-col">
-                                      <span>{child.subject}</span>
-                                      <span className="text-xs text-gray-500">{(child as any).fastag_bank || '-'}</span>
+                                      <span>{child.ticket_no}</span>
+                                      <span className="text-xs text-gray-500">{child.created_at ? formatERPDate(child.created_at as any) : '-'}</span>
                                     </div>
                                   </td>
-                                  <td className="px-4 py-2 text-sm"><StatusBadge status={child.status || "open"} /></td>
-                                  <td className="px-4 py-2 text-sm text-gray-500">{child.created_at ? formatERPDate(child.created_at as any) : '-'}</td>
+                                  <td className="px-4 py-2 text-sm">
+                                    <div className="text-gray-900">{child.customer_name || '-'}</div>
+                                    {child.phone && (<div className="text-gray-500 text-xs">{child.phone}</div>)}
+                                  </td>
+                                  <td className="px-4 py-2 text-sm">
+                                    <div className="flex flex-col">
+                                      <span>{child.subject || '-'}</span>
+                                      <span className="text-xs text-gray-500">{child.fastag_bank || child.bank_name || '-'}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-2 text-sm">
+                                    <div className="flex flex-col">
+                                      <span>{child.vehicle_reg_no || child.vehicle_number || '-'}</span>
+                                      <span className="text-xs text-gray-500">{child.npci_status || '-'}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-2 text-sm text-gray-500">{child.lead_received_from || '-'}</td>
+                                  <td className="px-4 py-2 text-sm"><StatusBadge status={child.status || 'open'} /></td>
+                                  <td className="px-4 py-2 text-sm text-gray-500">
+                                    <div className="flex flex-col">
+                                      <span>Commission: {child.commission_done ? 'Done' : 'Pending'}</span>
+                                      <span>Delivery: {child.delivery_done ? 'Done' : (child.delivery_nil ? 'Nil' : 'Pending')}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-2 text-sm text-gray-500">
+                                    <div className="flex flex-col">
+                                      <span>{child.kyv_status || '-'}</span>
+                                      <span className="text-xs text-gray-500">Payment: {child.payment_received ? 'Received' : (child.payment_nil ? 'Nil' : 'Pending')}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-2 text-sm text-gray-900">{child.assigned_to_name || (child.assigned_to ? `#${child.assigned_to}` : '-')}</td>
+                                  <td className="px-4 py-2 text-sm text-gray-500">{child.created_by_name || '-'}</td>
                                   <td className="px-4 py-2 text-sm">
                                     <Link
                                       href={`/admin/tickets/${child.id}`}
@@ -493,16 +528,18 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     details: ticket?.details || "",
     status: ticket?.status || "open",
     kyv_status: ticket?.kyv_status || "",
+    npci_status: (ticket as any)?.npci_status || "Activation Pending",
     assigned_to: ticket?.assigned_to ? String(ticket.assigned_to) : "",
     lead_received_from: ticket?.lead_received_from || "",
     lead_by: ticket?.lead_by ? String(ticket.lead_by) : "",
     customer_name: ticket?.customer_name || "",
-    comments: ticket?.comments || "",
     payment_to_collect: ticket?.payment_to_collect ?? "",
     payment_to_send: ticket?.payment_to_send ?? "",
     net_value: ticket?.net_value ?? "",
     pickup_point_name: ticket?.pickup_point_name || "",
     commission_amount: (ticket as any)?.commission_amount ?? "",
+    lead_commission: (ticket as any)?.lead_commission ?? "",
+    pickup_commission: (ticket as any)?.pickup_commission ?? "",
     paid_via: (ticket as any)?.paid_via || 'Pending',
     payment_received: !!(ticket as any)?.payment_received,
     delivery_done: !!(ticket as any)?.delivery_done,
@@ -511,6 +548,15 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     fastag_bank: (ticket as any)?.fastag_bank || "",
     fastag_class: (ticket as any)?.fastag_class || "",
     fastag_owner: (ticket as any)?.fastag_owner || "",
+    // documents
+    rc_front_url: (ticket as any)?.rc_front_url || "",
+    rc_back_url: (ticket as any)?.rc_back_url || "",
+    pan_url: (ticket as any)?.pan_url || "",
+    aadhaar_front_url: (ticket as any)?.aadhaar_front_url || "",
+    aadhaar_back_url: (ticket as any)?.aadhaar_back_url || "",
+    vehicle_front_url: (ticket as any)?.vehicle_front_url || "",
+    vehicle_side_url: (ticket as any)?.vehicle_side_url || "",
+    sticker_pasted_url: (ticket as any)?.sticker_pasted_url || "",
   });
   const [fastagQuery, setFastagQuery] = React.useState<string>(String((ticket as any)?.fastag_serial || ""));
   const [fastagOptions, setFastagOptions] = React.useState<any[]>([]);
@@ -524,6 +570,37 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     }
     return null;
   });
+
+  async function uploadToServer(file: File): Promise<string> {
+    const fd = new FormData();
+    fd.set('file', file);
+    const res = await fetch('/api/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || 'Upload failed');
+    return String(data.url);
+  }
+
+  function UploadField({ label, value, onChange }: { label: string; value: string; onChange: (url: string) => void }) {
+    return (
+      <div>
+        <label className="block text-sm font-medium mb-1">{label}</label>
+        <div className="flex items-center gap-2">
+          <input type="file" onChange={async (e) => {
+            const inputEl = e.currentTarget as HTMLInputElement;
+            const f = inputEl.files?.[0];
+            if (!f) return;
+            try {
+              const url = await uploadToServer(f);
+              onChange(url);
+            } catch (err: any) {
+              alert(err?.message || 'Upload failed');
+            } finally { try { inputEl.value = ''; } catch {} }
+          }} />
+          {value && (<a href={value} target="_blank" rel="noreferrer" className="text-blue-600 underline text-xs">View</a>)}
+        </div>
+      </div>
+    );
+  }
 
   React.useEffect(() => {
     // Load session for "Self" name/id
@@ -565,7 +642,8 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     if (term.length < 2) { setFastagOptions([]); return; }
     const params = new URLSearchParams();
     params.set('query', term);
-    fetch(`/api/fastags?${params.toString()}`)
+        if ((form as any).fastag_bank) params.set('bank', String((form as any).fastag_bank));
+    fetch(`/api/fastags?${params.toString()}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(rows => {
         const list = Array.isArray(rows) ? rows : [];
@@ -577,7 +655,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
             fastag_serial: exact.tag_serial || f.fastag_serial,
             fastag_bank: exact.bank_name || (f as any).fastag_bank,
             fastag_class: exact.fastag_class || (f as any).fastag_class,
-            fastag_owner: exact.holder ? String(exact.holder) : (exact.assigned_to_name || (f as any).fastag_owner || ""),
+            fastag_owner: (exact as any).assigned_to_name || (exact.holder ? String(exact.holder) : ((f as any).fastag_owner || "")),
           } as any));
         }
       })
@@ -617,21 +695,36 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
         details: form.details,
         status: form.status,
         kyv_status: form.kyv_status || null,
+        npci_status: (form as any).npci_status || null,
         assigned_to: form.assigned_to === "" ? null : (isNaN(Number(form.assigned_to)) ? null : Number(form.assigned_to)),
         lead_received_from: form.lead_received_from,
         lead_by: form.lead_by === "" ? null : form.lead_by,
         customer_name: form.customer_name,
-        comments: form.comments,
+        
         pickup_point_name: form.pickup_point_name || null,
         payment_to_collect: form.payment_to_collect === "" ? null : Number(form.payment_to_collect),
         payment_to_send: form.payment_to_send === "" ? null : Number(form.payment_to_send),
         net_value: form.net_value === "" ? null : Number(form.net_value),
         commission_amount: form.commission_amount === "" ? null : Number(form.commission_amount),
+        lead_commission: (form as any).lead_commission === "" ? null : Number((form as any).lead_commission),
+        pickup_commission: (form as any).pickup_commission === "" ? null : Number((form as any).pickup_commission),
         fastag_serial: form.fastag_serial || null,
+        fastag_bank: (form as any).fastag_bank || null,
+        fastag_class: (form as any).fastag_class || null,
+        fastag_owner: (form as any).fastag_owner || null,
         paid_via: (form as any).paid_via,
         payment_received: !!form.payment_received,
         delivery_done: !!form.delivery_done,
         commission_done: !!form.commission_done,
+        // documents
+        rc_front_url: (form as any).rc_front_url || null,
+        rc_back_url: (form as any).rc_back_url || null,
+        pan_url: (form as any).pan_url || null,
+        aadhaar_front_url: (form as any).aadhaar_front_url || null,
+        aadhaar_back_url: (form as any).aadhaar_back_url || null,
+        vehicle_front_url: (form as any).vehicle_front_url || null,
+        vehicle_side_url: (form as any).vehicle_side_url || null,
+        sticker_pasted_url: (form as any).sticker_pasted_url || null,
       };
       const res = await fetch("/api/tickets", {
         method: "PATCH",
@@ -813,15 +906,20 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
           <label className="block text-sm font-medium mb-1">Details</label>
           <textarea className="w-full border rounded p-2" rows={3} value={form.details} onChange={(e) => setForm({ ...form, details: e.target.value })} />
         </div>
-        <div className="py-2">
-          <label className="block text-sm font-medium mb-1">Comments</label>
-          <Input value={form.comments} onChange={(e) => setForm({ ...form, comments: e.target.value })} />
-        </div>
+        
         {/* Row 5: Commission + Flags */}
         <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-4 gap-4 py-2">
           <div>
             <label className="block text-sm font-medium mb-1">Commission Amount</label>
             <Input type="number" step="0.01" value={form.commission_amount as any} onChange={(e) => setForm({ ...form, commission_amount: e.target.value })} placeholder="0" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Lead Commission to Give</label>
+            <Input type="number" step="0.01" value={(form as any).lead_commission as any} onChange={(e) => setForm({ ...(form as any), lead_commission: e.target.value } as any)} placeholder="0" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Pickup Commission to Give</label>
+            <Input type="number" step="0.01" value={(form as any).pickup_commission as any} onChange={(e) => setForm({ ...(form as any), pickup_commission: e.target.value } as any)} placeholder="0" />
           </div>
           <div className="col-span-2 lg:col-span-3 grid grid-cols-2 gap-2 items-start">
             <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
@@ -867,6 +965,29 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
           <div>
             <label className="block text-sm font-medium mb-1">FASTag Barcode</label>
             <Input value={form.fastag_serial as any} onChange={(e) => { setForm({ ...form, fastag_serial: e.target.value }); setFastagQuery(e.target.value); }} placeholder="Type FASTag barcode" />
+            {fastagOptions.length > 0 && (
+              <div className="mt-1 max-h-40 overflow-auto border rounded">
+                {fastagOptions.map((row) => (
+                  <div
+                    key={row.id}
+                    className="px-3 py-2 cursor-pointer hover:bg-orange-50 border-b last:border-b-0"
+                    onMouseDown={() => {
+                      setForm((f) => ({
+                        ...f,
+                        fastag_serial: row.tag_serial || (f as any).fastag_serial,
+                        fastag_bank: row.bank_name || (f as any).fastag_bank,
+                        fastag_class: row.fastag_class || (f as any).fastag_class,
+                        fastag_owner: row.holder ? String(row.holder) : (row.assigned_to_name || (f as any).fastag_owner || ""),
+                      } as any));
+                      setFastagQuery(String(row.tag_serial || ""));
+                      setFastagOptions([]);
+                    }}
+                  >
+                    {row.tag_serial} — {row.bank_name} / {row.fastag_class}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">FASTag Bank</label>
@@ -881,6 +1002,20 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
             <Input value={form.fastag_owner as any} readOnly className="bg-gray-50" />
           </div>
         </div>
+        {/* Documents */}
+        <div className="py-2">
+          <h3 className="font-semibold mb-2">Documents</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <UploadField label="RC Front" value={(form as any).rc_front_url || ''} onChange={(u)=> setForm(f => ({...(f as any), rc_front_url: u} as any))} />
+            <UploadField label="RC Back" value={(form as any).rc_back_url || ''} onChange={(u)=> setForm(f => ({...(f as any), rc_back_url: u} as any))} />
+            <UploadField label="PAN" value={(form as any).pan_url || ''} onChange={(u)=> setForm(f => ({...(f as any), pan_url: u} as any))} />
+            <UploadField label="Aadhaar" value={(form as any).aadhaar_front_url || ''} onChange={(u)=> setForm(f => ({...(f as any), aadhaar_front_url: u} as any))} />
+            <UploadField label="Aadhaar" value={(form as any).aadhaar_back_url || ''} onChange={(u)=> setForm(f => ({...(f as any), aadhaar_back_url: u} as any))} />
+            <UploadField label="Vehicle Front" value={(form as any).vehicle_front_url || ''} onChange={(u)=> setForm(f => ({...(f as any), vehicle_front_url: u} as any))} />
+            <UploadField label="Vehicle Side" value={(form as any).vehicle_side_url || ''} onChange={(u)=> setForm(f => ({...(f as any), vehicle_side_url: u} as any))} />
+            <UploadField label="Sticker" value={(form as any).sticker_pasted_url || ''} onChange={(u)=> setForm(f => ({...(f as any), sticker_pasted_url: u} as any))} />
+          </div>
+        </div>
         {error && <div className="text-sm text-red-600">{error}</div>}
         <DialogFooter>
           <button className="px-4 py-2 border rounded" onClick={onClose} disabled={saving}>Cancel</button>
@@ -890,3 +1025,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     </Dialog>
   );
 }
+
+
+
+
