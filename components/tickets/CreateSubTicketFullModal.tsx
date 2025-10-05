@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -98,6 +98,7 @@ export default function CreateSubTicketFullModal({
   const [selectedUserNotes, setSelectedUserNotes] = useState<string>("");
   const [pickupNotes, setPickupNotes] = useState<string>("");
   const [shopNotes, setShopNotes] = useState<string>("");
+  const [pickupSameAsLead, setPickupSameAsLead] = useState<boolean>(false);
   const paidViaOptions = [
     'Pending',
     'Paytm QR',
@@ -120,27 +121,57 @@ export default function CreateSubTicketFullModal({
     const fd = new FormData();
     fd.set('file', file);
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.error || 'Upload failed');
-    return String(data.url);
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    let data: any = null; let text: string | null = null;
+    try {
+      if (ct.includes('application/json')) data = await res.json();
+      else { text = await res.text(); try { data = JSON.parse(text); } catch {} }
+    } catch { try { text = await res.text(); } catch {} }
+    if (!res.ok) {
+      const msg = (data && (data.error || data.message)) || text || `Upload failed (${res.status})`;
+      throw new Error(typeof msg === 'string' ? msg : 'Upload failed');
+    }
+    const url = data?.url || data?.Location || data?.location || data?.fileUrl || null;
+    if (!url) throw new Error('Upload failed: no URL returned by server');
+    return String(url);
   }
 
   function UploadField({ label, value, onChange }: { label: string; value: string; onChange: (url: string) => void }) {
+    const [dragOver, setDragOver] = useState(false);
+    const inputRef = useRef<HTMLInputElement | null>(null);
+
+    async function handleFile(f: File | null | undefined) {
+      if (!f) return;
+      try { const url = await uploadToServer(f); onChange(url); }
+      catch (err: any) { alert(err?.message || 'Upload failed'); }
+    }
+    function firstFileFromDataTransfer(dt: DataTransfer): File | null {
+      if (dt.files && dt.files.length > 0) return dt.files[0];
+      if (dt.items && dt.items.length > 0) {
+        for (let i = 0; i < dt.items.length; i++) {
+          const it = dt.items[i];
+          if (it.kind === 'file') { const f = it.getAsFile(); if (f) return f; }
+        }
+      }
+      return null;
+    }
+
     return (
       <div>
         <label className="block font-semibold mb-1">{label}</label>
         <div className="flex items-center gap-2">
-          <input type="file" onChange={async (e) => {
-            const inputEl = e.currentTarget as HTMLInputElement;
-            const f = inputEl.files?.[0];
-            if (!f) return;
-            try {
-              const url = await uploadToServer(f);
-              onChange(url);
-            } catch (err: any) {
-              alert(err?.message || 'Upload failed');
-            } finally { try { inputEl.value = ''; } catch {} }
-          }} />
+          <div
+            className={`flex-1 border rounded p-2 text-xs text-gray-600 bg-white ${dragOver ? 'border-blue-500 ring-2 ring-blue-100' : 'border-dashed'} cursor-pointer`}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={async (e) => { e.preventDefault(); setDragOver(false); const f = firstFileFromDataTransfer(e.dataTransfer); await handleFile(f); }}
+            onPaste={async (e) => { const files = e.clipboardData?.files; if (files && files.length > 0) await handleFile(files[0]); }}
+            onClick={() => { try { inputRef.current?.click(); } catch {} }}
+          >
+            <input type="file" className="hidden" ref={inputRef}
+              onChange={async (e) => { const f = (e.currentTarget as HTMLInputElement).files?.[0]; await handleFile(f || undefined); try { (e.currentTarget as any).value = ''; } catch {} }} />
+            <span className="select-none">Drag & drop file here, paste, or click to choose</span>
+          </div>
           {value && (<a href={value} target="_blank" rel="noreferrer" className="text-blue-600 underline text-sm">View</a>)}
         </div>
       </div>
@@ -256,6 +287,15 @@ export default function CreateSubTicketFullModal({
     }).catch(()=> setShopNotes(""));
   }, [selectedShop?.id]);
 
+  // If checkbox is on, keep pickup same as lead selection
+  useEffect(() => {
+    if (pickupSameAsLead && selectedShop?.id) {
+      const p = { id: Number(selectedShop.id), name: String((selectedShop as any).name || ''), type: 'user' } as any;
+      setSelectedPickup(p);
+      setForm((f) => ({ ...f, pickup_point_name: p.name }));
+    }
+  }, [pickupSameAsLead, selectedShop?.id, (selectedShop as any)?.name]);
+
   // Default Assigned To = current user
   useEffect(() => {
     fetch('/api/auth/session', { cache: 'no-store' })
@@ -295,9 +335,10 @@ export default function CreateSubTicketFullModal({
   }, []);
 
   // FASTag barcode search
+  const [showFastagSuggestions, setShowFastagSuggestions] = useState(false);
   useEffect(() => {
     const term = fastagSerialInput.trim();
-    if (term.length < 2) { setFastagOptions([]); return; }
+    if (term.length < 2 || !showFastagSuggestions) { setFastagOptions([]); return; }
     const q = new URLSearchParams();
     q.set('query', term);
     // bank/class filters are optional for narrowing results
@@ -308,7 +349,7 @@ export default function CreateSubTicketFullModal({
       .then(r => r.json())
       .then(rows => setFastagOptions(Array.isArray(rows) ? rows : []))
       .catch(() => setFastagOptions([]));
-  }, [fastagSerialInput, (form as any).bank_name, fastagClass]);
+  }, [fastagSerialInput, (form as any).bank_name, fastagClass, showFastagSuggestions]);
 
   // Auto-pick exact match to fill bank/class/owner when user types full barcode
   useEffect(() => {
@@ -708,8 +749,8 @@ export default function CreateSubTicketFullModal({
             </div>
             <div>
               <label className="block font-semibold mb-1">FASTag Barcode</label>
-              <input value={fastagSerialInput} onChange={(e) => setFastagSerialInput(e.target.value)} className="w-full border p-2 rounded" placeholder="Type FASTag barcode" />
-              {fastagOptions.length > 0 && (
+              <input value={fastagSerialInput} onFocus={() => setShowFastagSuggestions(true)} onChange={(e) => { setFastagSerialInput(e.target.value); setShowFastagSuggestions(true); }} className="w-full border p-2 rounded" placeholder="Type FASTag barcode" />
+              {showFastagSuggestions && fastagOptions.length > 0 && (
                 <div className="mt-1 max-h-40 overflow-auto border rounded">
                   {fastagOptions.map((row) => (
                     <div key={row.id} className="px-3 py-2 cursor-pointer hover:bg-orange-50 border-b last:border-b-0" onMouseDown={() => pickFastag(row)}>
@@ -733,9 +774,24 @@ export default function CreateSubTicketFullModal({
             onSelect={(u) => {
               setSelectedPickup(u as any);
               setForm((f) => ({ ...f, pickup_point_name: u ? (u as any).name : "" }));
+              if (pickupSameAsLead && (!u || (selectedShop && (u as any).id !== (selectedShop as any).id))) {
+                setPickupSameAsLead(false);
+              }
             }}
             placeholder="Type shop/agent name"
           />
+          <label className="inline-flex items-center gap-2 text-xs mt-2">
+            <input type="checkbox" checked={pickupSameAsLead} onChange={(e)=> {
+              const v = e.target.checked;
+              setPickupSameAsLead(v);
+              if (v && selectedShop?.id) {
+                const p = { id: Number(selectedShop.id), name: String((selectedShop as any).name || ''), type: 'user' } as any;
+                setSelectedPickup(p);
+                setForm((f) => ({ ...f, pickup_point_name: p.name }));
+              }
+            }} />
+            <span>Same as Lead</span>
+          </label>
           {selectedPickup && (
             <div className="text-xs text-gray-600 mt-1">Selected: {(selectedPickup as any).name}</div>
           )}
