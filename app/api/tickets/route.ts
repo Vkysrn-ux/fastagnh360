@@ -1088,10 +1088,10 @@ export async function PATCH(req: NextRequest) {
     allowedFields.push('fastag_bank','fastag_class','fastag_owner');
     allowedFields.push('rc_front_url','rc_back_url','pan_url','aadhaar_front_url','aadhaar_back_url','vehicle_front_url','vehicle_side_url','sticker_pasted_url');
 
-    // Enforce close rules if status is being set to closed
+    // Enforce close rules if status is being set to closed or completed
     if (typeof data.status !== 'undefined') {
       const desired = normalizeStatus(data.status) || '';
-      if (desired === 'closed') {
+      if (desired === 'closed' || desired === 'completed') {
         const [rows]: any = await pool.query(
           `SELECT payment_received, payment_nil, delivery_done, delivery_nil, kyv_status, 
                   lead_commission_paid, lead_commission_nil, pickup_commission_paid, pickup_commission_nil
@@ -1111,7 +1111,7 @@ export async function PATCH(req: NextRequest) {
         const kyvOK = kyvText.includes('compliant') || kyvText === 'nil' || kyvText === 'kyv compliant';
         const allOK = paymentOK && leadOK && pickupOK && kyvOK && deliveryOK;
         if (!allOK) {
-          return NextResponse.json({ error: 'Cannot close ticket until Payment, Lead Commission, Pickup Commission, KYV and Delivery are completed or marked Nil.' }, { status: 400 });
+          return NextResponse.json({ error: 'Cannot close or complete ticket until Payment, Lead Commission, Pickup Commission, KYV and Delivery are completed or marked Nil.' }, { status: 400 });
         }
       }
     }

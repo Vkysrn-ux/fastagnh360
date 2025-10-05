@@ -55,7 +55,7 @@ export default function CreateSubTicketFullModal({
     alt_phone: parent?.alt_phone || "",
     subject: "New Fastag",
     details: "",
-    status: "New Lead",
+    status: "Open",
     kyv_status: "KYV pending",
     npci_status: "Activation Pending",
     assigned_to: parent?.assigned_to ? String(parent.assigned_to) : "",
@@ -206,7 +206,7 @@ export default function CreateSubTicketFullModal({
       alt_phone: parent.alt_phone || "",
       subject: "ADD new fastag",
       details: "",
-      status: "ACTIVATION PENDING",
+      status: "Open",
       kyv_status: "pending",
       assigned_to: currentUser ? String(currentUser.id) : String(parent.assigned_to ?? ""),
       lead_received_from: parent.lead_received_from || "",
@@ -586,11 +586,29 @@ export default function CreateSubTicketFullModal({
 
           <div>
             <label className="block font-semibold mb-1">Ticket Status</label>
-            <select className="w-full border rounded p-2" value={form.status} onChange={(e)=> setForm(f=> ({...f, status: e.target.value}))}>
-              <option>New Lead</option>
-              <option>Working</option>
+            <select
+              className="w-full border rounded p-2"
+              value={form.status}
+              onChange={(e)=> {
+                const next = e.target.value;
+                // Prevent selecting Completed unless requirements are met
+                const kyvText = String(form.kyv_status || '').toLowerCase();
+                const kyvOK = kyvText.includes('compliant') || kyvText === 'nil' || kyvText === 'kyv compliant';
+                const paymentOK = !!paymentReceived || !!paymentNil;
+                const leadOK = !!leadCommissionPaid || !!leadCommissionNil;
+                const pickupOK = !!pickupCommissionPaid || !!pickupCommissionNil;
+                const deliveryOK = !!deliveryDone || !!deliveryNil;
+                const paidViaOK = !paymentReceived || (paidVia !== '' && paidVia !== 'Pending');
+                const allOK = paymentOK && leadOK && pickupOK && kyvOK && deliveryOK && paidViaOK;
+                if (String(next).toLowerCase() === 'completed' && !allOK) {
+                  alert('Cannot mark as Completed. Please ensure Payment (and Paid via), Lead Commission, Pickup Commission, Delivery and KYV are completed or marked Nil.');
+                  return;
+                }
+                setForm(f=> ({...f, status: next}));
+              }}
+            >
+              <option>Open</option>
               <option>Completed</option>
-              <option>Cancelled</option>
             </select>
           </div>
 
