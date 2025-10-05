@@ -664,6 +664,73 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
   });
   const [pickupSameAsLead, setPickupSameAsLead] = React.useState<boolean>(false);
 
+  // Helpers to validate requirements when moving ticket to a closed/completed state
+  function normalizeStatusClient(v: any): string {
+    const s = String(v ?? '').toLowerCase().trim();
+    const map: Record<string, string> = {
+      'open': 'open',
+      'pending': 'open',
+      'activation pending': 'open',
+      'kyc pending': 'open',
+      'waiting': 'open',
+      'new lead': 'open',
+      'in progress': 'in_progress',
+      'in_progress': 'in_progress',
+      'working': 'in_progress',
+      'completed': 'completed',
+      'done': 'completed',
+      'activated': 'completed',
+      'resolved': 'completed',
+      'closed': 'closed',
+      'cancelled': 'closed',
+      'cust cancelled': 'closed',
+    };
+    return map[s] || s || 'open';
+  }
+
+  function isCloseLikeStatus(v: any): boolean {
+    const n = normalizeStatusClient(v);
+    return n === 'closed' || n === 'completed';
+  }
+
+  function validateCloseRequirements(f: typeof form): { ok: boolean; message?: string } {
+    // Payment: must be Received or Nil; and if Received, paid_via cannot be 'Pending'
+    const paidVia = String((f as any).paid_via ?? '').trim();
+    const paymentReceived = !!f.payment_received;
+    const paymentNil = !!(f as any).payment_nil;
+    const paymentOK = paymentReceived || paymentNil;
+    const paidViaOK = !paymentReceived || (paidVia !== '' && paidVia !== 'Pending');
+
+    // Delivery must be Done or Nil
+    const deliveryOK = !!f.delivery_done || !!(f as any).delivery_nil;
+
+    // Lead commission must be Paid or Nil
+    const leadOK = !!(f as any).lead_commission_paid || !!(f as any).lead_commission_nil;
+
+    // Pickup commission must be Paid or Nil
+    const pickupOK = !!(f as any).pickup_commission_paid || !!(f as any).pickup_commission_nil;
+
+    // KYV must be compliant or Nil
+    const kyv = String(f.kyv_status ?? '').toLowerCase();
+    const kyvOK = kyv.includes('compliant') || kyv === 'nil' || kyv === 'kyv compliant';
+
+    const missing: string[] = [];
+    if (!paymentOK) missing.push('Payment (Received or Nil)');
+    if (paymentReceived && !paidViaOK) missing.push("Paid via (cannot be 'Pending')");
+    if (!leadOK) missing.push('Lead Commission (Paid or Nil)');
+    if (!pickupOK) missing.push('Pickup Commission (Paid or Nil)');
+    if (!deliveryOK) missing.push('Delivery/Pickup (Done or Nil)');
+    if (!kyvOK) missing.push('KYV (Compliant or Nil)');
+
+    if (missing.length) {
+      return {
+        ok: false,
+        message: `Cannot mark as Completed/Closed. Please complete: ${missing.join(', ')}.`,
+      };
+    }
+    return { ok: true };
+  }
+
   // Keep pickup point in sync with lead when checkbox is checked
   React.useEffect(() => {
     if (pickupSameAsLead) {
@@ -885,6 +952,11 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
       if (!!f.payment_received && String((f as any).paid_via || '').trim() === 'Pending') {
         return { ok: false, reason: 'paid_via_pending' };
       }
+      // If trying to move to a closed-like status, ensure all close requirements are met
+      if (isCloseLikeStatus(f.status)) {
+        const chk = validateCloseRequirements(f);
+        if (!chk.ok) return { ok: false, reason: 'close_requirements' };
+      }
       return { ok: true, phone: m[1], alt: altNorm };
     } catch {
       return { ok: false };
@@ -926,8 +998,17 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
         fastag_owner: (form as any).fastag_owner || null,
         paid_via: (form as any).paid_via,
         payment_received: !!form.payment_received,
+        payment_nil: !!(form as any).payment_nil,
         delivery_done: !!form.delivery_done,
+        delivery_nil: !!(form as any).delivery_nil,
         commission_done: !!form.commission_done,
+        // commissions flags
+        lead_commission: (form as any).lead_commission === "" ? null : Number((form as any).lead_commission),
+        lead_commission_paid: !!(form as any).lead_commission_paid,
+        lead_commission_nil: !!(form as any).lead_commission_nil,
+        pickup_commission: (form as any).pickup_commission === "" ? null : Number((form as any).pickup_commission),
+        pickup_commission_paid: !!(form as any).pickup_commission_paid,
+        pickup_commission_nil: !!(form as any).pickup_commission_nil,
         // documents
         rc_front_url: (form as any).rc_front_url || null,
         rc_back_url: (form as any).rc_back_url || null,
@@ -1011,6 +1092,15 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
         setSaving(false);
         return;
       }
+      // If status is being set to Closed/Completed, enforce close requirements
+      if (isCloseLikeStatus(form.status)) {
+        const chk = validateCloseRequirements(form);
+        if (!chk.ok) {
+          setError(chk.message || 'Please complete required fields before closing.');
+          setSaving(false);
+          return;
+        }
+      }
 
       const payload: any = {
         id: Number(ticket.id),
@@ -1041,8 +1131,17 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
         fastag_owner: (form as any).fastag_owner || null,
         paid_via: (form as any).paid_via,
         payment_received: !!form.payment_received,
+        payment_nil: !!(form as any).payment_nil,
         delivery_done: !!form.delivery_done,
+        delivery_nil: !!(form as any).delivery_nil,
         commission_done: !!form.commission_done,
+        // commissions flags
+        lead_commission: (form as any).lead_commission === "" ? null : Number((form as any).lead_commission),
+        lead_commission_paid: !!(form as any).lead_commission_paid,
+        lead_commission_nil: !!(form as any).lead_commission_nil,
+        pickup_commission: (form as any).pickup_commission === "" ? null : Number((form as any).pickup_commission),
+        pickup_commission_paid: !!(form as any).pickup_commission_paid,
+        pickup_commission_nil: !!(form as any).pickup_commission_nil,
         // documents
         rc_front_url: (form as any).rc_front_url || null,
         rc_back_url: (form as any).rc_back_url || null,
@@ -1298,11 +1397,23 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Ticket Status</label>
-                <select className="w-full border rounded p-2" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                  <option>New Lead</option>
-                  <option>Working</option>
+                <select
+                  className="w-full border rounded p-2"
+                  value={form.status}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (isCloseLikeStatus(next)) {
+                      const chk = validateCloseRequirements({ ...(form as any), status: next } as any);
+                      if (!chk.ok) {
+                        alert(chk.message || 'Cannot mark as Completed/Closed until requirements are met.');
+                        return;
+                      }
+                    }
+                    setForm({ ...form, status: next });
+                  }}
+                >
+                  <option>Open</option>
                   <option>Completed</option>
-                  <option>Cancelled</option>
                 </select>
               </div>
             </div>

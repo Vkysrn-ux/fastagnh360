@@ -34,7 +34,7 @@ export default function CreateTicketFullModal({
     alt_phone: "",
     subject: "New Fastag",
     details: "",
-    status: "New Lead",
+    status: "Open",
     kyv_status: "KYV pending",
     npci_status: "Activation Pending",
     assigned_to: "",
@@ -106,6 +106,34 @@ export default function CreateTicketFullModal({
   useEffect(() => {
     if (paymentReceived && paidVia === 'Pending') setPaidVia('Cash');
   }, [paymentReceived]);
+
+  // Helpers to normalize/validate close-like statuses
+  function normalizeStatusClient(v: any): string {
+    const s = String(v ?? '').toLowerCase().trim();
+    const map: Record<string, string> = {
+      'open': 'open',
+      'pending': 'open',
+      'activation pending': 'open',
+      'kyc pending': 'open',
+      'waiting': 'open',
+      'new lead': 'open',
+      'in progress': 'in_progress',
+      'in_progress': 'in_progress',
+      'working': 'in_progress',
+      'completed': 'completed',
+      'done': 'completed',
+      'activated': 'completed',
+      'resolved': 'completed',
+      'closed': 'closed',
+      'cancelled': 'closed',
+      'cust cancelled': 'closed',
+    };
+    return map[s] || s || 'open';
+  }
+  function isCloseLikeStatus(v: any): boolean {
+    const n = normalizeStatusClient(v);
+    return n === 'closed' || n === 'completed';
+  }
 
   // Reset when modal opens
   useEffect(() => {
@@ -387,7 +415,7 @@ export default function CreateTicketFullModal({
     setSaving(true);
     setError(null);
     try {
-      // Guard: determine if ticket can be closed based on checklists
+      // Guard: determine if ticket can be closed/completed based on checklists
       const paymentOK = !!paymentReceived || !!paymentNil;
       const leadOK = !!leadCommissionPaid || !!leadCommissionNil;
       const pickupOK = !!pickupCommissionPaid || !!pickupCommissionNil;
@@ -397,8 +425,8 @@ export default function CreateTicketFullModal({
       const allOK = paymentOK && leadOK && pickupOK && kyvOK && deliveryOK;
 
       let chosenStatus = form.status;
-      if (String(form.status).toLowerCase() === 'closed' && !allOK) {
-        setError('Cannot mark ticket Closed until Payment, Lead Commission, Pickup Commission, KYV and Delivery conditions are satisfied.');
+      if (isCloseLikeStatus(form.status) && !allOK) {
+        setError('Cannot mark ticket Completed/Closed until Payment, Lead Commission, Pickup Commission, KYV and Delivery conditions are satisfied.');
         setSaving(false);
         return;
       }
@@ -690,11 +718,30 @@ export default function CreateTicketFullModal({
               </div>
               <div>
                 <label className="block font-semibold mb-1">Ticket Status</label>
-                <select className="w-full border rounded p-2" value={form.status} onChange={(e)=> setForm((f)=> ({...f, status: e.target.value}))}>
-                  <option>New Lead</option>
-                  <option>Working</option>
+                <select
+                  className="w-full border rounded p-2"
+                  value={form.status}
+                  onChange={(e)=> {
+                    const next = e.target.value;
+                    if (isCloseLikeStatus(next)) {
+                      const kyvText = String(form.kyv_status || '').toLowerCase();
+                      const paymentOK = !!paymentReceived || !!paymentNil;
+                      const leadOK = !!leadCommissionPaid || !!leadCommissionNil;
+                      const pickupOK = !!pickupCommissionPaid || !!pickupCommissionNil;
+                      const deliveryOK = !!deliveryDone || !!deliveryNil;
+                      const kyvOK = kyvText.includes('compliant') || kyvText === 'nil' || kyvText === 'kyv compliant';
+                      const paidViaOK = !paymentReceived || (paidVia !== '' && paidVia !== 'Pending');
+                      const allOK = paymentOK && leadOK && pickupOK && kyvOK && deliveryOK && paidViaOK;
+                      if (!allOK) {
+                        alert('Cannot mark as Completed/Closed. Please ensure Payment (and Paid via), Lead Commission, Pickup Commission, Delivery and KYV are completed or marked Nil.');
+                        return;
+                      }
+                    }
+                    setForm((f)=> ({...f, status: next}));
+                  }}
+                >
+                  <option>Open</option>
                   <option>Completed</option>
-                  <option>Cancelled</option>
                 </select>
               </div>
             </div>
