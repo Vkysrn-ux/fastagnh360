@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const from = searchParams.get("from"); // YYYY-MM-DD
     const to = searchParams.get("to");     // YYYY-MM-DD
-    const limit = Math.min(Number(searchParams.get("limit") || 20), 200);
+    // Ignore any limit param – return all rows
 
     const where: string[] = [];
     const vals: any[] = [];
@@ -44,9 +44,8 @@ export async function GET(req: NextRequest) {
        LEFT JOIN users u ON u.id = COALESCE(s.sold_by_user_id, s.sold_by_agent_id)
        ${whereSql}
        GROUP BY COALESCE(s.sold_by_user_id, s.sold_by_agent_id), u.name
-       ORDER BY sold_count DESC
-       LIMIT ?`,
-      [...vals, limit]
+       ORDER BY sold_count DESC`,
+      vals
     );
     const result = Array.isArray(rows) ? rows : [];
     if (result.length > 0) {
@@ -59,9 +58,7 @@ export async function GET(req: NextRequest) {
        LEFT JOIN users u ON u.id = f.sold_by_user_id
        WHERE f.status = 'sold' AND f.sold_by_user_id IS NOT NULL
        GROUP BY f.sold_by_user_id, u.name
-       ORDER BY sold_count DESC
-       LIMIT ?`,
-      [limit]
+       ORDER BY sold_count DESC`
     );
     return NextResponse.json(fb || []);
   } catch (e: any) {

@@ -65,7 +65,17 @@ function FastagDashboard({ fastags, agents }: { fastags: any[]; agents: any[] })
     const inStock = fastags.filter(f => f.status === "in_stock").length;
     const assigned = fastags.filter(f => f.status === "assigned").length;
     const sold = fastags.filter(f => f.status === "sold").length;
-    return { total, inStock, assigned, sold };
+    const usedInTickets = fastags.filter((f: any) => !!f.used_in_ticket).length;
+    const isMapped = (f: any) => {
+      const s = String(f.bank_mapping_status || '').toLowerCase();
+      if (s === 'done') return true;
+      if (s === 'pending') return false;
+      if (typeof f.mapping_done !== 'undefined') return !!f.mapping_done;
+      return false;
+    };
+    const mapped = fastags.filter((f: any) => isMapped(f)).length;
+    const mappingPending = fastags.filter((f: any) => !isMapped(f)).length;
+    return { total, inStock, assigned, sold, usedInTickets, mapped, mappingPending };
   }, [fastags]);
 
   // By Status
@@ -111,6 +121,9 @@ function FastagDashboard({ fastags, agents }: { fastags: any[]; agents: any[] })
         <StatCard label="In Stock" value={stats.inStock} color="#2ecc40" />
         <StatCard label="Assigned" value={stats.assigned} color="#ffb347" />
         <StatCard label="Sold" value={stats.sold} color="#ff4136" />
+        <StatCard label="Used In Tickets" value={stats.usedInTickets} color="#a569bd" />
+        <StatCard label="Mapped" value={stats.mapped} color="#5dade2" />
+        <StatCard label="Mapping Pending" value={stats.mappingPending} color="#8e44ad" />
       </div>
       {/* Agent summary */}
       <AgentDashboard fastags={fastags} agents={agents} />

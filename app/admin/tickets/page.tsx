@@ -60,6 +60,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function TicketListPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [allTickets, setAllTickets] = useState<Ticket[]>([]); // for stats across parents + subs
   const [loading, setLoading] = useState(true);
   const [editTicket, setEditTicket] = useState<Ticket | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -112,6 +113,44 @@ export default function TicketListPage() {
   useEffect(() => {
     fetchTickets();
   }, []);
+
+  // Fetch all tickets (parents + subs) for accurate dashboard stats
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/tickets?scope=all');
+        const data = await res.json();
+        setAllTickets(Array.isArray(data) ? data : []);
+      } catch {
+        setAllTickets([]);
+      }
+    })();
+  }, []);
+
+  // Dashboard-style counts
+  const stats = React.useMemo(() => {
+    const toLower = (s: any) => String(s || '').toLowerCase();
+    const isClosedLike = (t: Ticket) => {
+      const st = toLower(t.status);
+      return st === 'closed' || st === 'completed';
+    };
+    const base = (allTickets && allTickets.length > 0) ? allTickets : tickets;
+    const total = base.length;
+    const pending = base.filter((t) => toLower(t.status) === 'open').length;
+    const closed = base.filter((t) => isClosedLike(t)).length;
+    const fastagSold = base.filter((t: any) => !!t.fastag_serial && isClosedLike(t)).length;
+    const fastagUsedNotClosed = base.filter((t: any) => !!t.fastag_serial && !isClosedLike(t)).length;
+    const active = base.filter((t) => !isClosedLike(t)).length;
+    const fastagUsedAll = (() => {
+      const set = new Set<string>();
+      for (const t of base as any[]) {
+        const s = String(t.fastag_serial || '').trim();
+        if (s) set.add(s.toLowerCase());
+      }
+      return set.size;
+    })();
+    return { total, pending, closed, fastagSold, fastagUsedNotClosed, fastagUsedAll, active };
+  }, [tickets, allTickets]);
 
   const filteredTickets = React.useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -177,6 +216,38 @@ export default function TicketListPage() {
           asButtonClassName="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           label="Create New Ticket"
         />
+      </div>
+
+      {/* Quick stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 mb-4">
+        <div className="rounded border p-4 text-center">
+          <div className="text-xs text-gray-500">Total</div>
+          <div className="text-xl font-semibold">{stats.total}</div>
+        </div>
+        <div className="rounded border p-4 text-center">
+          <div className="text-xs text-gray-500">Pending</div>
+          <div className="text-xl font-semibold">{stats.pending}</div>
+        </div>
+        <div className="rounded border p-4 text-center">
+          <div className="text-xs text-gray-500">Closed</div>
+          <div className="text-xl font-semibold">{stats.closed}</div>
+        </div>
+        <div className="rounded border p-4 text-center">
+          <div className="text-xs text-gray-500">FASTag Sold</div>
+          <div className="text-xl font-semibold">{stats.fastagSold}</div>
+        </div>
+        <div className="rounded border p-4 text-center">
+          <div className="text-xs text-gray-500">FASTag Used (Not Closed)</div>
+          <div className="text-xl font-semibold">{stats.fastagUsedNotClosed}</div>
+        </div>
+        <div className="rounded border p-4 text-center">
+          <div className="text-xs text-gray-500">FASTags Used (All)</div>
+          <div className="text-xl font-semibold">{stats.fastagUsedAll}</div>
+        </div>
+        <div className="rounded border p-4 text-center">
+          <div className="text-xs text-gray-500">Active</div>
+          <div className="text-xl font-semibold">{stats.active}</div>
+        </div>
       </div>
 
       {/* Filters */}
@@ -625,28 +696,99 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     const fd = new FormData();
     fd.set('file', file);
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.error || 'Upload failed');
-    return String(data.url);
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    let data: any = null;
+    let text: string | null = null;
+    try {
+      if (ct.includes('application/json')) {
+        data = await res.json();
+      } else {
+        text = await res.text();
+        try { data = JSON.parse(text); } catch { /* non-JSON HTML or plain text */ }
+      }
+    } catch {
+      try { text = await res.text(); } catch {}
+    }
+    if (!res.ok) {
+      const msg = (data && (data.error || data.message)) || text || `Upload failed (${res.status})`;
+      throw new Error(typeof msg === 'string' ? msg : 'Upload failed');
+    }
+    const url = data?.url || data?.Location || data?.location || data?.fileUrl || null;
+    if (!url) {
+      throw new Error('Upload failed: no URL returned by server');
+    }
+    return String(url);
   }
 
   function UploadField({ label, value, onChange }: { label: string; value: string; onChange: (url: string) => void }) {
+    const [dragOver, setDragOver] = React.useState(false);
+
+    async function handleFile(f: File | null | undefined) {
+      if (!f) return;
+      try {
+        const url = await uploadToServer(f);
+        onChange(url);
+      } catch (err: any) {
+        alert(err?.message || 'Upload failed');
+      }
+    }
+
+    function firstFileFromDataTransfer(dt: DataTransfer): File | null {
+      if (dt.files && dt.files.length > 0) return dt.files[0];
+      // Fallback via items
+      if (dt.items && dt.items.length > 0) {
+        for (let i = 0; i < dt.items.length; i++) {
+          const it = dt.items[i];
+          if (it.kind === 'file') {
+            const f = it.getAsFile();
+            if (f) return f;
+          }
+        }
+      }
+      return null;
+    }
+
+    const inputRef = React.useRef<HTMLInputElement | null>(null);
     return (
       <div>
         <label className="block text-sm font-medium mb-1">{label}</label>
-        <div className="flex items-center gap-2">
-          <input type="file" onChange={async (e) => {
-            const inputEl = e.currentTarget as HTMLInputElement;
-            const f = inputEl.files?.[0];
-            if (!f) return;
-            try {
-              const url = await uploadToServer(f);
-              onChange(url);
-            } catch (err: any) {
-              alert(err?.message || 'Upload failed');
-            } finally { try { inputEl.value = ''; } catch {} }
-          }} />
-          {value && (<a href={value} target="_blank" rel="noreferrer" className="text-blue-600 underline text-xs">View</a>)}
+        <div
+          className={`flex items-center gap-2`}
+        >
+          <div
+            className={`flex-1 border rounded p-2 text-xs text-gray-600 bg-white ${dragOver ? 'border-blue-500 ring-2 ring-blue-100' : 'border-dashed'} cursor-pointer`}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={async (e) => {
+              e.preventDefault();
+              setDragOver(false);
+              const file = firstFileFromDataTransfer(e.dataTransfer);
+              await handleFile(file);
+            }}
+            onPaste={async (e) => {
+              const files = e.clipboardData?.files;
+              if (files && files.length > 0) {
+                await handleFile(files[0]);
+              }
+            }}
+            onClick={() => { try { inputRef.current?.click(); } catch {} }}
+          >
+            <input
+              type="file"
+              className="hidden"
+              ref={inputRef}
+              onChange={async (e) => {
+                const inputEl = e.currentTarget as HTMLInputElement;
+                const f = inputEl.files?.[0];
+                await handleFile(f || undefined);
+                try { inputEl.value = ''; } catch {}
+              }}
+            />
+            <span className="select-none">Drag & drop file here, paste, or click to choose</span>
+          </div>
+          {value && (
+            <a href={value} target="_blank" rel="noreferrer" className="text-blue-600 underline text-xs">View</a>
+          )}
         </div>
       </div>
     );

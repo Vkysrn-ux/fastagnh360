@@ -28,6 +28,9 @@ function normalizeFastagRow(row: any) {
     assigned_date: row.assigned_date ?? null,
     sold_at: row.sold_at ?? null,
     sold_by_user_id: row.sold_by_user_id !== undefined && row.sold_by_user_id !== null ? Number(row.sold_by_user_id) : null,
+    used_in_ticket: !!(row.used_in_ticket === 1 || row.used_in_ticket === true),
+    bank_mapping_status: row.bank_mapping_status ? String(row.bank_mapping_status) : undefined,
+    mapping_done: row.mapping_done !== undefined && row.mapping_done !== null ? (row.mapping_done === 1 || row.mapping_done === true) : undefined,
   };
 }
 
@@ -68,6 +71,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json([]);
   }
 
+  // Discover optional mapping columns once
+  let hasMappingStatus = false;
+  let hasMappingDone = false;
+  try {
+    hasMappingStatus = await hasTableColumn('fastags', 'bank_mapping_status');
+  } catch {}
+  try {
+    hasMappingDone = await hasTableColumn('fastags', 'mapping_done');
+  } catch {}
+  const simpleMappingSelect = [
+    hasMappingStatus ? 'f.bank_mapping_status AS bank_mapping_status' : null,
+    hasMappingDone ? 'f.mapping_done AS mapping_done' : null,
+  ].filter(Boolean).join(', ');
+
   if (isSimpleLookup) {
     try {
       // Prefix search to utilize index; cap results
@@ -84,13 +101,18 @@ export async function GET(req: NextRequest) {
                   ua.name,
                   uu.name,
                   ''
-                ) AS owner_name
+                ) AS owner_name,
+                EXISTS (
+                  SELECT 1 FROM tickets_nh tx
+                   WHERE (tx.fastag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)
+                ) AS used_in_ticket
+                ${simpleMappingSelect ? `, ${simpleMappingSelect}` : ''}
            FROM fastags f
-           LEFT JOIN users ua ON f.assigned_to_agent_id = ua.id
-           LEFT JOIN users uu ON f.assigned_to = uu.id
-          WHERE f.tag_serial LIKE ?
-          ORDER BY f.created_at DESC
-          LIMIT 20`,
+            LEFT JOIN users ua ON f.assigned_to_agent_id = ua.id
+            LEFT JOIN users uu ON f.assigned_to = uu.id
+           WHERE f.tag_serial LIKE ?
+           ORDER BY f.created_at DESC
+           LIMIT 20`,
         [`${queryTerm}%`]
       );
       // If no prefix matches, try a contains search as a fallback
@@ -108,7 +130,12 @@ export async function GET(req: NextRequest) {
                     ua.name,
                     uu.name,
                     ''
-                  ) AS owner_name
+                  ) AS owner_name,
+                  EXISTS (
+                    SELECT 1 FROM tickets_nh tx
+                     WHERE (tx.fastag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)
+                  ) AS used_in_ticket
+                  ${simpleMappingSelect ? `, ${simpleMappingSelect}` : ''}
              FROM fastags f
              LEFT JOIN users ua ON f.assigned_to_agent_id = ua.id
              LEFT JOIN users uu ON f.assigned_to = uu.id
@@ -205,6 +232,11 @@ export async function GET(req: NextRequest) {
   const effectiveOffset = hasLimit ? offset : 0;
   const limitClause = effectiveHasLimit ? 'LIMIT ? OFFSET ?' : '';
 
+  const mappingSelect = [
+    hasMappingStatus ? 'f.bank_mapping_status AS bank_mapping_status' : null,
+    hasMappingDone ? 'f.mapping_done AS mapping_done' : null,
+  ].filter(Boolean).join(', ');
+
   const baseQuery = `
       SELECT
         f.id,
@@ -235,7 +267,12 @@ export async function GET(req: NextRequest) {
           WHEN f.status = 'sold' THEN 'User'
           WHEN f.assigned_to_agent_id IS NOT NULL THEN 'Agent'
           ELSE 'Admin'
-        END AS holder
+        END AS holder,
+        EXISTS (
+          SELECT 1 FROM tickets_nh tx
+           WHERE (tx.fastag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)
+        ) AS used_in_ticket
+        ${mappingSelect ? `, ${mappingSelect}` : ''}
       FROM fastags f
       LEFT JOIN users u ON f.assigned_to_agent_id = u.id
       LEFT JOIN suppliers s ON f.supplier_id = s.id
@@ -269,7 +306,7 @@ export async function GET(req: NextRequest) {
           f.assigned_at,
           f.assigned_date,
           NULL AS sold_at,
-          NULL AS sold_by_user_id
+          NULL AS sold_by_user_id${mappingSelect ? `, ${mappingSelect}` : ''}
         FROM fastags f
         ${whereClause}
         ORDER BY f.created_at DESC

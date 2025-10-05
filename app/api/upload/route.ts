@@ -1,0 +1,43 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { mkdir, writeFile } from 'fs/promises';
+import path from 'path';
+import crypto from 'crypto';
+
+export async function POST(req: NextRequest) {
+  try {
+    const formData = await req.formData();
+    const file = formData.get('file') as File | null;
+    if (!file) {
+      return NextResponse.json({ error: 'No file provided (field name should be "file")' }, { status: 400 });
+    }
+
+    // Basic size guard (e.g., 25MB)
+    const maxBytes = 25 * 1024 * 1024;
+    // @ts-ignore size available on Edge runtime File
+    const size = (file as any).size ? Number((file as any).size) : undefined;
+    if (typeof size === 'number' && size > maxBytes) {
+      return NextResponse.json({ error: `File too large. Max allowed is ${Math.round(maxBytes / (1024 * 1024))}MB` }, { status: 413 });
+    }
+
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+    await mkdir(uploadDir, { recursive: true });
+
+    // Build a safe filename
+    const origName = (file as any).name ? String((file as any).name) : 'upload.bin';
+    const ext = path.extname(origName) || '';
+    const rand = crypto.randomBytes(6).toString('hex');
+    const filename = `${Date.now()}-${rand}${ext}`;
+    const outPath = path.join(uploadDir, filename);
+
+    await writeFile(outPath, buffer);
+
+    const urlPath = `/uploads/${filename}`;
+    return NextResponse.json({ url: urlPath });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || 'Upload failed' }, { status: 500 });
+  }
+}
+

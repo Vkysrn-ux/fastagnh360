@@ -847,20 +847,26 @@ export async function POST(req: NextRequest) {
     const parentInsert = `INSERT INTO ${TICKETS_TABLE} (${parentColumns.join(", ")}, created_at, updated_at) VALUES (${parentPlaceholders.join(", ")}, NOW(), NOW())`;
 
     const [r1]: any = await conn.query(parentInsert, parentValues);
-    await markFastagAsUsed(conn, fastag_serial, vehicle_reg_no);
+    // Only mark FASTag as sold if ticket is created already in 'closed' state (rare)
+    try {
+      const desiredStatus = normalizeStatus(status);
+      if (desiredStatus === 'closed' || desiredStatus === 'completed') {
+        await markFastagAsUsed(conn, fastag_serial, vehicle_reg_no);
+        await recordFastagSale({
+          conn,
+          tagSerial: fastag_serial,
+          ticketId: r1.insertId as number,
+          vehicleRegNo: vehicle_reg_no ?? null,
+          assignedToUserId: assigned_to ? Number(assigned_to) : null,
+          payment_to_collect: p_ptc,
+          payment_to_send: p_pts,
+          net_value: p_net,
+          commission_amount: parentCommission,
+        });
+      }
+    } catch {}
     const parentId = r1.insertId as number;
-    // Record parent sale + ledger (if any)
-    await recordFastagSale({
-      conn,
-      tagSerial: fastag_serial,
-      ticketId: parentId,
-      vehicleRegNo: vehicle_reg_no ?? null,
-      assignedToUserId: assigned_to ? Number(assigned_to) : null,
-      payment_to_collect: p_ptc,
-      payment_to_send: p_pts,
-      net_value: p_net,
-      commission_amount: parentCommission,
-    });
+    // Record money ledger for parent ticket (still useful for analytics)
     await recordMoneyLedger({ conn, refType: 'ticket', refId: parentId, collect: p_ptc, payout: p_pts, commission: parentCommission });
 
     let childrenCreated = 0;
@@ -975,18 +981,24 @@ export async function POST(req: NextRequest) {
         await conn.query(subInsert, subValues);
         const usedSerial = row.fastag_serial ?? fastag_serial ?? null;
         const usedVehicle = row.vehicle_reg_no ?? vehicle_reg_no ?? null;
-        await markFastagAsUsed(conn, usedSerial, usedVehicle);
-        await recordFastagSale({
-          conn,
-          tagSerial: usedSerial,
-          ticketId: parentId,
-          vehicleRegNo: usedVehicle,
-          assignedToUserId: (row.assigned_to ?? assigned_to) ? Number(row.assigned_to ?? assigned_to) : null,
-          payment_to_collect: r_ptc,
-          payment_to_send: r_pts,
-          net_value: r_net,
-          commission_amount: rowCommission,
-        });
+        // Only finalize FASTag sale if a child is immediately created as 'closed'
+        try {
+          const childDesired = normalizeStatus(row.status);
+          if (childDesired === 'closed' || childDesired === 'completed') {
+            await markFastagAsUsed(conn, usedSerial, usedVehicle);
+            await recordFastagSale({
+              conn,
+              tagSerial: usedSerial,
+              ticketId: parentId,
+              vehicleRegNo: usedVehicle,
+              assignedToUserId: (row.assigned_to ?? assigned_to) ? Number(row.assigned_to ?? assigned_to) : null,
+              payment_to_collect: r_ptc,
+              payment_to_send: r_pts,
+              net_value: r_net,
+              commission_amount: rowCommission,
+            });
+          }
+        } catch {}
         await recordMoneyLedger({ conn, refType: 'ticket', refId: parentId, collect: r_ptc, payout: r_pts, commission: rowCommission });
         childrenCreated++;
         try {
@@ -1144,6 +1156,40 @@ export async function PATCH(req: NextRequest) {
       `UPDATE tickets_nh SET ${updates.join(", ")}, updated_at = NOW() WHERE id = ?`,
       values
     );
+
+    // After successful update, if ticket is transitioning to 'closed', mark FASTag sold and record sale
+    try {
+      if (typeof data.status !== 'undefined') {
+        const desired = normalizeStatus(data.status) || '';
+        if (desired === 'closed' || desired === 'completed') {
+          // Load updated ticket essentials
+          const [rows]: any = await pool.query(
+            `SELECT id, fastag_serial, vehicle_reg_no, assigned_to, payment_to_collect, payment_to_send, net_value, commission_amount FROM ${TICKETS_TABLE} WHERE id = ? LIMIT 1`,
+            [data.id]
+          );
+          const t = rows?.[0] || {};
+          if (t.fastag_serial) {
+            const conn = await pool.getConnection();
+            try {
+              await markFastagAsUsed(conn, t.fastag_serial, t.vehicle_reg_no ?? null);
+              await recordFastagSale({
+                conn,
+                tagSerial: t.fastag_serial,
+                ticketId: Number(data.id),
+                vehicleRegNo: t.vehicle_reg_no ?? null,
+                assignedToUserId: t.assigned_to ? Number(t.assigned_to) : null,
+                payment_to_collect: t.payment_to_collect ?? null,
+                payment_to_send: t.payment_to_send ?? null,
+                net_value: t.net_value ?? null,
+                commission_amount: t.commission_amount ?? null,
+              });
+            } finally {
+              conn.release();
+            }
+          }
+        }
+      }
+    } catch {}
 
     return NextResponse.json({
       message: "Ticket updated",
