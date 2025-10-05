@@ -389,7 +389,11 @@ export default function TicketListPage() {
                     </button>
                     <CreateSubTicketFullModal
                       parent={ticket as any}
-                      onCreated={() => fetchTickets()}
+                      onCreated={() => {
+                        // Refresh both the parent list (for subs_count) and the expanded children
+                        fetchTickets();
+                        fetchChildren(String(ticket.id));
+                      }}
                       asButtonClassName="text-green-600 hover:text-green-900"
                       label="Create Sub-ticket"
                     />

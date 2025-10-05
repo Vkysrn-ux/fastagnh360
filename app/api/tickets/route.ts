@@ -99,22 +99,29 @@ async function markFastagAsUsed(conn: PoolConnection, fastagSerial: string | nul
 }
 
 async function generateTicketNo(conn: PoolConnection): Promise<string> {
-  // Use the next AUTO_INCREMENT value for tickets_nh to derive a unique sequence
-  // This keeps numbers strictly increasing across the table and avoids date-based resets.
+  // Robust: derive from current max(ticket_no) under lock to avoid duplicates
   try {
     const [rows]: any = await conn.query(
-      `SELECT AUTO_INCREMENT AS nextId FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1`,
-      [TICKETS_TABLE]
+      `SELECT COALESCE(MAX(CAST(SUBSTRING(ticket_no, 5) AS UNSIGNED)), 0) AS max_no FROM ${TICKETS_TABLE} FOR UPDATE`
     );
-    const nextId = Number(rows?.[0]?.nextId || 1);
-    const seq = String(nextId).padStart(4, '0');
+    const next = Number(rows?.[0]?.max_no || 0) + 1;
+    const seq = String(next).padStart(4, '0');
     return `TK-A${seq}`;
   } catch {
-    // Fallback: count rows + 1 (less robust under concurrency, but better than failing)
-    const [rows2]: any = await conn.query(`SELECT COALESCE(MAX(id), 0) + 1 AS nextId FROM ${TICKETS_TABLE}`);
-    const nextId2 = Number(rows2?.[0]?.nextId || 1);
-    const seq2 = String(nextId2).padStart(4, '0');
-    return `TK-A${seq2}`;
+    try {
+      const [rows2]: any = await conn.query(
+        `SELECT AUTO_INCREMENT AS nextId FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? LIMIT 1`,
+        [TICKETS_TABLE]
+      );
+      const nextId = Number(rows2?.[0]?.nextId || 1);
+      const seq = String(nextId).padStart(4, '0');
+      return `TK-A${seq}`;
+    } catch {
+      const [rows3]: any = await conn.query(`SELECT COALESCE(MAX(id), 0) + 1 AS nextId FROM ${TICKETS_TABLE}`);
+      const nextId3 = Number(rows3?.[0]?.nextId || 1);
+      const seq3 = String(nextId3).padStart(4, '0');
+      return `TK-A${seq3}`;
+    }
   }
 }
 
