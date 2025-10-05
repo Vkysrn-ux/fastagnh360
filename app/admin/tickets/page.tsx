@@ -245,73 +245,73 @@ export default function TicketListPage() {
 
       <div className="bg-white shadow overflow-hidden sm:rounded-lg border">
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead>
+          <table className="min-w-full divide-y divide-gray-200 table-fixed">
+            <thead className="sticky top-0 z-10 bg-gray-50">
               <tr className="bg-gray-50">
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
                   Ticket Number
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
                   Customer
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
                   Subject
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
                   Vehicle Number
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
                   Lead From
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
                   Ticket Status
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
                   Commission / Delivery
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
                   KYV Status
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
                   Assigned To
                 </th>
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
                   Created By
                 </th>
                 
                 <th
                   scope="col"
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
                   Actions
                 </th>
@@ -321,7 +321,7 @@ export default function TicketListPage() {
               {filteredTickets.map((ticket) => (
                 <React.Fragment key={String(ticket.id)}>
                 <tr className="hover:bg-gray-50 cursor-pointer" onClick={() => toggleExpand(ticket)}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <td className="px-3 py-3 whitespace-normal break-words text-sm font-medium text-gray-900">
                     <div className="flex flex-col">
                       <span>
                         {ticket.ticket_no || `TK-A${String(ticket.id).padStart(4,'0')}`}
@@ -334,7 +334,7 @@ export default function TicketListPage() {
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 py-3 whitespace-normal break-words">
                     <div className="text-sm text-gray-900">
                       {ticket.customer_name}
                     </div>
@@ -342,7 +342,7 @@ export default function TicketListPage() {
                       <div className="text-sm text-gray-500">{ticket.phone}</div>
                     )}
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-3 py-3">
                     <div className="flex flex-col">
                       <div className="text-sm text-gray-900">{ticket.subject}</div>
                       <div className="text-xs text-gray-500">{(ticket as any).fastag_bank || (ticket as any).bank_name || '-'}</div>
@@ -353,34 +353,34 @@ export default function TicketListPage() {
                       )}
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-3 py-3 whitespace-normal break-words text-sm text-gray-500">
                     <div className="flex flex-col">
                       <span>{ticket.vehicle_reg_no || ticket.vehicle_number || "-"}</span>
                       <span className="text-xs text-gray-500">{(ticket as any).npci_status || '-'}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-3 py-3 whitespace-normal break-words text-sm text-gray-500">
                     {ticket.lead_received_from || '-'}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-3 py-3 whitespace-normal break-words">
                     <StatusBadge status={ticket.status || "open"} />
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-3 py-3 whitespace-normal break-words text-sm text-gray-500">
                     <div className="flex flex-col">
                       <span>Commission: {((ticket as any).commission_done ? 'Done' : 'Pending')}</span>
                       <span>Delivery: {((ticket as any).delivery_done ? 'Done' : ((ticket as any).delivery_nil ? 'Nil' : 'Pending'))}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <td className="px-3 py-3 whitespace-normal break-words text-sm text-gray-500">
                     <div className="flex flex-col">
                       <span>{ticket.kyv_status || '-'}</span>
                       <span className="text-xs text-gray-500">Payment: {((ticket as any).payment_received ? 'Received' : ((ticket as any).payment_nil ? 'Nil' : 'Pending'))}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{(ticket as any).assigned_to_name || (ticket.assigned_to ? `#${ticket.assigned_to}` : '-')}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{(ticket as any).created_by_name || '-'} </td>
+                  <td className="px-3 py-3 whitespace-normal break-words text-sm text-gray-900">{(ticket as any).assigned_to_name || (ticket.assigned_to ? `#${ticket.assigned_to}` : '-')}</td>
+                  <td className="px-3 py-3 whitespace-normal break-words text-sm text-gray-500">{(ticket as any).created_by_name || '-'} </td>
                   
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                  <td className="px-3 py-3 whitespace-normal break-words text-sm font-medium">
                     <Link href={`/admin/tickets/${ticket.id}`} className="text-blue-600 hover:text-blue-900 mr-4" onClick={(e) => e.stopPropagation()}>
                       View
                     </Link>
@@ -401,15 +401,15 @@ export default function TicketListPage() {
                 </tr>
                 {expanded[String(ticket.id)] && (
                   <tr>
-                    <td colSpan={11} className="bg-gray-50 px-6 py-4">
+                    <td colSpan={11} className="bg-gray-50 px-3 py-3">
                       {loadingChildFor === String(ticket.id) ? (
                         <div className="text-sm text-gray-500">Loading sub-tickets...</div>
                       ) : (childrenMap[String(ticket.id)] || []).length === 0 ? (
                         <div className="text-sm text-gray-500">No sub-tickets</div>
                       ) : (
                         <div className="overflow-x-auto">
-                          <table className="min-w-full divide-y divide-gray-200">
-                            <thead>
+                          <table className="min-w-full divide-y divide-gray-200 table-fixed">
+                            <thead className="sticky top-0 z-10 bg-gray-100">
                               <tr className="bg-gray-100">
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticket Number</th>
                                 <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
@@ -495,7 +495,7 @@ export default function TicketListPage() {
                 <tr>
                   <td
                     colSpan={7}
-                    className="px-6 py-4 text-center text-sm text-gray-500"
+                    className="px-3 py-3 text-center text-sm text-gray-500"
                   >
                     No tickets found
                   </td>
@@ -926,39 +926,39 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
             <Input type="number" step="0.01" value={(form as any).pickup_commission as any} onChange={(e) => setForm({ ...(form as any), pickup_commission: e.target.value } as any)} placeholder="0" />
           </div>
           <div className="col-span-2 lg:col-span-3 grid grid-cols-2 gap-2 items-start">
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
               <input type="checkbox" checked={!!form.payment_received} onChange={(e) => setForm({ ...form, payment_received: e.target.checked })} />
               Payment Received
             </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
               <input type="checkbox" checked={!!(form as any).payment_nil} onChange={(e) => setForm({ ...form, payment_nil: e.target.checked } as any)} />
               Payment Nil
             </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
               <input type="checkbox" checked={!!form.delivery_done} onChange={(e) => setForm({ ...form, delivery_done: e.target.checked })} />
               Delivery Done
             </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
               <input type="checkbox" checked={!!(form as any).delivery_nil} onChange={(e) => setForm({ ...form, delivery_nil: e.target.checked } as any)} />
               Delivery Nil
             </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
               <input type="checkbox" checked={!!form.commission_done} onChange={(e) => setForm({ ...form, commission_done: e.target.checked })} />
               Commission Done
             </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
               <input type="checkbox" checked={!!(form as any).lead_commission_paid} onChange={(e) => setForm({ ...form, lead_commission_paid: e.target.checked } as any)} />
               Lead Commission Paid
             </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
               <input type="checkbox" checked={!!(form as any).lead_commission_nil} onChange={(e) => setForm({ ...form, lead_commission_nil: e.target.checked } as any)} />
               Lead Commission Nil
             </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
               <input type="checkbox" checked={!!(form as any).pickup_commission_paid} onChange={(e) => setForm({ ...form, pickup_commission_paid: e.target.checked } as any)} />
               Pickup Commission Paid
             </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-nowrap">
+            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
               <input type="checkbox" checked={!!(form as any).pickup_commission_nil} onChange={(e) => setForm({ ...form, pickup_commission_nil: e.target.checked } as any)} />
               Pickup Commission Nil
             </label>
@@ -1029,6 +1029,9 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     </Dialog>
   );
 }
+
+
+
 
 
 
