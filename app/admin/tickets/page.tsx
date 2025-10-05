@@ -526,6 +526,7 @@ export default function TicketListPage() {
 function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = React.useState({
     vehicle_reg_no: ticket?.vehicle_reg_no || ticket?.vehicle_number || "",
+    alt_vehicle_reg_no: (ticket as any)?.alt_vehicle_reg_no || "",
     phone: ticket?.phone || "",
     alt_phone: ticket?.alt_phone || "",
     subject: ticket?.subject || "",
@@ -693,6 +694,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
       const payload: any = {
         id: Number(ticket.id),
         vehicle_reg_no: form.vehicle_reg_no,
+        alt_vehicle_reg_no: (form as any).alt_vehicle_reg_no || null,
         phone: m[1],
         alt_phone: altNorm,
         subject: form.subject,
@@ -751,276 +753,242 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
         <DialogHeader>
           <DialogTitle>Edit Ticket #{ticket?.ticket_no || ticket?.id}</DialogTitle>
         </DialogHeader>
-        {/* Row 1 */}
-        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-4 gap-4 py-2">
-          <div>
-            <label className="block text-sm font-medium mb-1">Vehicle Reg. No (VRN)</label>
-            <Input
-              value={form.vehicle_reg_no}
-              onChange={(e) => setForm({ ...form, vehicle_reg_no: e.target.value })}
-              placeholder="e.g., TN01AB1234 (optional)"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Customer Name</label>
-            <Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Phone</label>
-            <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-          </div>
-        </div>
-        {/* Row 2 */}
-        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-4 gap-4 py-2">
-          <div>
-            <label className="block text-sm font-medium mb-1">Alt Phone</label>
-            <Input value={form.alt_phone} onChange={(e) => setForm({ ...form, alt_phone: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Pick-up Point</label>
-            <Input value={form.pickup_point_name} onChange={(e) => setForm({ ...form, pickup_point_name: e.target.value })} placeholder="e.g., Warehouse A" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Subject</label>
-            <select className="w-full border rounded p-2" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })}>
-              <option value="New Fastag">New Fastag</option>
-              <option value="Add-on Tag">Add-on Tag</option>
-              <option value="Replacement Tag">Replacement Tag</option>
-              <option value="Hotlisted Case">Hotlisted Case</option>
-              <option value="Annual Pass">Annual Pass</option>
-              <option value="Phone Num Update">Phone Num Update</option>
-              <option value="Tag Closing">Tag Closing</option>
-              <option value="Chassis VRN Update">Chassis VRN Update</option>
-              <option value="VRN Update">VRN Update</option>
-              <option value="Low Balance Case">Low Balance Case</option>
-              <option value="Only Recharge">Only Recharge</option>
-              <option value="Holder">Holder</option>
-              <option value="MinKYC Process">MinKYC Process</option>
-              <option value="Full KYC Process">Full KYC Process</option>
-            </select>
-          </div>
-        </div>
-        {/* Row 3 */}
-        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-4 gap-4 py-2">
-          <div>
-            <label className="block text-sm font-medium mb-1">Ticket Status</label>
-            <select className="w-full border rounded p-2" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-              <option>New Lead</option>
-              <option>Working</option>
-              <option>Completed</option>
-              <option>Cancelled</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">KYV Status</label>
-            <select className="w-full border rounded p-2" value={form.kyv_status} onChange={(e) => setForm({ ...form, kyv_status: e.target.value })}>
-              <option>KYV pending</option>
-              <option>KYV submitted</option>
-              <option>KYV compliant</option>
-              <option>Nil</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">NPCI Status</label>
-            <select className="w-full border rounded p-2" value={(form as any).npci_status || 'Activation Pending'} onChange={(e)=> setForm({ ...form, npci_status: e.target.value } as any)}>
-              <option>Activation Pending</option>
-              <option>Active</option>
-              <option>Low Balance</option>
-              <option>Hotlist</option>
-              <option>Closed</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Assigned To</label>
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <UsersAutocomplete
-                  value={assignedUser}
-                  onSelect={(u) => {
-                    setAssignedUser(u);
-                    setForm((f) => ({ ...f, assigned_to: u ? String(u.id) : "" }));
-                  }}
-                  placeholder="Type user name"
-                />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="md:col-span-2">
+            {/* Row 1: Subject, VRN, Phone, Alt VRN, Customer */}
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 py-2">
+              <div>
+                <label className="block text-sm font-medium mb-1">Subject *</label>
+                <select className="w-full border rounded p-2" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })}>
+                  <option value="New Fastag">New Fastag</option>
+                  <option value="Add-on Tag">Add-on Tag</option>
+                  <option value="Replacement Tag">Replacement Tag</option>
+                  <option value="Hotlisted Case">Hotlisted Case</option>
+                  <option value="Annual Pass">Annual Pass</option>
+                  <option value="Phone Num Update">Phone Num Update</option>
+                  <option value="Tag Closing">Tag Closing</option>
+                  <option value="Chassis VRN Update">Chassis VRN Update</option>
+                  <option value="VRN Update">VRN Update</option>
+                  <option value="Low Balance Case">Low Balance Case</option>
+                  <option value="Only Recharge">Only Recharge</option>
+                  <option value="Holder">Holder</option>
+                  <option value="MinKYC Process">MinKYC Process</option>
+                  <option value="Full KYC Process">Full KYC Process</option>
+                </select>
               </div>
-              <button
-                type="button"
-                className="px-3 py-2 border rounded"
-                onClick={() => {
-                  if (currentUser) {
-                    setAssignedUser({ id: currentUser.id, name: currentUser.name });
-                    setForm((f) => ({ ...f, assigned_to: String(currentUser.id) }));
-                  }
-                }}
-              >
-                Self
-              </button>
+              <div>
+                <label className="block text-sm font-medium mb-1">Vehicle Reg. No (VRN)</label>
+                <Input value={form.vehicle_reg_no} onChange={(e) => setForm({ ...form, vehicle_reg_no: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Mobile</label>
+                <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Alt Reg Number</label>
+                <Input value={(form as any).alt_vehicle_reg_no as any} onChange={(e) => setForm({ ...form, alt_vehicle_reg_no: e.target.value } as any)} placeholder="Optional" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Customer Name</label>
+                <Input value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} />
+              </div>
             </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Lead Received From</label>
-            <select className="w-full border rounded p-2" value={form.lead_received_from} onChange={(e) => setForm({ ...form, lead_received_from: e.target.value })}>
-              <option value="">Select Source</option>
-              <option value="WhatsApp">WhatsApp</option>
-              <option value="Facebook">Facebook</option>
-              <option value="Social Media">Social Media</option>
-              <option value="Google Map">Google Map</option>
-              <option value="Other">Other</option>
-              <option value="Toll-agent">Toll-agent</option>
-              <option value="ASM">ASM</option>
-              <option value="Shop">Shop</option>
-              <option value="Showroom">Showroom</option>
-              <option value="TL">TL</option>
-              <option value="Manager">Manager</option>
-            </select>
-          </div>
-        </div>
-        {/* Row 4 */}
-        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-4 gap-4 py-2">
-          <div>
-            <label className="block text-sm font-medium mb-1">Lead By (User/Shop ID)</label>
-            <Input value={form.lead_by} onChange={(e) => setForm({ ...form, lead_by: e.target.value })} placeholder="e.g., 2" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Payment To Be Collected</label>
-            <Input type="number" step="0.01" value={form.payment_to_collect as any} onChange={(e) => setForm({ ...form, payment_to_collect: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Payment To Be Sent</label>
-            <Input type="number" step="0.01" value={form.payment_to_send as any} onChange={(e) => setForm({ ...form, payment_to_send: e.target.value })} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Net Value</label>
-            <Input type="number" step="0.01" value={form.net_value as any} readOnly className="bg-gray-50" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Paid via</label>
-            <select
-              className="w-full border rounded p-2"
-              value={(form as any).paid_via}
-              onChange={(e) => setForm({ ...form, paid_via: e.target.value } as any)}
-            >
-              {['Pending','Paytm QR','GPay Box','IDFC Box','Cash','Sriram Gpay','Lakshman Gpay','Arjunan Gpay','Vishnu GPay','Vimal GPay'].map(opt => (
-                <option key={opt} value={opt}>{opt}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div className="py-2">
-          <label className="block text-sm font-medium mb-1">Details</label>
-          <textarea className="w-full border rounded p-2" rows={3} value={form.details} onChange={(e) => setForm({ ...form, details: e.target.value })} />
-        </div>
-        
-        {/* Row 5: Commission + Flags */}
-        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-4 gap-4 py-2">
-          <div>
-            <label className="block text-sm font-medium mb-1">Commission Amount</label>
-            <Input type="number" step="0.01" value={form.commission_amount as any} onChange={(e) => setForm({ ...form, commission_amount: e.target.value })} placeholder="0" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Lead Commission to Give</label>
-            <Input type="number" step="0.01" value={(form as any).lead_commission as any} onChange={(e) => setForm({ ...(form as any), lead_commission: e.target.value } as any)} placeholder="0" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Pickup Commission to Give</label>
-            <Input type="number" step="0.01" value={(form as any).pickup_commission as any} onChange={(e) => setForm({ ...(form as any), pickup_commission: e.target.value } as any)} placeholder="0" />
-          </div>
-          <div className="col-span-2 lg:col-span-3 grid grid-cols-2 gap-2 items-start">
-            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
-              <input type="checkbox" checked={!!form.payment_received} onChange={(e) => setForm({ ...form, payment_received: e.target.checked })} />
-              Payment Received
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
-              <input type="checkbox" checked={!!(form as any).payment_nil} onChange={(e) => setForm({ ...form, payment_nil: e.target.checked } as any)} />
-              Payment Nil
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
-              <input type="checkbox" checked={!!form.delivery_done} onChange={(e) => setForm({ ...form, delivery_done: e.target.checked })} />
-              Delivery Done
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
-              <input type="checkbox" checked={!!(form as any).delivery_nil} onChange={(e) => setForm({ ...form, delivery_nil: e.target.checked } as any)} />
-              Delivery Nil
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
-              <input type="checkbox" checked={!!form.commission_done} onChange={(e) => setForm({ ...form, commission_done: e.target.checked })} />
-              Commission Done
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
-              <input type="checkbox" checked={!!(form as any).lead_commission_paid} onChange={(e) => setForm({ ...form, lead_commission_paid: e.target.checked } as any)} />
-              Lead Commission Paid
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
-              <input type="checkbox" checked={!!(form as any).lead_commission_nil} onChange={(e) => setForm({ ...form, lead_commission_nil: e.target.checked } as any)} />
-              Lead Commission Nil
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
-              <input type="checkbox" checked={!!(form as any).pickup_commission_paid} onChange={(e) => setForm({ ...form, pickup_commission_paid: e.target.checked } as any)} />
-              Pickup Commission Paid
-            </label>
-            <label className="inline-flex items-center gap-2 text-sm whitespace-normal break-words">
-              <input type="checkbox" checked={!!(form as any).pickup_commission_nil} onChange={(e) => setForm({ ...form, pickup_commission_nil: e.target.checked } as any)} />
-              Pickup Commission Nil
-            </label>
-          </div>
-        </div>
-        {/* Row 6: FASTag Info */}
-        <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-4 gap-4 py-2">
-          <div>
-            <label className="block text-sm font-medium mb-1">FASTag Barcode</label>
-            <Input value={form.fastag_serial as any} onChange={(e) => { setForm({ ...form, fastag_serial: e.target.value }); setFastagQuery(e.target.value); }} placeholder="Type FASTag barcode" />
-            {fastagOptions.length > 0 && (
-              <div className="mt-1 max-h-40 overflow-auto border rounded">
-                {fastagOptions.map((row) => (
-                  <div
-                    key={row.id}
-                    className="px-3 py-2 cursor-pointer hover:bg-orange-50 border-b last:border-b-0"
-                    onMouseDown={() => {
-                      setForm((f) => ({
-                        ...f,
-                        fastag_serial: row.tag_serial || (f as any).fastag_serial,
-                        fastag_bank: row.bank_name || (f as any).fastag_bank,
-                        fastag_class: row.fastag_class || (f as any).fastag_class,
-                        fastag_owner: row.holder ? String(row.holder) : (row.assigned_to_name || (f as any).fastag_owner || ""),
-                      } as any));
-                      setFastagQuery(String(row.tag_serial || ""));
-                      setFastagOptions([]);
+
+            {/* Row 2: Lead From, Pickup, Bank, Vehicle Class */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 py-2">
+              <div>
+                <label className="block text-sm font-medium mb-1">Lead Received From</label>
+                <Input value={form.lead_received_from} onChange={(e) => setForm({ ...form, lead_received_from: e.target.value })} placeholder="Type source or name" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Pick-up Point</label>
+                <Input value={form.pickup_point_name} onChange={(e) => setForm({ ...form, pickup_point_name: e.target.value })} placeholder="Type pick-up point" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Bank</label>
+                <Input value={(form as any).fastag_bank as any} readOnly className="bg-gray-50" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">VEHICLE CLASS</label>
+                <Input value={(form as any).fastag_class as any} readOnly className="bg-gray-50" />
+              </div>
+            </div>
+
+            {/* Row 3: FASTag Barcode + Owner */}
+            <div className="mt-0 grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
+              <div>
+                <label className="block text-sm font-medium mb-1">FASTag Barcode</label>
+                <Input value={form.fastag_serial as any} onChange={(e) => { setForm({ ...form, fastag_serial: e.target.value }); setFastagQuery(e.target.value); }} placeholder="Type FASTag barcode" />
+                {fastagOptions.length > 0 && (
+                  <div className="mt-1 max-h-40 overflow-auto border rounded">
+                    {fastagOptions.map((row) => (
+                      <div
+                        key={row.id}
+                        className="px-3 py-2 cursor-pointer hover:bg-orange-50 border-b last:border-b-0"
+                        onMouseDown={() => {
+                          setForm((f) => ({
+                            ...f,
+                            fastag_serial: row.tag_serial || (f as any).fastag_serial,
+                            fastag_bank: row.bank_name || (f as any).fastag_bank,
+                            fastag_class: row.fastag_class || (f as any).fastag_class,
+                            fastag_owner: row.holder ? String(row.holder) : (row.assigned_to_name || (f as any).fastag_owner || ""),
+                          } as any));
+                          setFastagQuery(String(row.tag_serial || ""));
+                          setFastagOptions([]);
+                        }}
+                      >
+                        {row.tag_serial} — {row.bank_name} / {row.fastag_class}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">FASTag Owner</label>
+                <Input value={(form as any).fastag_owner as any} readOnly className="bg-gray-50" placeholder="Owner appears after picking" />
+              </div>
+            </div>
+
+            {/* Row 4: Payments */}
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 py-2">
+              <div>
+                <label className="block text-sm font-medium mb-1">Payment To Be Collected</label>
+                <Input type="number" step="0.01" value={form.payment_to_collect as any} onChange={(e) => setForm({ ...form, payment_to_collect: e.target.value })} placeholder="0.00" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Payment To Be Sent</label>
+                <Input type="number" step="0.01" value={form.payment_to_send as any} onChange={(e) => setForm({ ...form, payment_to_send: e.target.value })} placeholder="0.00" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Net Value</label>
+                <Input type="number" step="0.01" value={form.net_value as any} readOnly className="bg-gray-50" placeholder="0.00" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Paid via</label>
+                <select
+                  className="w-full border rounded p-2"
+                  value={(form as any).paid_via}
+                  onChange={(e) => setForm({ ...form, paid_via: e.target.value } as any)}
+                >
+                  {['Pending','Paytm QR','GPay Box','IDFC Box','Cash','Sriram Gpay','Lakshman Gpay','Arjunan Gpay','Vishnu GPay','Vimal GPay'].map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col justify-end gap-2">
+                <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form.payment_received} onChange={(e) => setForm({ ...form, payment_received: e.target.checked })} /> Payment Received</label>
+                <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={!!(form as any).payment_nil} onChange={(e) => setForm({ ...form, payment_nil: e.target.checked } as any)} /> Payment Nil</label>
+              </div>
+            </div>
+
+            {/* Row 5: Assigned + NPCI + Status */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 py-2">
+              <div>
+                <label className="block text-sm font-medium mb-1">Assigned To</label>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <UsersAutocomplete
+                      value={assignedUser}
+                      onSelect={(u) => {
+                        setAssignedUser(u);
+                        setForm((f) => ({ ...f, assigned_to: u ? String(u.id) : "" }));
+                      }}
+                      placeholder="Type user name"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="px-3 py-2 border rounded"
+                    onClick={() => {
+                      if (currentUser) {
+                        setAssignedUser({ id: currentUser.id, name: currentUser.name });
+                        setForm((f) => ({ ...f, assigned_to: String(currentUser.id) }));
+                      }
                     }}
                   >
-                    {row.tag_serial} — {row.bank_name} / {row.fastag_class}
-                  </div>
-                ))}
+                    Self
+                  </button>
+                </div>
               </div>
-            )}
+              <div>
+                <label className="block text-sm font-medium mb-1">NPCI Status</label>
+                <select className="w-full border rounded p-2" value={(form as any).npci_status || 'Activation Pending'} onChange={(e)=> setForm({ ...form, npci_status: e.target.value } as any)}>
+                  <option>Activation Pending</option>
+                  <option>Active</option>
+                  <option>Low Balance</option>
+                  <option>Hotlist</option>
+                  <option>Closed</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Ticket Status</label>
+                <select className="w-full border rounded p-2" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                  <option>New Lead</option>
+                  <option>Working</option>
+                  <option>Completed</option>
+                  <option>Cancelled</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Row 6: KYV + Details */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
+              <div>
+                <label className="block text-sm font-medium mb-1">KYV Status</label>
+                <select className="w-full border rounded p-2" value={form.kyv_status} onChange={(e) => setForm({ ...form, kyv_status: e.target.value })}>
+                  <option>KYV pending</option>
+                  <option>KYV submitted</option>
+                  <option>KYV compliant</option>
+                  <option>Nil</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Details</label>
+                <textarea className="w-full border rounded p-2" rows={3} value={form.details} onChange={(e) => setForm({ ...form, details: e.target.value })} />
+              </div>
+            </div>
+
+            {/* Row 7: Delivery + Commissions like create */}
+            <div className="mt-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 py-2">
+              <div>
+                <label className="block text-sm font-medium mb-1">Lead Commission to Give</label>
+                <Input type="number" step="0.01" value={(form as any).lead_commission as any} onChange={(e) => setForm({ ...(form as any), lead_commission: e.target.value } as any)} placeholder="0" />
+              </div>
+              <div className="flex flex-col justify-end gap-2">
+                <label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" checked={!!(form as any).lead_commission_paid} onChange={(e) => setForm({ ...form, lead_commission_paid: e.target.checked } as any)} /> Commission Paid</label>
+                <label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" checked={!!(form as any).lead_commission_nil} onChange={(e) => setForm({ ...form, lead_commission_nil: e.target.checked } as any)} /> Commission Nil</label>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Pickup Commission to Give</label>
+                <Input type="number" step="0.01" value={(form as any).pickup_commission as any} onChange={(e) => setForm({ ...(form as any), pickup_commission: e.target.value } as any)} placeholder="0" />
+              </div>
+              <div className="flex flex-col justify-end gap-2">
+                <label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" checked={!!(form as any).pickup_commission_paid} onChange={(e) => setForm({ ...form, pickup_commission_paid: e.target.checked } as any)} /> Commission Paid</label>
+                <label className="inline-flex items-center gap-2 text-xs"><input type="checkbox" checked={!!(form as any).pickup_commission_nil} onChange={(e) => setForm({ ...form, pickup_commission_nil: e.target.checked } as any)} /> Commission Nil</label>
+              </div>
+            </div>
+
+            {/* Row 8: Delivery flags */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 py-2">
+              <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form.delivery_done} onChange={(e) => setForm({ ...form, delivery_done: e.target.checked })} /> Delivery / Pickup Completed</label>
+              <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={!!(form as any).delivery_nil} onChange={(e) => setForm({ ...form, delivery_nil: e.target.checked } as any)} /> Delivery / Pickup Nil</label>
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">FASTag Bank</label>
-            <Input value={form.fastag_bank as any} readOnly className="bg-gray-50" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">FASTag Class</label>
-            <Input value={form.fastag_class as any} readOnly className="bg-gray-50" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">FASTag Owner</label>
-            <Input value={form.fastag_owner as any} readOnly className="bg-gray-50" />
+          <div className="md:col-span-1">
+            <h3 className="font-semibold mb-2">Documents</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <UploadField label="RC Front" value={(form as any).rc_front_url || ''} onChange={(u)=> setForm(f => ({...(f as any), rc_front_url: u} as any))} />
+              <UploadField label="RC Back" value={(form as any).rc_back_url || ''} onChange={(u)=> setForm(f => ({...(f as any), rc_back_url: u} as any))} />
+              <UploadField label="PAN" value={(form as any).pan_url || ''} onChange={(u)=> setForm(f => ({...(f as any), pan_url: u} as any))} />
+              <UploadField label="Aadhaar" value={(form as any).aadhaar_front_url || ''} onChange={(u)=> setForm(f => ({...(f as any), aadhaar_front_url: u} as any))} />
+              <UploadField label="Aadhaar" value={(form as any).aadhaar_back_url || ''} onChange={(u)=> setForm(f => ({...(f as any), aadhaar_back_url: u} as any))} />
+              <UploadField label="Vehicle Front" value={(form as any).vehicle_front_url || ''} onChange={(u)=> setForm(f => ({...(f as any), vehicle_front_url: u} as any))} />
+              <UploadField label="Vehicle Side" value={(form as any).vehicle_side_url || ''} onChange={(u)=> setForm(f => ({...(f as any), vehicle_side_url: u} as any))} />
+              <UploadField label="Sticker" value={(form as any).sticker_pasted_url || ''} onChange={(u)=> setForm(f => ({...(f as any), sticker_pasted_url: u} as any))} />
+            </div>
           </div>
         </div>
-        {/* Documents */}
-        <div className="py-2">
-          <h3 className="font-semibold mb-2">Documents</h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            <UploadField label="RC Front" value={(form as any).rc_front_url || ''} onChange={(u)=> setForm(f => ({...(f as any), rc_front_url: u} as any))} />
-            <UploadField label="RC Back" value={(form as any).rc_back_url || ''} onChange={(u)=> setForm(f => ({...(f as any), rc_back_url: u} as any))} />
-            <UploadField label="PAN" value={(form as any).pan_url || ''} onChange={(u)=> setForm(f => ({...(f as any), pan_url: u} as any))} />
-            <UploadField label="Aadhaar" value={(form as any).aadhaar_front_url || ''} onChange={(u)=> setForm(f => ({...(f as any), aadhaar_front_url: u} as any))} />
-            <UploadField label="Aadhaar" value={(form as any).aadhaar_back_url || ''} onChange={(u)=> setForm(f => ({...(f as any), aadhaar_back_url: u} as any))} />
-            <UploadField label="Vehicle Front" value={(form as any).vehicle_front_url || ''} onChange={(u)=> setForm(f => ({...(f as any), vehicle_front_url: u} as any))} />
-            <UploadField label="Vehicle Side" value={(form as any).vehicle_side_url || ''} onChange={(u)=> setForm(f => ({...(f as any), vehicle_side_url: u} as any))} />
-            <UploadField label="Sticker" value={(form as any).sticker_pasted_url || ''} onChange={(u)=> setForm(f => ({...(f as any), sticker_pasted_url: u} as any))} />
-          </div>
-        </div>
-        {error && <div className="text-sm text-red-600">{error}</div>}
+        {error && <div className="text-sm text-red-600 mt-2">{error}</div>}
         <DialogFooter>
           <button className="px-4 py-2 border rounded" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="px-4 py-2 bg-blue-600 text-white rounded" onClick={save} disabled={saving}>{saving ? "Saving..." : "Save"}</button>
@@ -1029,6 +997,8 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     </Dialog>
   );
 }
+
+
 
 
 
