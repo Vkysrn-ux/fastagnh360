@@ -575,6 +575,35 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     }
     return null;
   });
+  const [pickupSameAsLead, setPickupSameAsLead] = React.useState<boolean>(false);
+
+  // Keep pickup point in sync with lead when checkbox is checked
+  React.useEffect(() => {
+    if (pickupSameAsLead) {
+      setForm((f) => ({ ...f, pickup_point_name: f.lead_received_from }));
+    }
+  }, [pickupSameAsLead, (form as any).lead_received_from]);
+
+  // FASTag helpers: banks and class options
+  const BANK_OPTIONS = ['SBI','IDFC','ICICI','EQUITAS','INDUSIND','QUIKWALLET','Bajaj','Axis','HDFC','KVB','KOTAK'];
+  const VEHICLE_CLASS_OPTIONS = [
+    { code: 'class4', label: 'Class 4 (Car/Jeep/Van)' },
+    { code: 'class20', label: 'Class 20 (TATA Ace/Dost/Pickup)' },
+    { code: 'class5', label: 'Class 5/9 (LCV/Mini-Bus 2Axle)' },
+    { code: 'class6', label: 'Class 6/8/11 (3Axle)' },
+    { code: 'class7', label: 'Class 7/10 (Truck/Bus 2Axle)' },
+    { code: 'class12', label: 'Class 12/13/14 (Axle4/5/6)' },
+    { code: 'class15', label: 'Class 15 (Axle7&above)' },
+    { code: 'class16', label: 'Class 16/17 (Earth-Moving-Heavy)' },
+  ];
+  function normalizeFastagClass(val: any) {
+    const v = String(val || '').trim();
+    if (!v) return '';
+    const byCode = VEHICLE_CLASS_OPTIONS.find(o => o.code.toLowerCase() === v.toLowerCase());
+    if (byCode) return byCode.code;
+    const byLabel = VEHICLE_CLASS_OPTIONS.find(o => o.label.toLowerCase() === v.toLowerCase());
+    return byLabel ? byLabel.code : '';
+  }
 
   async function uploadToServer(file: File): Promise<string> {
     const fd = new FormData();
@@ -802,15 +831,45 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Pick-up Point</label>
-                <Input value={form.pickup_point_name} onChange={(e) => setForm({ ...form, pickup_point_name: e.target.value })} placeholder="Type pick-up point" />
+                <Input value={form.pickup_point_name} readOnly={pickupSameAsLead} onChange={(e) => setForm({ ...form, pickup_point_name: e.target.value })} placeholder="Type pick-up point" />
+                <label className="inline-flex items-center gap-2 text-xs mt-2">
+                  <input
+                    type="checkbox"
+                    checked={pickupSameAsLead}
+                    onChange={(e) => {
+                      const v = e.target.checked;
+                      setPickupSameAsLead(v);
+                      if (v) setForm((f) => ({ ...f, pickup_point_name: f.lead_received_from }));
+                    }}
+                  />
+                  <span>Same as Lead</span>
+                </label>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Bank</label>
-                <Input value={(form as any).fastag_bank as any} readOnly className="bg-gray-50" />
+                <select
+                  className="w-full border rounded p-2"
+                  value={((form as any).fastag_bank as any) || ''}
+                  onChange={(e) => setForm({ ...form, fastag_bank: e.target.value } as any)}
+                >
+                  <option value="">Select Bank</option>
+                  {BANK_OPTIONS.map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">VEHICLE CLASS</label>
-                <Input value={(form as any).fastag_class as any} readOnly className="bg-gray-50" />
+                <select
+                  className="w-full border rounded p-2"
+                  value={normalizeFastagClass((form as any).fastag_class)}
+                  onChange={(e) => setForm({ ...form, fastag_class: e.target.value } as any)}
+                >
+                  <option value="">Select Vehicle Class</option>
+                  {VEHICLE_CLASS_OPTIONS.map((o) => (
+                    <option key={o.code} value={o.code}>{o.label}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
