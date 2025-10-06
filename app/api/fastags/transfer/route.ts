@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { hasTableColumn } from "@/lib/db-helpers";
 
 // Transfer FASTags by class + batch from one agent to another (or admin)
 export async function POST(req: NextRequest) {
@@ -32,10 +33,27 @@ export async function POST(req: NextRequest) {
 
     // Update ownership; to admin -> in_stock, to agent -> assigned
     const statusValue = to_agent_id === null ? 'in_stock' : 'assigned';
+
+    // Optional mapping update when provided
+    const mappingRaw = typeof body?.mapping === 'string' ? String(body.mapping).toLowerCase() : '';
+    const mappingValue = mappingRaw === 'done' ? 'done' : (mappingRaw === 'pending' ? 'pending' : null);
+    let hasMappingStatus = false;
+    try { hasMappingStatus = await hasTableColumn('fastags', 'bank_mapping_status'); } catch {}
+
+    const setParts: string[] = [
+      `assigned_to_agent_id = ?`,
+      `status = ?`,
+      `assigned_date = CURDATE()` ,
+      `assigned_at = NOW()`
+    ];
+    const params: any[] = [to_agent_id, statusValue];
+    if (hasMappingStatus && (mappingValue === 'pending' || mappingValue === 'done')) {
+      setParts.push(`bank_mapping_status = ?`);
+      params.push(mappingValue);
+    }
     await pool.query(
-      `UPDATE fastags SET assigned_to_agent_id = ?, status = ?, assigned_date = CURDATE(), assigned_at = NOW()
-       WHERE id IN (${ids.map(() => '?').join(',')})`,
-      [to_agent_id, statusValue, ...ids]
+      `UPDATE fastags SET ${setParts.join(', ')} WHERE id IN (${ids.map(() => '?').join(',')})`,
+      [...params, ...ids]
     );
 
     return NextResponse.json({ success: true, transferred: ids.length });

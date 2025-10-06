@@ -16,7 +16,7 @@ export default function FastagTransferPage() {
   const [agents, setAgents] = useState<any[]>([]);
   const [fromAgent, setFromAgent] = useState("");
   const [toAgent, setToAgent] = useState("");
-  const [summary, setSummary] = useState<Array<{ bank_name: string; fastag_class: string; available: number }>>([]);
+  const [summary, setSummary] = useState<Array<{ supplier_id: number; supplier_name: string; bank_name: string; fastag_class: string; available: number }>>([]);
   const [qtyMap, setQtyMap] = useState<Record<string, number>>({});
   const [barcodesMap, setBarcodesMap] = useState<Record<string, string[]>>({});
   const [barcodesLoading, setBarcodesLoading] = useState<Record<string, boolean>>({});
@@ -43,7 +43,7 @@ export default function FastagTransferPage() {
     try {
       const assignments: Array<{ agentId: string | number; serials: string[] }> = [];
       for (const row of summary) {
-        const key = `${row.bank_name}|${row.fastag_class}`;
+        const key = `${row.supplier_id}|${row.bank_name}|${row.fastag_class}`;
         const qty = Number(qtyMap[key] || 0);
         if (!qty) continue;
         // Prefer explicitly selected barcodes if any
@@ -54,7 +54,7 @@ export default function FastagTransferPage() {
         } else {
           // Load full list if not present, then take remaining
           if (!barcodesMap[key]) {
-            let url = `/api/fastags?status=assigned&owner=${encodeURIComponent(fromAgent)}&bank=${encodeURIComponent(row.bank_name)}&class=${encodeURIComponent(row.fastag_class)}`;
+            let url = `/api/fastags?status=assigned&owner=${encodeURIComponent(fromAgent)}&bank=${encodeURIComponent(row.bank_name)}&class=${encodeURIComponent(row.fastag_class)}&supplier=${encodeURIComponent(String(row.supplier_id||''))}`;
             if (mappingFilter !== 'all') url += `&mapping=${encodeURIComponent(mappingFilter)}`;
             const data = await fetch(url).then(r => r.json()).catch(() => []);
             const list: Array<{ tag_serial: string }> = Array.isArray(data) ? data : [];
@@ -67,7 +67,12 @@ export default function FastagTransferPage() {
           serials = [...selected, ...fillers];
         }
         if (serials.length > 0) {
-          assignments.push({ agentId: toAgent, serials });
+          // Include mapping only when filter is explicit (pending/done)
+          const payload: any = { agentId: toAgent, serials };
+          if (mappingFilter === 'pending' || mappingFilter === 'done') {
+            payload.mapping = mappingFilter;
+          }
+          assignments.push(payload);
         }
       }
       if (assignments.length === 0) { setMessage("Select at least one quantity to transfer."); return; }
@@ -76,7 +81,7 @@ export default function FastagTransferPage() {
       if (result?.success) {
         const total = assignments.reduce((s, a) => s + a.serials.length, 0);
         setMessage(`Successfully transferred ${total} FASTag(s).`);
-        const next = await fetch(`/api/agents/${fromAgent}/fastags/available-summary`).then(r=>r.json()).catch(()=>[]);
+        const next = await fetch(`/api/agents/${fromAgent}/fastags/available-summary${mappingFilter!=='all' ? `?mapping=${encodeURIComponent(mappingFilter)}` : ''}`).then(r=>r.json()).catch(()=>[]);
         setSummary(Array.isArray(next) ? next : []);
         setQtyMap({});
         setSelectedMap({});
@@ -101,7 +106,7 @@ export default function FastagTransferPage() {
               setFromAgent(val);
               setQtyMap({});
               if (val) {
-                const rows = await fetch(`/api/agents/${val}/fastags/available-summary`).then(r=>r.json()).catch(()=>[]);
+                const rows = await fetch(`/api/agents/${val}/fastags/available-summary${mappingFilter!=='all' ? `?mapping=${encodeURIComponent(mappingFilter)}` : ''}`).then(r=>r.json()).catch(()=>[]);
                 setSummary(Array.isArray(rows) ? rows : []);
               } else {
                 setSummary([]);
@@ -117,7 +122,17 @@ export default function FastagTransferPage() {
           </div>
           <div>
             <Label>Bank Mapping</Label>
-            <Select value={mappingFilter} onValueChange={(v: any)=> setMappingFilter(v)}>
+            <Select value={mappingFilter} onValueChange={async (v: any)=> {
+              setMappingFilter(v);
+              // refresh summary if source selected
+              if (fromAgent) {
+                const rows = await fetch(`/api/agents/${fromAgent}/fastags/available-summary${v!=='all' ? `?mapping=${encodeURIComponent(v)}` : ''}`).then(r=>r.json()).catch(()=>[]);
+                setSummary(Array.isArray(rows) ? rows : []);
+                setQtyMap({});
+                setSelectedMap({});
+                setBarcodesMap({});
+              }
+            }}>
               <SelectTrigger><SelectValue placeholder="Mapping Status" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All</SelectItem>
@@ -146,6 +161,7 @@ export default function FastagTransferPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-gray-50">
+                      <th className="text-left p-2">Supplier</th>
                       <th className="text-left p-2">Bank</th>
                       <th className="text-left p-2">Class</th>
                       <th className="text-left p-2">Available</th>
@@ -155,13 +171,14 @@ export default function FastagTransferPage() {
                   </thead>
                   <tbody>
                     {summary.length === 0 ? (
-                      <tr><td colSpan={5} className="p-3 text-center text-muted-foreground">No assigned FASTags for this agent</td></tr>
+                      <tr><td colSpan={6} className="p-3 text-center text-muted-foreground">No assigned FASTags for this agent</td></tr>
                     ) : summary.map((r, i) => {
-                      const key = `${r.bank_name}|${r.fastag_class}`;
+                      const key = `${r.supplier_id}|${r.bank_name}|${r.fastag_class}`;
                       const val = qtyMap[key] || 0;
                       return (
                         <>
                           <tr key={key} className={i%2? 'bg-gray-50':''}>
+                            <td className="p-2">{r.supplier_name || '-'}</td>
                             <td className="p-2">{r.bank_name}</td>
                             <td className="p-2">{r.fastag_class}</td>
                             <td className="p-2">{r.available}</td>
@@ -178,7 +195,7 @@ export default function FastagTransferPage() {
                                 if (nextQty > 0 && !barcodesMap[key]) {
                                   setBarcodesLoading(m => ({ ...m, [key]: true }));
                                   try {
-                                    let url = `/api/fastags?status=assigned&owner=${encodeURIComponent(fromAgent)}&bank=${encodeURIComponent(r.bank_name)}&class=${encodeURIComponent(r.fastag_class)}`;
+                                    let url = `/api/fastags?status=assigned&owner=${encodeURIComponent(fromAgent)}&bank=${encodeURIComponent(r.bank_name)}&class=${encodeURIComponent(r.fastag_class)}&supplier=${encodeURIComponent(String(r.supplier_id||''))}`;
                                     if (mappingFilter !== 'all') url += `&mapping=${encodeURIComponent(mappingFilter)}`;
                                     const data = await fetch(url).then(res => res.json()).catch(() => []);
                                     const list: Array<{ tag_serial: string }> = Array.isArray(data) ? data : [];
@@ -211,7 +228,7 @@ export default function FastagTransferPage() {
                                   }
                                   setBarcodesLoading(m => ({ ...m, [key]: true }));
                                   try {
-                                    const url = `/api/fastags?status=assigned&owner=${encodeURIComponent(fromAgent)}&bank=${encodeURIComponent(r.bank_name)}&class=${encodeURIComponent(r.fastag_class)}`;
+                                    const url = `/api/fastags?status=assigned&owner=${encodeURIComponent(fromAgent)}&bank=${encodeURIComponent(r.bank_name)}&class=${encodeURIComponent(r.fastag_class)}&supplier=${encodeURIComponent(String(r.supplier_id||''))}`;
                                     const data = await fetch(url).then(res => res.json()).catch(() => []);
                                     const list: Array<{ tag_serial: string }> = Array.isArray(data) ? data : [];
                                     const codes = list.map(x => x.tag_serial);
@@ -227,7 +244,7 @@ export default function FastagTransferPage() {
                           </tr>
                           {barcodesMap[key] && (
                             <tr>
-                              <td className="p-2" colSpan={5}>
+                              <td className="p-2" colSpan={6}>
                                 <div className="flex flex-wrap gap-2 max-h-40 overflow-auto">
                                   {barcodesMap[key].map((code) => {
                                     const sel = !!(selectedMap[key]?.[code]);

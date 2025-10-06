@@ -21,7 +21,7 @@ function sortedSerials(serials, prefix = "") {
     .sort((a, b) => a.num - b.num);
 }
 function getDynamicAvailable(rows, allSerialsCache, row, rowIdx, transferFromUser) {
-  const key = `${row.bank}-${row.fastagClass}-${transferFromUser}-${row.mapping || 'pending'}`;
+  const key = `${row.bank}-${row.fastagClass}-${transferFromUser}-${row.supplierId||'any'}`;
   let allSerials = allSerialsCache[key] || [];
   rows.forEach((r, i) => {
     if (
@@ -126,17 +126,28 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
   const [transferToUser, setTransferToUser] = useState("");
 
   const [rows, setRows] = useState([
-    { bank: "", fastagClass: "", prefix: "", availableSerials: [], startSerial: "", endSerial: "", quantity: 1, note: "", mapping: "pending" }
+    { supplierId: "", bank: "", fastagClass: "", prefix: "", availableSerials: [], startSerial: "", endSerial: "", quantity: 1, note: "", mapping: "pending" }
   ]);
   const [loading, setLoading] = useState(false);
   const [allSerialsCache, setAllSerialsCache] = useState({});
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [bankOptionsBySupplier, setBankOptionsBySupplier] = useState<Record<string, string[]>>({});
+  const [classOptionsBySupplier, setClassOptionsBySupplier] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    if (!open) return;
+    fetch('/api/suppliers')
+      .then(r => r.json())
+      .then(d => setSuppliers(Array.isArray(d) ? d : []))
+      .catch(() => setSuppliers([]));
+  }, [open]);
 
   // Load serials when FROM changes
   useEffect(() => {
     rows.forEach((row, i) => {
       const fromKey = transferFromRole === "admin" ? "admin" : transferFromUser;
       if (row.bank && row.fastagClass && fromKey) {
-        const key = `${row.bank}-${row.fastagClass}-${fromKey}-${row.mapping||'pending'}`;
+        const key = `${row.bank}-${row.fastagClass}-${fromKey}-${row.supplierId||'any'}`;
         if (allSerialsCache[key]) {
           setRows(rows =>
             rows.map((r, idx) => idx === i
@@ -147,7 +158,8 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
         } else {
           let url = `/api/fastags/available?bank=${row.bank}&class=${row.fastagClass}`;
           if (fromKey !== "admin") url += `&assigned_to=${fromKey}`;
-          if (row.mapping && row.mapping !== 'all') url += `&mapping=${row.mapping}`;
+          // mapping acts as a SET value during transfer, not as a filter here
+          if (row.supplierId) url += `&supplier=${row.supplierId}`;
           fetch(url)
             .then(async res => {
               if (!res.ok) return [];
@@ -166,7 +178,7 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
       }
     });
     // eslint-disable-next-line
-  }, [rows.map(r => r.bank + r.fastagClass + (r.mapping||'')).join(","), transferFromRole, transferFromUser]);
+  }, [rows.map(r => r.bank + r.fastagClass + (r.supplierId||'')).join(","), transferFromRole, transferFromUser]);
 
   // Row handlers
   const getSelectedSerials = (bank, fastagClass, prefix, excludeIdx) => {
@@ -197,14 +209,14 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
     const fromKey = transferFromRole === "admin" ? "admin" : transferFromUser;
     setRows(rows => rows.map((row, idx) => {
       if (idx !== i) return row;
-      const key = `${row.bank}-${row.fastagClass}-${fromKey}-${(field === 'mapping' ? value : (row as any).mapping) || 'pending'}`;
+      const key = `${row.bank}-${row.fastagClass}-${fromKey}-${(field === 'supplierId' ? value : (row as any).supplierId) || 'any'}`;
       const allSerials = allSerialsCache[key] || [];
       const prefix = field === "prefix" ? value : row.prefix;
       const otherSelected = getSelectedSerials(row.bank, row.fastagClass, prefix, i);
       const availableSerials = allSerials.filter(s => !otherSelected.includes(s.tag_serial));
       const serialObjs = sortedSerials(availableSerials, prefix);
 
-      if (field === "bank" || field === "fastagClass") {
+      if (field === "supplierId" || field === "bank" || field === "fastagClass") {
         return {
           ...row,
           [field]: value,
@@ -216,16 +228,8 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
         };
       }
       if (field === "mapping") {
-        return {
-          ...row,
-          mapping: value,
-          // reset serial-related selections when mapping changes
-          prefix: row.prefix,
-          availableSerials,
-          startSerial: "",
-          endSerial: "",
-          quantity: 1
-        };
+        // mapping here only sets the value to be applied during transfer
+        return { ...row, mapping: value };
       }
       if (field === "prefix") {
         return {
@@ -330,7 +334,7 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
       const result = await res.json();
       if (result.success) {
         alert(`Total ${assignments.reduce((sum, a) => sum + a.serials.length, 0)} FASTags transferred.`);
-        setRows([{ bank: "", fastagClass: "", prefix: "", availableSerials: [], startSerial: "", endSerial: "", quantity: 1 }]);
+        setRows([{ supplierId: "", bank: "", fastagClass: "", prefix: "", availableSerials: [], startSerial: "", endSerial: "", quantity: 1, note: "", mapping: "pending" }]);
         onSuccess && onSuccess();
         onClose();
       } else {
@@ -430,18 +434,38 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
               ? getDynamicAvailable(rows, allSerialsCache, row, i, fromKey)
               : row.availableSerials.length;
 
-            return (
-              <div key={i} className="flex flex-wrap items-center gap-3">
+          return (
+            <div key={i} className="flex flex-wrap items-center gap-3">
+                <Select value={row.supplierId} onValueChange={async val => {
+                  handleRowChange(i, "supplierId", val);
+                  if (val && !bankOptionsBySupplier[val]) {
+                    try {
+                      const data = await fetch(`/api/fastags/distinct/banks?supplier=${val}`).then(r=>r.json()).catch(()=>[]);
+                      setBankOptionsBySupplier(prev => ({ ...prev, [val]: Array.isArray(data) ? data : [] }));
+                    } catch {}
+                  }
+                  if (val && !classOptionsBySupplier[val]) {
+                    try {
+                      const data = await fetch(`/api/fastags/distinct/classes?supplier=${val}`).then(r=>r.json()).catch(()=>[]);
+                      setClassOptionsBySupplier(prev => ({ ...prev, [val]: Array.isArray(data) ? data : [] }));
+                    } catch {}
+                  }
+                }}>
+                  <SelectTrigger className="w-40"><SelectValue placeholder="Supplier" /></SelectTrigger>
+                  <SelectContent>
+                    {suppliers.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
                 <Select value={row.bank} onValueChange={val => handleRowChange(i, "bank", val)}>
                   <SelectTrigger className="w-36"><SelectValue placeholder="Bank" /></SelectTrigger>
                   <SelectContent>
-                    {banks.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                    {(row.supplierId && bankOptionsBySupplier[row.supplierId] ? bankOptionsBySupplier[row.supplierId] : banks).map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Select value={row.fastagClass} onValueChange={val => handleRowChange(i, "fastagClass", val)}>
                   <SelectTrigger className="w-48"><SelectValue placeholder="Class" /></SelectTrigger>
                   <SelectContent>
-                    {classes.map(c => (
+                    {(row.supplierId && classOptionsBySupplier[row.supplierId] ? classOptionsBySupplier[row.supplierId] : classes).map(c => (
                       <SelectItem key={c} value={c}>{c}</SelectItem>
                     ))}
                   </SelectContent>
@@ -510,7 +534,6 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
                   <SelectContent>
                     <SelectItem value="pending">Mapping Pending</SelectItem>
                     <SelectItem value="done">Mapping Done</SelectItem>
-                    <SelectItem value="all">All</SelectItem>
                   </SelectContent>
                 </Select>
                 {rows.length > 1 && (

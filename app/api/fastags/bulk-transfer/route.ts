@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
         `assigned_at = NOW()`
       ];
       const params: any[] = [assignedToAgentId, statusValue];
-      if (hasBankMappingStatus) {
+      if (hasBankMappingStatus && (mappingValue === 'pending' || mappingValue === 'done')) {
         setParts.push(`bank_mapping_status = ?`);
         params.push(mappingValue);
       }

@@ -184,6 +184,10 @@ export async function GET(req: NextRequest) {
     conditions.push("f.status = ?");
     values.push(statusFilter);
   }
+  if (supplierFilter) {
+    conditions.push("COALESCE(f.supplier_id,0) = ?");
+    values.push(Number(supplierFilter));
+  }
   // Optional bank mapping status if column exists
   try {
     const hasMappingStatus = await hasTableColumn('fastags', 'bank_mapping_status');
@@ -191,7 +195,7 @@ export async function GET(req: NextRequest) {
     if (mappingFilter && (hasMappingStatus || hasMappingDone)) {
       if (hasMappingStatus) {
         if (mappingFilter === 'done') { conditions.push("f.bank_mapping_status = 'done'"); }
-        else if (mappingFilter === 'pending') { conditions.push("f.bank_mapping_status = 'pending'"); }
+        else if (mappingFilter === 'pending') { conditions.push("COALESCE(f.bank_mapping_status,'pending') = 'pending'"); }
       } else if (hasMappingDone) {
         if (mappingFilter === 'done') { conditions.push("f.mapping_done = 1"); }
         else if (mappingFilter === 'pending') { conditions.push("(f.mapping_done = 0 OR f.mapping_done IS NULL)"); }
