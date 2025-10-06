@@ -1,11 +1,12 @@
-// app/api/fastags/transfer/route.ts
+// app/api/agents/[id]/fastags/transfer/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { hasTableColumn } from "@/lib/db-helpers";
 
 export async function POST(req: NextRequest) {
   try {
-    const { from_agent_id, to_agent_id, class_type, batch_number } = await req.json();
+    const { from_agent_id, to_agent_id, class_type, batch_number, mapping } = await req.json();
 
     if (!from_agent_id || !to_agent_id || !class_type || !batch_number) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
@@ -23,11 +24,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No matching FASTags found for transfer." }, { status: 404 });
     }
 
-    // Update the agent assignment
+    // Update the agent assignment + status + dates
     const ids = fastags.map(tag => tag.id);
+    const statusValue = to_agent_id === null ? 'in_stock' : 'assigned';
+
+    // Optional mapping status when provided
+    const mappingRaw = typeof mapping === 'string' ? String(mapping).toLowerCase() : '';
+    const mappingValue = mappingRaw === 'done' ? 'done' : (mappingRaw === 'pending' ? 'pending' : null);
+    let hasMappingStatus = false;
+    try { hasMappingStatus = await hasTableColumn('fastags', 'bank_mapping_status'); } catch {}
+
+    const setParts: string[] = [
+      `assigned_to_agent_id = ?`,
+      `status = ?`,
+      `assigned_date = CURDATE()`,
+      `assigned_at = NOW()`
+    ];
+    const params: any[] = [to_agent_id, statusValue];
+    if (hasMappingStatus && (mappingValue === 'pending' || mappingValue === 'done')) {
+      setParts.push(`bank_mapping_status = ?`);
+      params.push(mappingValue);
+    }
     await pool.query(
-      `UPDATE fastags SET assigned_to_agent_id = ? WHERE id IN (${ids.map(() => '?').join(',')})`,
-      [to_agent_id, ...ids]
+      `UPDATE fastags SET ${setParts.join(', ')} WHERE id IN (${ids.map(() => '?').join(',')})`,
+      [...params, ...ids]
     );
 
     return NextResponse.json({ success: true, transferred: ids.length });

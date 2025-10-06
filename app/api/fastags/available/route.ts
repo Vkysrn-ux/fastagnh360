@@ -9,6 +9,7 @@ export async function GET(req: NextRequest) {
   const fastagClass = searchParams.get("class");
   const assignedTo = searchParams.get("assigned_to");
   const mapping = (searchParams.get("mapping") || '').toLowerCase();
+  const supplier = (searchParams.get("supplier") || '').trim();
 
   if (!bank || !fastagClass) {
     return NextResponse.json([], { status: 200 });
@@ -16,6 +17,11 @@ export async function GET(req: NextRequest) {
 
   let sql = "SELECT tag_serial FROM fastags WHERE bank_name = ? AND fastag_class = ? ";
   let params: any[] = [bank, fastagClass];
+
+  if (supplier) {
+    sql += "AND COALESCE(supplier_id,0) = ? ";
+    params.push(Number(supplier));
+  }
 
   // Optional mapping filters if columns exist
   try {
@@ -26,7 +32,7 @@ export async function GET(req: NextRequest) {
         if (hasMappingStatus) sql += "AND bank_mapping_status = 'done' ";
         else if (hasMappingDone) sql += "AND COALESCE(mapping_done,0)=1 ";
       } else if (mapping === 'pending') {
-        if (hasMappingStatus) sql += "AND bank_mapping_status = 'pending' ";
+        if (hasMappingStatus) sql += "AND COALESCE(bank_mapping_status,'pending') = 'pending' ";
         else if (hasMappingDone) sql += "AND COALESCE(mapping_done,0)=0 ";
       }
     }
