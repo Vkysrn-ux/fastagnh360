@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
@@ -138,9 +138,13 @@ export default function TicketListPage() {
     const total = base.length;
     const pending = base.filter((t) => toLower(t.status) === 'open').length;
     const closed = base.filter((t) => isClosedLike(t)).length;
+    const cancelled = base.filter((t) => toLower(t.status) === 'cancelled').length;
     const fastagSold = base.filter((t: any) => !!t.fastag_serial && isClosedLike(t)).length;
     const fastagUsedNotClosed = base.filter((t: any) => !!t.fastag_serial && !isClosedLike(t)).length;
-    const active = base.filter((t) => !isClosedLike(t)).length;
+    const active = base.filter((t) => {
+      const st = toLower(t.status);
+      return !isClosedLike(t) && st !== 'cancelled';
+    }).length;
     const fastagUsedAll = (() => {
       const set = new Set<string>();
       for (const t of base as any[]) {
@@ -149,7 +153,7 @@ export default function TicketListPage() {
       }
       return set.size;
     })();
-    return { total, pending, closed, fastagSold, fastagUsedNotClosed, fastagUsedAll, active };
+    return { total, pending, closed, cancelled, fastagSold, fastagUsedNotClosed, fastagUsedAll, active };
   }, [tickets, allTickets]);
 
   const filteredTickets = React.useMemo(() => {
@@ -219,7 +223,7 @@ export default function TicketListPage() {
       </div>
 
       {/* Quick stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-3 mb-4">
         <div className="rounded border p-4 text-center">
           <div className="text-xs text-gray-500">Total</div>
           <div className="text-xl font-semibold">{stats.total}</div>
@@ -231,6 +235,10 @@ export default function TicketListPage() {
         <div className="rounded border p-4 text-center">
           <div className="text-xs text-gray-500">Closed</div>
           <div className="text-xl font-semibold">{stats.closed}</div>
+        </div>
+        <div className="rounded border p-4 text-center">
+          <div className="text-xs text-gray-500">Cancelled</div>
+          <div className="text-xl font-semibold">{stats.cancelled}</div>
         </div>
         <div className="rounded border p-4 text-center">
           <div className="text-xs text-gray-500">FASTag Sold</div>
@@ -272,6 +280,7 @@ export default function TicketListPage() {
                 <SelectItem value="waiting">Waiting</SelectItem>
                 <SelectItem value="closed">Closed</SelectItem>
                 <SelectItem value="completed">Completed</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -419,7 +428,7 @@ export default function TicketListPage() {
                       <div className="text-xs text-gray-500">{(ticket as any).fastag_bank || (ticket as any).bank_name || '-'}</div>
                       {ticket.details && (
                         <div className="text-sm text-gray-500 truncate max-w-xs">
-                          {ticket.details}
+                          {ticket.details.length > 20 ? `${ticket.details.slice(0, 20)}...` : ticket.details}
                         </div>
                       )}
                     </div>
@@ -725,7 +734,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     if (missing.length) {
       return {
         ok: false,
-        message: `Cannot mark as Completed/Closed. Please complete: ${missing.join(', ')}.`,
+        message: `Cannot mark as Completed. Please complete: ${missing.join(', ')}.`,
       };
     }
     return { ok: true };
@@ -949,11 +958,16 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
         if (!ma) return { ok: false, reason: 'invalid_alt' };
         altNorm = ma[1];
       }
-      if (!!f.payment_received && String((f as any).paid_via || '').trim() === 'Pending') {
+      if (!(String(f.status || '').toLowerCase() === 'cancelled') && !!f.payment_received && String(((f as any).paid_via || '')).trim() === 'Pending') {
         return { ok: false, reason: 'paid_via_pending' };
       }
-      // If trying to move to a closed-like status, ensure all close requirements are met
-      if (isCloseLikeStatus(f.status)) {
+      // If cancelling: require details
+      const statusLower = String(f.status || '').toLowerCase();
+      if (statusLower === 'cancelled' && !String(f.details || '').trim()) {
+        return { ok: false, reason: 'cancel_details_required' } as any;
+      }
+      // Only enforce for 'completed' now
+      if (statusLower === 'completed') {
         const chk = validateCloseRequirements(f);
         if (!chk.ok) return { ok: false, reason: 'close_requirements' };
       }
@@ -1079,21 +1093,28 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
       const altStr = String(form.alt_phone || "");
       const re = /^(?:\+?91[\-\s]?|0)?([6-9]\d{9})$/;
       const m = phoneStr.match(re);
-      if (!m) { setError("Enter a valid 10-digit mobile (starts 6–9)"); setSaving(false); return; }
+      if (!m) { setError("Enter a valid 10-digit mobile (starts 6â€“9)"); setSaving(false); return; }
       let altNorm: string | null = null;
       if (altStr.trim() !== "") {
         const ma = altStr.match(re);
-        if (!ma) { setError("Enter a valid 10-digit alt mobile (starts 6–9)"); setSaving(false); return; }
+        if (!ma) { setError("Enter a valid 10-digit alt mobile (starts 6â€“9)"); setSaving(false); return; }
         altNorm = ma[1];
       }
-      // Business rule: if payment is received, Paid via cannot be 'Pending'
-      if (!!form.payment_received && String((form as any).paid_via || '').trim() === 'Pending') {
+      const statusLower = String(form.status || '').toLowerCase();
+      // Business rule: if payment is received, Paid via cannot be 'Pending' (skip when cancelling)
+      if (statusLower !== 'cancelled' && !!form.payment_received && String((form as any).paid_via || '').trim() === 'Pending') {
         setError("Paid via cannot be 'Pending' when Payment Received is checked.");
         setSaving(false);
         return;
       }
-      // If status is being set to Closed/Completed, enforce close requirements
-      if (isCloseLikeStatus(form.status)) {
+      // If cancelling: require details
+      if (statusLower === 'cancelled' && !String(form.details || '').trim()) {
+        setError('Please add details/reason before cancelling.');
+        setSaving(false);
+        return;
+      }
+      // Only enforce close requirements when marking Completed
+      if (statusLower === 'completed') {
         const chk = validateCloseRequirements(form);
         if (!chk.ok) {
           setError(chk.message || 'Please complete required fields before closing.');
@@ -1309,7 +1330,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
                           setFastagOptions([]);
                         }}
                       >
-                        {row.tag_serial} — {row.bank_name} / {row.fastag_class}
+                        {row.tag_serial} â€” {row.bank_name} / {row.fastag_class}
                       </div>
                     ))}
                   </div>
@@ -1402,10 +1423,15 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
                   value={form.status}
                   onChange={(e) => {
                     const next = e.target.value;
-                    if (isCloseLikeStatus(next)) {
+                    if (next === 'Cancelled') {
+                      // Allow cancelling without checklist; details enforced on save
+                      setForm({ ...form, status: next });
+                      return;
+                    }
+                    if (next === 'Completed') {
                       const chk = validateCloseRequirements({ ...(form as any), status: next } as any);
                       if (!chk.ok) {
-                        alert(chk.message || 'Cannot mark as Completed/Closed until requirements are met.');
+                        alert(chk.message || 'Cannot mark as Completed until requirements are met.');
                         return;
                       }
                     }
@@ -1414,6 +1440,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
                 >
                   <option>Open</option>
                   <option>Completed</option>
+                  <option>Cancelled</option>
                 </select>
               </div>
             </div>
@@ -1477,7 +1504,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
         </div>
         {error && <div className="text-sm text-red-600 mt-2">{error}</div>}
         <div className="text-xs mt-1">
-          {autoSaving && <span className="text-gray-500">Auto-saving…</span>}
+          {autoSaving && <span className="text-gray-500">Auto-savingâ€¦</span>}
           {!autoSaving && autoSavedAt && !autoSaveError && (
             <span className="text-gray-500">Auto-saved at {new Date(autoSavedAt).toLocaleTimeString()}</span>
           )}
@@ -1493,6 +1520,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     </Dialog>
   );
 }
+
 
 
 

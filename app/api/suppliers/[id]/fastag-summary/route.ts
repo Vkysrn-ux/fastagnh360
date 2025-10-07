@@ -16,15 +16,18 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       WHERE supplier_id = ?
     `, [supplierId]);
 
-    // Grouped by bank and class
+    // Grouped by bank and class including status splits
     const [grouped] = await pool.query(`
       SELECT
-        bank_name,
-        fastag_class,
-        COUNT(*) AS total_count
+        COALESCE(bank_name,'') AS bank_name,
+        COALESCE(fastag_class,'') AS fastag_class,
+        COUNT(*) AS total_count,
+        SUM(CASE WHEN status = 'assigned' THEN 1 ELSE 0 END) AS assigned_count,
+        SUM(CASE WHEN status = 'in_stock' THEN 1 ELSE 0 END) AS in_stock_count,
+        SUM(CASE WHEN status = 'sold' THEN 1 ELSE 0 END) AS sold_count
       FROM fastags
       WHERE supplier_id = ?
-      GROUP BY bank_name, fastag_class
+      GROUP BY COALESCE(bank_name,''), COALESCE(fastag_class,'')
       ORDER BY bank_name, fastag_class
     `, [supplierId]);
 

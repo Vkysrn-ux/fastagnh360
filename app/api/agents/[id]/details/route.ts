@@ -75,14 +75,15 @@ export async function GET(
     try {
       const [groups] = await pool.query(
         `SELECT 
-            COALESCE(s.bank_name, '') AS bank_name,
+            COALESCE(NULLIF(s.bank_name,''), f.bank_name, '') AS bank_name,
             CASE 
               WHEN s.tag_serial LIKE '%-%-%' THEN SUBSTRING_INDEX(s.tag_serial, '-', 2)
               ELSE ''
             END AS serial_prefix,
-            COALESCE(s.fastag_class, '') AS fastag_class,
-            COUNT(*) AS sold_count
+            COALESCE(NULLIF(s.fastag_class,''), f.fastag_class, '') AS fastag_class,
+            COUNT(DISTINCT s.tag_serial) AS sold_count
          FROM fastag_sales s
+         LEFT JOIN fastags f ON (f.tag_serial COLLATE utf8mb4_general_ci) = (s.tag_serial COLLATE utf8mb4_general_ci)
          WHERE s.sold_by_user_id = ? OR s.sold_by_agent_id = ?
          GROUP BY bank_name, serial_prefix, fastag_class`,
         [agentId, agentId]
@@ -97,11 +98,11 @@ export async function GET(
                 ELSE ''
               END AS serial_prefix,
               COALESCE(f.fastag_class, '') AS fastag_class,
-              COUNT(*) AS sold_count
+              COUNT(DISTINCT f.tag_serial) AS sold_count
            FROM fastags f
-           WHERE f.status = 'sold' AND f.sold_by_user_id = ?
+           WHERE f.status = 'sold' AND (f.sold_by_user_id = ? OR f.assigned_to_agent_id = ?)
            GROUP BY bank_name, serial_prefix, fastag_class`,
-          [agentId]
+          [agentId, agentId]
         );
         salesGroups = Array.isArray(fallback) ? (fallback as any[]) : [];
       }

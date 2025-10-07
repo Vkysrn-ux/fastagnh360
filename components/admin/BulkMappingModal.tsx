@@ -29,6 +29,9 @@ export default function BulkMappingModal({ onSuccess }: { onSuccess?: () => void
   const [filterClass, setFilterClass] = useState('');
   const [mapping, setMapping] = useState<'pending'|'done'|'all'>('pending');
   const [loadingList, setLoadingList] = useState(false);
+  // Supplier filter
+  const [suppliers, setSuppliers] = useState<Array<{ id: number; name: string }>>([]);
+  const [supplierId, setSupplierId] = useState<string>("");
 
   function resetState() {
     setRows([]);
@@ -42,6 +45,7 @@ export default function BulkMappingModal({ onSuccess }: { onSuccess?: () => void
       let url = '/api/fastags?';
       const params: string[] = [];
       if (mapping && mapping !== 'all') params.push(`mapping=${encodeURIComponent(mapping)}`);
+      if (supplierId) params.push(`supplier=${encodeURIComponent(supplierId)}`);
       // Owner/Admin selection
       if (filterMode === 'owner') {
         if (!owner) { setRows([]); setChecked({}); setLoadingList(false); return; }
@@ -78,7 +82,18 @@ export default function BulkMappingModal({ onSuccess }: { onSuccess?: () => void
     if (!open) return;
     loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [owner?.id, filterMode, filterBank, filterClass, mapping, open]);
+  }, [owner?.id, filterMode, filterBank, filterClass, mapping, supplierId, open]);
+
+  // Load suppliers once when modal opens
+  useEffect(() => {
+    if (!open) return;
+    fetch('/api/suppliers')
+      .then(r => r.json())
+      .then((rows) => {
+        setSuppliers(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => setSuppliers([]));
+  }, [open]);
 
   async function updateMapping(status: 'pending' | 'done') {
     const list = Object.entries(checked).filter(([, v]) => v).map(([k]) => k);
@@ -135,6 +150,16 @@ export default function BulkMappingModal({ onSuccess }: { onSuccess?: () => void
                   </div>
                 </>
               )}
+              {/* Supplier filter (applies in both modes) */}
+              <div>
+                <label className="block text-xs mb-1">Supplier</label>
+                <select className="border rounded px-2 py-2 min-w-[200px]" value={supplierId} onChange={(e)=> setSupplierId(e.target.value)}>
+                  <option value="">All</option>
+                  {suppliers.map(s => (
+                    <option key={s.id} value={String(s.id)}>{s.name}</option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="block text-xs mb-1">Mapping</label>
                 <select className="border rounded px-2 py-2" value={mapping} onChange={(e)=> setMapping(e.target.value as any)}>

@@ -61,6 +61,11 @@ export async function loginUser(email: string, password: string) {
 
   // Only real DB-backed login (no mock fallback)
   const dbRes = await loginUserServer(email, password)
+  if (dbRes && (dbRes as any).success) {
+    const user = (dbRes as any).user || null
+    const userType = user?.userType || (user?.displayRole ? (user.displayRole === 'Accountant/HR' ? 'employee' : 'admin') : undefined)
+    return { ...dbRes, userType }
+  }
   return dbRes
 }
 
@@ -88,7 +93,7 @@ export async function getUserSession() {
 // Legacy functions for backward compatibility
 export async function loginAgent(email: string, password: string) {
   const result = await loginUser(email, password)
-  if (result.success && result.userType === "agent") {
+  if (result.success && (result as any).userType === "agent") {
     return { success: true, agent: { id: "agent-1", name: "John Doe", email: email } }
   }
   return { success: false, message: "Invalid agent credentials" }
@@ -96,7 +101,7 @@ export async function loginAgent(email: string, password: string) {
 
 export async function loginAdmin(email: string, password: string) {
   const result = await loginUser(email, password)
-  if (result.success && result.userType === "admin") {
+  if (result.success && (result as any).userType === "admin") {
     return { success: true, admin: { id: "admin-1", name: "Admin User", email: email, role: "Super Admin" } }
   }
   return { success: false, message: "Invalid admin credentials" }
@@ -104,7 +109,7 @@ export async function loginAdmin(email: string, password: string) {
 
 export async function loginEmployee(email: string, password: string) {
   const result = await loginUser(email, password)
-  if (result.success && result.userType === "employee") {
+  if (result.success && (result as any).userType === "employee") {
     return {
       success: true,
       employee: { id: "emp-1", name: "Employee User", email: email, role: "Sales Executive" },

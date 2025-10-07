@@ -1,4 +1,4 @@
-// app/api/tickets/route.ts
+﻿// app/api/tickets/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUserSession } from "@/lib/getSession";
@@ -7,6 +7,26 @@ import { hasTableColumn } from "@/lib/db-helpers";
 import type { PoolConnection } from "mysql2/promise";
 
 const TICKETS_TABLE = "tickets_nh";
+
+// Ensure DB enum for status includes 'cancelled'
+async function ensureStatusEnumHasCancelled() {
+  try {
+    const [rows]: any = await pool.query(
+      `SELECT COLUMN_TYPE FROM information_schema.COLUMNS 
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'status' 
+         LIMIT 1`,
+      [TICKETS_TABLE]
+    );
+    const ct = String(rows?.[0]?.COLUMN_TYPE || '').toLowerCase();
+    if (ct.startsWith("enum(") && !ct.includes("'cancelled'")) {
+      await pool.query(
+        `ALTER TABLE ${TICKETS_TABLE} 
+           MODIFY COLUMN status ENUM('open','in_progress','completed','closed','cancelled') 
+           NOT NULL DEFAULT 'open'`
+      );
+    }
+  } catch {}
+}
 
 function normalizeStatus(val: any): string | null {
   if (val === null || val === undefined) return null;
@@ -30,8 +50,8 @@ function normalizeStatus(val: any): string | null {
     "resolved": "completed",
 
     "closed": "closed",
-    "cancelled": "closed",
-    "cust cancelled": "closed",
+    "cancelled": "cancelled",
+    "cust cancelled": "cancelled",
   };
   return map[s] || s || null;
 }
@@ -168,6 +188,15 @@ async function recordFastagSale(opts: {
           created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
       `);
+    } catch {}
+
+    // Skip if we already recorded a sale for this serial (de-dup)
+    try {
+      const [existsRows]: any = await conn.query(
+        `SELECT 1 FROM fastag_sales WHERE (tag_serial COLLATE utf8mb4_general_ci) = (? COLLATE utf8mb4_general_ci) LIMIT 1`,
+        [serial]
+      );
+      if (Array.isArray(existsRows) && existsRows.length) return;
     } catch {}
 
     const [rows]: any = await conn.query(
@@ -388,6 +417,7 @@ export async function GET(req: NextRequest) {
 // 1) Create a single SUB-TICKET if body has parent_ticket_id.
 // 2) Otherwise create a PARENT ticket (and optional sub_issues[]).
 export async function POST(req: NextRequest) {
+  await ensureStatusEnumHasCancelled();
   const data = await req.json();
 
   const {
@@ -659,18 +689,23 @@ export async function POST(req: NextRequest) {
 
       const [r]: any = await conn.query(childInsert, childValues);
 
-      await markFastagAsUsed(conn, effectiveFastagSerial, effectiveVehicle);
-      await recordFastagSale({
-        conn,
-        tagSerial: effectiveFastagSerial,
-        ticketId: Number(r.insertId),
-        vehicleRegNo: effectiveVehicle,
-        assignedToUserId: effectiveAssignedTo ? Number(effectiveAssignedTo) : null,
-        payment_to_collect: c_ptc,
-        payment_to_send: c_pts,
-        net_value: c_net,
-        commission_amount: childCommission,
-      });
+      // Only finalize FASTag sale immediately if sub-ticket is created as closed/completed
+      try {
+        if (effectiveStatus === 'closed' || effectiveStatus === 'completed') {
+          await markFastagAsUsed(conn, effectiveFastagSerial, effectiveVehicle);
+          await recordFastagSale({
+            conn,
+            tagSerial: effectiveFastagSerial,
+            ticketId: Number(r.insertId),
+            vehicleRegNo: effectiveVehicle,
+            assignedToUserId: effectiveAssignedTo ? Number(effectiveAssignedTo) : null,
+            payment_to_collect: c_ptc,
+            payment_to_send: c_pts,
+            net_value: c_net,
+            commission_amount: childCommission,
+          });
+        }
+      } catch {}
       await recordMoneyLedger({
         conn,
         refType: 'ticket',
@@ -1027,6 +1062,7 @@ export async function POST(req: NextRequest) {
 // PATCH: update selected fields
 export async function PATCH(req: NextRequest) {
   try {
+    await ensureStatusEnumHasCancelled();
     const data = await req.json();
 
     if (!data.id) {
@@ -1041,6 +1077,18 @@ export async function PATCH(req: NextRequest) {
     const includePaidVia = await hasTableColumn(TICKETS_TABLE, 'paid_via');
     const includeNpci = await hasTableColumn(TICKETS_TABLE, 'npci_status');
     const includeAltVRN = await hasTableColumn(TICKETS_TABLE, 'alt_vehicle_reg_no');
+    // Detect whether the DB enum supports 'cancelled' as a value
+    let statusEnumIncludesCancelled = false;
+    try {
+      const [rows]: any = await pool.query(
+        `SELECT COLUMN_TYPE FROM information_schema.COLUMNS 
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = 'status' 
+           LIMIT 1`,
+        [TICKETS_TABLE]
+      );
+      const ct = String(rows?.[0]?.COLUMN_TYPE || '').toLowerCase();
+      statusEnumIncludesCancelled = ct.includes("'cancelled'");
+    } catch {}
     const allowedFields = [
       "vehicle_reg_no",
       "alt_vehicle_reg_no",
@@ -1091,7 +1139,8 @@ export async function PATCH(req: NextRequest) {
     // Enforce close rules if status is being set to closed or completed
     if (typeof data.status !== 'undefined') {
       const desired = normalizeStatus(data.status) || '';
-      if (desired === 'closed' || desired === 'completed') {
+      // For cancelled: allow without details and skip checks\n      if (desired === 'cancelled') { /* no-op */ }
+      if (desired === 'completed') {
         const [rows]: any = await pool.query(
           `SELECT payment_received, payment_nil, delivery_done, delivery_nil, kyv_status, 
                   lead_commission_paid, lead_commission_nil, pickup_commission_paid, pickup_commission_nil
@@ -1122,7 +1171,7 @@ export async function PATCH(req: NextRequest) {
     const cur = rows?.[0] || {};
     const finalReceived = includePaymentReceived ? (typeof (data as any).payment_received !== 'undefined' ? !!(data as any).payment_received : !!cur.payment_received) : !!cur.payment_received;
     const finalVia = includePaidVia ? (typeof (data as any).paid_via !== 'undefined' ? normalizePaidVia((data as any).paid_via) : (cur.paid_via ?? 'Pending')) : (cur.paid_via ?? 'Pending');
-    if (finalReceived && finalVia === 'Pending') {
+    const desiredNow = normalizeStatus((data as any).status); if (!(desiredNow === 'cancelled') && finalReceived && finalVia === 'Pending') {
       return NextResponse.json({ error: "Paid via cannot be 'Pending' when Payment Received is checked." }, { status: 400 });
     }
   } catch {}
@@ -1133,7 +1182,9 @@ export async function PATCH(req: NextRequest) {
       if (typeof data[field] !== "undefined") {
         updates.push(`${field} = ?`);
         if (field === "status") {
-          values.push(normalizeStatus(data[field]) || "open");
+          const norm = normalizeStatus(data[field]) || "open";
+          const finalStatus = (norm === 'cancelled' && !statusEnumIncludesCancelled) ? 'closed' : norm;
+          values.push(finalStatus);
         } else if (field === "kyv_status") {
           values.push(normalizeKyv(data[field]) || null);
         } else if (field === "phone" || field === "alt_phone") {
@@ -1157,11 +1208,12 @@ export async function PATCH(req: NextRequest) {
       values
     );
 
-    // After successful update, if ticket is transitioning to 'closed', mark FASTag sold and record sale
+    // After successful update, if ticket is transitioning to 'closed' or 'completed', mark FASTag sold and record sale
     try {
       if (typeof data.status !== 'undefined') {
-        const desired = normalizeStatus(data.status) || '';
-        if (desired === 'closed' || desired === 'completed') {
+        const desiredOrig = normalizeStatus(data.status) || '';
+        const shouldFinalizeSale = (desiredOrig === 'closed' || desiredOrig === 'completed') && desiredOrig !== 'cancelled';
+        if (shouldFinalizeSale) {
           // Load updated ticket essentials
           const [rows]: any = await pool.query(
             `SELECT id, fastag_serial, vehicle_reg_no, assigned_to, payment_to_collect, payment_to_send, net_value, commission_amount FROM ${TICKETS_TABLE} WHERE id = ? LIMIT 1`,
@@ -1199,4 +1251,10 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
+
+
+
+
+
+
 
