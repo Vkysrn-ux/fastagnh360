@@ -106,12 +106,42 @@ function FastagDashboard({ fastags, agents }: { fastags: any[]; agents: any[] })
   }, [fastags]);
 
   const [sellerRows, setSellerRows] = useState<{ user_id: number | null; name: string; sold_count: number }[]>([]);
+  // Sellers by Class UI state
+  const [classOptions, setClassOptions] = useState<string[]>([]);
+  const [bankOptions, setBankOptions] = useState<string[]>([]);
+  const [sellerClass, setSellerClass] = useState<string>("");
+  const [sellerBank, setSellerBank] = useState<string>("");
+  const [sellersByClass, setSellersByClass] = useState<{ user_id: number | null; name: string; sold_count: number }[]>([]);
   useEffect(() => {
     fetch('/api/fastags/sales/by-seller?limit=10')
       .then(r => r.json())
       .then(data => setSellerRows(Array.isArray(data) ? data : []))
       .catch(() => setSellerRows([]));
   }, []);
+
+  // Load filter options for sellers-by-class
+  useEffect(() => {
+    fetch('/api/fastags/classes')
+      .then(r => r.json())
+      .then(d => setClassOptions(Array.isArray(d) ? d : []))
+      .catch(() => setClassOptions([]));
+    fetch('/api/fastags/distinct/banks')
+      .then(r => r.json())
+      .then(d => setBankOptions(Array.isArray(d) ? d : []))
+      .catch(() => setBankOptions([]));
+  }, []);
+
+  // Load sellers for chosen class/bank
+  useEffect(() => {
+    if (!sellerClass) { setSellersByClass([]); return; }
+    const params = new URLSearchParams();
+    params.set('class', sellerClass);
+    if (sellerBank) params.set('bank', sellerBank);
+    fetch(`/api/fastags/sales/by-class?${params.toString()}`)
+      .then(r => r.json())
+      .then(rows => setSellersByClass(Array.isArray(rows) ? rows : []))
+      .catch(() => setSellersByClass([]));
+  }, [sellerClass, sellerBank]);
 
   return (
     <div className="p-4">
@@ -195,6 +225,43 @@ function FastagDashboard({ fastags, agents }: { fastags: any[]; agents: any[] })
               <Bar dataKey="count" fill="#a569bd" />
             </BarChart>
           </ResponsiveContainer>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h2 className="font-semibold text-lg mb-3">Who Sold by Class</h2>
+          <div className="flex flex-wrap gap-2 mb-3">
+            <select className="border rounded px-2 py-2" value={sellerClass} onChange={e=> setSellerClass(e.target.value)}>
+              <option value="">Select Class</option>
+              {classOptions.map(c => (<option key={c} value={c}>{c}</option>))}
+            </select>
+            <select className="border rounded px-2 py-2" value={sellerBank} onChange={e=> setSellerBank(e.target.value)}>
+              <option value="">All Banks</option>
+              {bankOptions.map(b => (<option key={b} value={b}>{b}</option>))}
+            </select>
+          </div>
+          {!sellerClass ? (
+            <div className="text-sm text-muted-foreground">Pick a class to see sellers.</div>
+          ) : sellersByClass.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No sellers found for this class.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="text-left p-2">Seller</th>
+                    <th className="text-left p-2">Sold</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sellersByClass.map((r, i) => (
+                    <tr key={(r.user_id ?? 'null') + '-' + i} className={i % 2 ? 'bg-gray-50' : ''}>
+                      <td className="p-2">{r.name || `User #${r.user_id ?? ''}`}</td>
+                      <td className="p-2">{r.sold_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>

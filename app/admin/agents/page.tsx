@@ -504,6 +504,40 @@ export default function AdminAgentsPage() {
                         <b>Reassigned to Others:</b> {agentDetails?.reassigned_fastags ?? 0}
                       </div>
                     </div>
+                    {/* --- SOLD BY CLASS (aggregated) --- */}
+                    {(() => {
+                      if (!agentDetails || !Array.isArray(agentDetails.sales_groups)) return null;
+                      const classTotals: Record<string, number> = {};
+                      agentDetails.sales_groups.forEach((g: any) => {
+                        const clsRaw = String(g.fastag_class || '').trim();
+                        const classType = clsRaw ? clsRaw.replace(/^class/i, 'Class ') : 'Unknown';
+                        classTotals[classType] = (classTotals[classType] || 0) + Number(g.sold_count || 0);
+                      });
+                      const rows = Object.entries(classTotals).map(([cls, count]) => ({ cls, count })).sort((a,b)=> a.cls.localeCompare(b.cls));
+                      if (rows.length === 0) return null;
+                      return (
+                        <div className="mb-6">
+                          <h3 className="font-semibold mb-2">Sold by Class</h3>
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Class</TableHead>
+                                <TableHead>Sold</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {rows.map(r => (
+                                <TableRow key={r.cls}>
+                                  <TableCell>{r.cls}</TableCell>
+                                  <TableCell>{r.count}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      );
+                    })()}
+
                     {/* --- SUMMARY TABLE --- */}
                     <div className="overflow-auto max-h-96">
                       <h3 className="font-semibold mb-2">FASTag Summary By Bank, Serial Prefix & Class</h3>

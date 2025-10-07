@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
     const [rows] = await pool.query(
       `SELECT COALESCE(s.sold_by_user_id, s.sold_by_agent_id) AS user_id,
               COALESCE(u.name, '') AS name,
-              COUNT(*) AS sold_count
+              COUNT(DISTINCT (s.tag_serial)) AS sold_count
        FROM fastag_sales s
        LEFT JOIN users u ON u.id = COALESCE(s.sold_by_user_id, s.sold_by_agent_id)
        ${whereSql}

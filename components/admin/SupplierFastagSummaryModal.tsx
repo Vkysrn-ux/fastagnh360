@@ -9,9 +9,9 @@ const formatCurrency = (n: number | string) =>
 // --- Export functions ---
 function exportGroupedToCSV(grouped: any[], supplierName: string) {
   if (!grouped || !grouped.length) return;
-  const header = ['Bank', 'Class', 'Total Count'];
+  const header = ['Bank', 'Class', 'Total Count', 'Assigned', 'In Stock', 'Sold'];
   const rows = grouped.map(row =>
-    [row.bank_name, row.fastag_class, row.total_count]
+    [row.bank_name, row.fastag_class, row.total_count, row.assigned_count || 0, row.in_stock_count || 0, row.sold_count || 0]
   );
   const csvContent = [
     header.join(','),
@@ -31,8 +31,8 @@ function exportGroupedToCSV(grouped: any[], supplierName: string) {
 function exportGroupedToExcel(grouped: any[], supplierName: string) {
   if (!grouped || !grouped.length) return;
   const wsData = [
-    ['Bank', 'Class', 'Total Count'],
-    ...grouped.map(row => [row.bank_name, row.fastag_class, row.total_count])
+    ['Bank', 'Class', 'Total Count', 'Assigned', 'In Stock', 'Sold'],
+    ...grouped.map(row => [row.bank_name, row.fastag_class, row.total_count, row.assigned_count || 0, row.in_stock_count || 0, row.sold_count || 0])
   ];
   const ws = XLSX.utils.aoa_to_sheet(wsData);
   const wb = XLSX.utils.book_new();
@@ -59,8 +59,8 @@ async function exportGroupedToPDF(grouped: any[], supplierName: string) {
   // @ts-ignore
   doc.autoTable({
     startY: 25,
-    head: [['Bank', 'Class', 'Total Count']],
-    body: grouped.map(row => [row.bank_name, row.fastag_class, row.total_count]),
+    head: [['Bank', 'Class', 'Total Count', 'Assigned', 'In Stock', 'Sold']],
+    body: grouped.map(row => [row.bank_name, row.fastag_class, row.total_count, row.assigned_count || 0, row.in_stock_count || 0, row.sold_count || 0]),
   });
   doc.save(`FASTag-Summary-${supplierName || "Supplier"}.pdf`);
 }
@@ -164,12 +164,15 @@ export default function SupplierFastagSummaryModal({
                   <TableHead>Bank</TableHead>
                   <TableHead>Class</TableHead>
                   <TableHead>Total Count</TableHead>
+                  <TableHead>Assigned</TableHead>
+                  <TableHead>In Stock</TableHead>
+                  <TableHead>Sold</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data.grouped.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center">
+                    <TableCell colSpan={6} className="text-center">
                       No data available.
                     </TableCell>
                   </TableRow>
@@ -179,6 +182,9 @@ export default function SupplierFastagSummaryModal({
                       <TableCell>{item.bank_name}</TableCell>
                       <TableCell>{item.fastag_class}</TableCell>
                       <TableCell>{item.total_count}</TableCell>
+                      <TableCell>{item.assigned_count ?? 0}</TableCell>
+                      <TableCell>{item.in_stock_count ?? 0}</TableCell>
+                      <TableCell>{item.sold_count ?? 0}</TableCell>
                     </TableRow>
                   ))
                 )}

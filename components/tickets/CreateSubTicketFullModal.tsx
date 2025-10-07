@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -392,7 +392,7 @@ export default function CreateSubTicketFullModal({
       return;
     }
     // Business rule: if payment is received, Paid via cannot be 'Pending'
-    if (paymentReceived && String(paidVia).trim() === 'Pending') {
+    if (!(String(form.status || '').toLowerCase() === 'cancelled') && paymentReceived && String(paidVia).trim() === 'Pending') {
       setError("Paid via cannot be 'Pending' when Payment Received is checked.");
       return;
     }
@@ -422,8 +422,9 @@ export default function CreateSubTicketFullModal({
       const deliveryOK = !!deliveryDone || !!deliveryNil;
       const allOK = paymentOK && leadOK && pickupOK && kyvOK && deliveryOK;
       let chosenStatus = form.status;
-      if (String(form.status).toLowerCase() === 'closed' && !allOK) {
-        setError('Cannot mark ticket Closed until Payment, Lead Commission, Pickup Commission, KYV and Delivery conditions are satisfied.');
+      const statusLower = String(form.status || '').toLowerCase();
+      if (statusLower === 'completed' && !allOK) {
+        setError('Cannot mark ticket Completed until Payment, Lead Commission, Pickup Commission, KYV and Delivery conditions are satisfied.');
         setSaving(false);
         return;
       }
@@ -772,7 +773,7 @@ export default function CreateSubTicketFullModal({
                 <div className="mt-1 max-h-40 overflow-auto border rounded">
                   {fastagOptions.map((row) => (
                     <div key={row.id} className="px-3 py-2 cursor-pointer hover:bg-orange-50 border-b last:border-b-0" onMouseDown={() => pickFastag(row)}>
-                      {row.tag_serial} — {row.bank_name} / {row.fastag_class}
+                      {row.tag_serial} - {row.bank_name} / {row.fastag_class}
                     </div>
                   ))}
                 </div>
@@ -858,4 +859,8 @@ export default function CreateSubTicketFullModal({
     </Dialog>
   );
 }
+
+
+
+
 
