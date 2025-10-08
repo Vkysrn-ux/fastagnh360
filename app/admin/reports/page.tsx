@@ -16,6 +16,11 @@ const CARDS: ReportCard[] = [
     desc: "Dashboard and grouped view of FASTag inventory (status, bank, class, batch).",
   },
   {
+    title: "Sold List",
+    href: "/admin/reports/sold-list",
+    desc: "List of sold FASTags with barcode and seller.",
+  },
+  {
     title: "Inventory Flow",
     href: "/admin/reports/inventory-flow",
     desc: "Track assignments, transfers and sold timeline by day/month.",
