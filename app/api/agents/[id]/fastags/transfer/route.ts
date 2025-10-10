@@ -14,7 +14,12 @@ export async function POST(req: NextRequest) {
 
     // Get eligible FASTags from from_agent_id
     const [rows] = await pool.query(
-      `SELECT id FROM fastags WHERE assigned_to_agent_id = ? AND fastag_class = ? AND batch_number = ? AND status = 'assigned'`,
+      `SELECT id FROM fastags 
+         WHERE assigned_to_agent_id = ? AND fastag_class = ? AND batch_number = ? AND status = 'assigned'
+           AND NOT EXISTS (
+             SELECT 1 FROM tickets_nh t
+              WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (fastags.tag_serial COLLATE utf8mb4_general_ci)
+           )`,
       [from_agent_id, class_type, batch_number]
     );
 

@@ -84,7 +84,7 @@ export default function BulkMarkSoldModal({ onSuccess }: { onSuccess?: () => voi
     async function load() {
       setLoadingList(true); setError(null);
       try {
-        let url = '/api/fastags?status=assigned';
+        let url = '/api/fastags?status=assigned&exclude_used_in_ticket=1&mapping=done';
         if (filterMode === 'owner') {
           if (!owner) { setRows([]); setChecked({}); setLoadingList(false); return; }
           url += `&owner=${owner.id}`;
@@ -118,7 +118,7 @@ export default function BulkMarkSoldModal({ onSuccess }: { onSuccess?: () => voi
       const selected = new Set<string>(Object.entries(checked).filter(([,v])=>v).map(([k])=>k));
       let aggregateRows: Record<string, FastagRow> = {};
       for (const r of rules) {
-        let url = '/api/fastags?status=assigned';
+          let url = '/api/fastags?status=assigned&exclude_used_in_ticket=1&mapping=done';
         const params: string[] = [];
         if (r.owner?.id) params.push(`owner=${encodeURIComponent(r.owner.id)}`);
         if (r.bank.trim()) params.push(`bank_like=${encodeURIComponent(r.bank.trim())}`);

@@ -51,10 +51,34 @@ export async function POST(req: NextRequest) {
       const selectAssignedToAgent = hasAssignedToAgent ? 'assigned_to_agent_id' : 'NULL AS assigned_to_agent_id';
       // Fetch snapshot BEFORE clearing assignment
       const [snapRows]: any = await conn.query(
-        `SELECT tag_serial, bank_name, fastag_class, supplier_id, ${selectAssignedToAgent}, ${selectAssignedTo}
-         FROM fastags WHERE tag_serial IN (${placeholders})`,
+        `SELECT tag_serial, bank_name, fastag_class, supplier_id, ${selectAssignedToAgent}, ${selectAssignedTo},
+                ${await hasTableColumn('fastags','bank_mapping_status', conn).then(v=>v?"bank_mapping_status":"" ) || "NULL AS bank_mapping_status"},
+                ${await hasTableColumn('fastags','mapping_done', conn).then(v=>v?"mapping_done":"" ) || "NULL AS mapping_done"}
+           FROM fastags 
+          WHERE tag_serial IN (${placeholders})
+            AND NOT EXISTS (
+              SELECT 1 FROM tickets_nh t 
+               WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (fastags.tag_serial COLLATE utf8mb4_general_ci)
+            )`,
         serials
       );
+
+      // Enforce mapping done when column(s) exist
+      try {
+        const hasMapStatus = await hasTableColumn('fastags','bank_mapping_status', conn).catch(()=>false);
+        const hasMapDone = await hasTableColumn('fastags','mapping_done', conn).catch(()=>false);
+        if (hasMapStatus || hasMapDone) {
+          const notMapped = (snapRows || []).filter((r: any) => {
+            const s = String(r?.bank_mapping_status || '').toLowerCase();
+            const d = r?.mapping_done === 1 || r?.mapping_done === true;
+            return !(s === 'done' || d);
+          }).map((r: any) => r.tag_serial);
+          if (notMapped.length) {
+            await conn.rollback();
+            return NextResponse.json({ error: 'Mapping not done for some barcodes', not_mapped_serials: notMapped }, { status: 400 });
+          }
+        }
+      } catch {}
 
       // Build UPDATE dynamically based on existing columns
       const canAssignedTo = await hasTableColumn('fastags', 'assigned_to', conn);
@@ -69,7 +93,11 @@ export async function POST(req: NextRequest) {
       if (canSetSoldBy) { sets.push('sold_by_user_id = ?'); updateVals.push(soldByUserId); }
       if (canSetSoldAt) sets.push('sold_at = NOW()');
       if (canSetSoldDate) sets.push('sold_date = CURDATE()');
-      const updateSql = `UPDATE fastags SET ${sets.join(', ')} WHERE tag_serial IN (${placeholders})`;
+      const updateSql = `UPDATE fastags SET ${sets.join(', ')} WHERE tag_serial IN (${placeholders})
+        AND NOT EXISTS (
+          SELECT 1 FROM tickets_nh t 
+           WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (fastags.tag_serial COLLATE utf8mb4_general_ci)
+        )`;
       const [result]: any = await conn.query(updateSql, [...updateVals, ...serials]);
 
       // Best-effort: insert into fastag_sales (retry with ticket_id=0 if NULL not allowed)
