@@ -388,6 +388,29 @@ export async function POST(
     insertValues.push(body.pickup_point_name ?? null);
 
     if (hasFastagSerialColumn) {
+      // Enforce mapping done for provided fastag_serial
+      try {
+        if (fastag_serial) {
+          const hasMapStatus = await hasTableColumn('fastags','bank_mapping_status', conn).catch(()=>false);
+          const hasMapDone = await hasTableColumn('fastags','mapping_done', conn).catch(()=>false);
+          if (hasMapStatus || hasMapDone) {
+            const [fr]: any = await conn.query(
+              `SELECT 
+                  ${hasMapStatus? 'bank_mapping_status' : "'' AS bank_mapping_status"},
+                  ${hasMapDone? 'mapping_done' : 'NULL AS mapping_done'}
+               FROM fastags WHERE (tag_serial COLLATE utf8mb4_general_ci) = (? COLLATE utf8mb4_general_ci) LIMIT 1`,
+              [fastag_serial]
+            );
+            const f = fr?.[0];
+            const s = String(f?.bank_mapping_status || '').toLowerCase();
+            const d = f?.mapping_done === 1 || f?.mapping_done === true;
+            if (!(s === 'done' || d)) {
+              await conn.rollback();
+              return NextResponse.json({ error: 'Cannot use FASTag in ticket until mapping is done.' }, { status: 400 });
+            }
+          }
+        }
+      } catch {}
       columns.push("fastag_serial");
       placeholders.push("?");
       insertValues.push(fastag_serial ?? null);

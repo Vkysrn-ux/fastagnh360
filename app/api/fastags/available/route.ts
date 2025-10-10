@@ -38,6 +38,9 @@ export async function GET(req: NextRequest) {
     }
   } catch {}
 
+  // Exclude any tag already used in tickets
+  sql += "AND NOT EXISTS (SELECT 1 FROM tickets_nh t WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (fastags.tag_serial COLLATE utf8mb4_general_ci)) ";
+
   if (assignedTo && assignedTo !== "admin") {
     sql += "AND assigned_to_agent_id = ? AND status = 'assigned' ORDER BY tag_serial ASC";
     params.push(Number(assignedTo));

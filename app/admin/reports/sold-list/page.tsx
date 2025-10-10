@@ -32,6 +32,7 @@ export default function SoldListReportPage() {
   const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     fetch('/api/suppliers/all')
@@ -62,7 +63,37 @@ export default function SoldListReportPage() {
       } finally { setLoading(false); }
     }
     load();
-  }, [from, to, seller?.id, bank, klass, supplierId, q]);
+  }, [from, to, seller?.id, bank, klass, supplierId, q, refreshKey]);
+
+  async function revoke(tag_serial: string) {
+    if (!confirm(`Revoke sale and return ${tag_serial} to inventory?`)) return;
+    setError(null);
+    try {
+      const res = await fetch('/api/fastags/sales/revoke', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tag_serial, to_status: 'in_stock' })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to revoke sale');
+      setRefreshKey(k => k + 1);
+    } catch (e: any) { setError(e.message); }
+  }
+
+  async function correctBarcode(oldSerial: string, sellerId: number | null) {
+    const newSerial = window.prompt(`Enter correct barcode for ${oldSerial}`) || '';
+    const s = newSerial.trim();
+    if (!s) return;
+    setError(null);
+    try {
+      const res = await fetch('/api/fastags/sales/correct', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ wrong_serial: oldSerial, correct_serial: s, sold_by_user_id: sellerId ?? undefined })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Failed to correct barcode');
+      setRefreshKey(k => k + 1);
+    } catch (e: any) { setError(e.message); }
+  }
 
   const csv = useMemo(() => {
     const header = ["Sold At","Barcode","Bank","Class","Seller","Vehicle","Ticket Id"]; 
@@ -146,6 +177,7 @@ export default function SoldListReportPage() {
                     <TableHead>Seller</TableHead>
                     <TableHead>Vehicle</TableHead>
                     <TableHead>Ticket</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -159,6 +191,12 @@ export default function SoldListReportPage() {
                       <TableCell>{r.seller_name || (r.seller_id ? `User #${r.seller_id}` : '-')}</TableCell>
                       <TableCell>{r.vehicle_reg_no || '-'}</TableCell>
                       <TableCell>{r.ticket_id ?? '-'}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button size="sm" variant="outline" onClick={() => correctBarcode(r.tag_serial, r.seller_id)}>Correct</Button>
+                          <Button size="sm" variant="outline" onClick={() => revoke(r.tag_serial)}>Revoke</Button>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

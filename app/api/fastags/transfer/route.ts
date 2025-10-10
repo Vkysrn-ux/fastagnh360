@@ -23,7 +23,11 @@ export async function POST(req: NextRequest) {
     // Select eligible tags: owned by from_agent and currently assigned
     const [rows]: any = await pool.query(
       `SELECT id FROM fastags
-       WHERE assigned_to_agent_id = ? AND fastag_class = ? AND batch_number = ? AND status = 'assigned'`,
+       WHERE assigned_to_agent_id = ? AND fastag_class = ? AND batch_number = ? AND status = 'assigned'
+         AND NOT EXISTS (
+           SELECT 1 FROM tickets_nh t
+            WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (fastags.tag_serial COLLATE utf8mb4_general_ci)
+         )`,
       [from_agent_id, class_type, batch_number]
     );
     const ids: number[] = (rows || []).map((r: any) => Number(r.id));

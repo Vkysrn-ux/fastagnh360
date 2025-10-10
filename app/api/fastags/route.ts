@@ -45,6 +45,7 @@ export async function GET(req: NextRequest) {
   const bankLike = (searchParams.get("bank_like") || "").trim();
   const classLike = (searchParams.get("class_like") || "").trim();
   const mappingFilter = (searchParams.get("mapping") || "").trim().toLowerCase();
+  const excludeUsed = (searchParams.get("exclude_used_in_ticket") || "").trim() === '1';
   // Optional pagination (no limit by default)
   const limitParamRaw = searchParams.get("limit");
   const offsetParamRaw = searchParams.get("offset");
@@ -227,6 +228,12 @@ export async function GET(req: NextRequest) {
       "EXISTS (SELECT 1 FROM fastag_sales s2 WHERE (s2.tag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci) AND s2.created_at <= ?)"
     );
     values.push(`${soldTo} 23:59:59`);
+  }
+  // Exclude tags used in any ticket (open or closed)
+  if (excludeUsed) {
+    conditions.push(
+      "NOT EXISTS (SELECT 1 FROM tickets_nh t WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci))"
+    );
   }
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';

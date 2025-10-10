@@ -32,6 +32,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     const whereClause = [
       "f.assigned_to_agent_id = ?",
       "f.status = 'assigned'",
+      "NOT EXISTS (SELECT 1 FROM tickets_nh t WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci))",
       ...mappingWhere,
     ].join(" AND ");
 

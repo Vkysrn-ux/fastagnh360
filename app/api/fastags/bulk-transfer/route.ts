@@ -74,7 +74,11 @@ export async function POST(req: NextRequest) {
         params.push(mappingValue);
       }
       const inClause = row.serials.map(() => '?').join(',');
-      const sql = `UPDATE fastags SET ${setParts.join(', ')} WHERE tag_serial IN (${inClause})`;
+      const sql = `UPDATE fastags SET ${setParts.join(', ')} WHERE tag_serial IN (${inClause})
+                   AND NOT EXISTS (
+                     SELECT 1 FROM tickets_nh t
+                      WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (fastags.tag_serial COLLATE utf8mb4_general_ci)
+                   )`;
       await pool.query(sql, [...params, ...row.serials]);
 
       // Audit log per serial

@@ -1002,6 +1002,30 @@ export async function POST(req: NextRequest) {
         subValues.push(row.pickup_point_name ?? pickup_point_name ?? null);
 
         if (hasFastagSerialColumn) {
+          // mapping enforcement for child fastag_serial as well
+          try {
+            const useSerial = row.fastag_serial ?? fastag_serial ?? null;
+            if (useSerial) {
+              const hasMapStatus = await hasTableColumn('fastags','bank_mapping_status', conn).catch(()=>false);
+              const hasMapDone = await hasTableColumn('fastags','mapping_done', conn).catch(()=>false);
+              if (hasMapStatus || hasMapDone) {
+                const [fr2]: any = await conn.query(
+                  `SELECT 
+                      ${hasMapStatus? 'bank_mapping_status' : "'' AS bank_mapping_status"},
+                      ${hasMapDone? 'mapping_done' : 'NULL AS mapping_done'}
+                   FROM fastags WHERE (tag_serial COLLATE utf8mb4_general_ci) = (? COLLATE utf8mb4_general_ci) LIMIT 1`,
+                  [useSerial]
+                );
+                const f2 = fr2?.[0];
+                const s2 = String(f2?.bank_mapping_status || '').toLowerCase();
+                const d2 = f2?.mapping_done === 1 || f2?.mapping_done === true;
+                if (!(s2 === 'done' || d2)) {
+                  await conn.rollback();
+                  return NextResponse.json({ error: `Cannot use FASTag ${useSerial} in ticket until mapping is done.` }, { status: 400 });
+                }
+              }
+            }
+          } catch {}
           subColumns.push("fastag_serial");
           subPlaceholders.push("?");
           subValues.push(row.fastag_serial ?? fastag_serial ?? null);
@@ -1176,7 +1200,33 @@ export async function PATCH(req: NextRequest) {
     }
   } catch {}
 
-  const updates: string[] = [];
+    // If fastag_serial being set/changed, enforce mapping done
+    try {
+      if (includeFastagColumn && typeof (data as any).fastag_serial !== 'undefined' && (data as any).fastag_serial) {
+        const conn = await pool.getConnection();
+        try {
+          const hasMapStatus = await hasTableColumn('fastags','bank_mapping_status', conn).catch(()=>false);
+          const hasMapDone = await hasTableColumn('fastags','mapping_done', conn).catch(()=>false);
+          if (hasMapStatus || hasMapDone) {
+            const [fr]: any = await conn.query(
+              `SELECT 
+                  ${hasMapStatus? 'bank_mapping_status' : "'' AS bank_mapping_status"},
+                  ${hasMapDone? 'mapping_done' : 'NULL AS mapping_done'}
+               FROM fastags WHERE (tag_serial COLLATE utf8mb4_general_ci) = (? COLLATE utf8mb4_general_ci) LIMIT 1`,
+              [(data as any).fastag_serial]
+            );
+            const f = fr?.[0];
+            const s = String(f?.bank_mapping_status || '').toLowerCase();
+            const d = f?.mapping_done === 1 || f?.mapping_done === true;
+            if (!(s === 'done' || d)) {
+              return NextResponse.json({ error: 'Cannot set FASTag on ticket until mapping is done.' }, { status: 400 });
+            }
+          }
+        } finally { try { conn.release(); } catch {} }
+      }
+    } catch {}
+
+    const updates: string[] = [];
     const values: any[] = [];
     for (const field of allowedFields) {
       if (typeof data[field] !== "undefined") {
@@ -1221,6 +1271,26 @@ export async function PATCH(req: NextRequest) {
           );
           const t = rows?.[0] || {};
           if (t.fastag_serial) {
+            // Enforce mapping done before finalizing sale
+            try {
+              const hasMapStatus = await hasTableColumn('fastags','bank_mapping_status').catch(()=>false);
+              const hasMapDone = await hasTableColumn('fastags','mapping_done').catch(()=>false);
+              if (hasMapStatus || hasMapDone) {
+                const [fr]: any = await pool.query(
+                  `SELECT 
+                      ${hasMapStatus? 'bank_mapping_status' : "'' AS bank_mapping_status"},
+                      ${hasMapDone? 'mapping_done' : 'NULL AS mapping_done'}
+                   FROM fastags WHERE (tag_serial COLLATE utf8mb4_general_ci) = (? COLLATE utf8mb4_general_ci) LIMIT 1`,
+                  [t.fastag_serial]
+                );
+                const f = fr?.[0];
+                const s = String(f?.bank_mapping_status || '').toLowerCase();
+                const d = f?.mapping_done === 1 || f?.mapping_done === true;
+                if (!(s === 'done' || d)) {
+                  return NextResponse.json({ error: 'Cannot close/complete ticket: FASTag mapping not done.' }, { status: 400 });
+                }
+              }
+            } catch {}
             const conn = await pool.getConnection();
             try {
               await markFastagAsUsed(conn, t.fastag_serial, t.vehicle_reg_no ?? null);
@@ -1258,3 +1328,26 @@ export async function PATCH(req: NextRequest) {
 
 
 
+    // Enforce: FASTag mapping must be done before using in any ticket
+    try {
+      if (hasFastagSerialColumn && fastag_serial) {
+        const hasMapStatus = await hasTableColumn('fastags','bank_mapping_status', conn).catch(()=>false);
+        const hasMapDone = await hasTableColumn('fastags','mapping_done', conn).catch(()=>false);
+        if (hasMapStatus || hasMapDone) {
+          const [fr]: any = await conn.query(
+            `SELECT 
+                ${hasMapStatus? 'bank_mapping_status' : "'' AS bank_mapping_status"},
+                ${hasMapDone? 'mapping_done' : 'NULL AS mapping_done'}
+             FROM fastags WHERE (tag_serial COLLATE utf8mb4_general_ci) = (? COLLATE utf8mb4_general_ci) LIMIT 1`,
+            [fastag_serial]
+          );
+          const f = fr?.[0];
+          const s = String(f?.bank_mapping_status || '').toLowerCase();
+          const d = f?.mapping_done === 1 || f?.mapping_done === true;
+          if (!(s === 'done' || d)) {
+            await conn.rollback();
+            return NextResponse.json({ error: 'Cannot use FASTag in ticket until mapping is done.' }, { status: 400 });
+          }
+        }
+      }
+    } catch {}

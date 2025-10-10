@@ -18,7 +18,11 @@ export async function POST(req: NextRequest) {
          SET status = 'assigned',
              assigned_to = ?,
              assigned_at = NOW()
-         WHERE tag_serial = ?`,
+         WHERE tag_serial = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM tickets_nh t
+              WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (fastags.tag_serial COLLATE utf8mb4_general_ci)
+           )`,
         [agentId, tag_serial]
       )
 
@@ -35,6 +39,10 @@ export async function POST(req: NextRequest) {
              assigned_to = ?,
              assigned_at = NOW()
          WHERE status = 'in_stock'
+           AND NOT EXISTS (
+             SELECT 1 FROM tickets_nh t
+              WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (fastags.tag_serial COLLATE utf8mb4_general_ci)
+           )
          LIMIT ?`,
         [agentId, count]
       )
