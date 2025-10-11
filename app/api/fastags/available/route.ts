@@ -5,21 +5,51 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const bank = searchParams.get("bank");
+  const bankRaw = (searchParams.get("bank") || '').trim();
   const fastagClass = searchParams.get("class");
   const assignedTo = searchParams.get("assigned_to");
-  const mapping = (searchParams.get("mapping") || '').toLowerCase();
+  // Default to only mapping-done FASTags unless explicitly overridden
+  const mapping = (searchParams.get("mapping") || 'done').toLowerCase();
   const supplier = (searchParams.get("supplier") || '').trim();
+  const query = (searchParams.get("query") || '').trim();
+  const limit = Math.max(1, Math.min(100, Number(searchParams.get('limit') || 20)));
 
-  if (!bank || !fastagClass) {
+  if (!bankRaw || !fastagClass) {
     return NextResponse.json([], { status: 200 });
   }
 
-  let sql = "SELECT tag_serial FROM fastags WHERE bank_name = ? AND fastag_class = ? ";
-  let params: any[] = [bank, fastagClass];
+  let sql = `SELECT 
+      f.tag_serial,
+      f.bank_name,
+      f.fastag_class,
+      f.assigned_to_agent_id,
+      f.assigned_to,
+      COALESCE(ua.name, uu.name, '') AS assigned_to_name,
+      CASE
+        WHEN f.status = 'sold' THEN 'User'
+        WHEN f.assigned_to_agent_id IS NOT NULL THEN 'Agent'
+        ELSE 'Admin'
+      END AS holder
+    FROM fastags f
+    LEFT JOIN users ua ON f.assigned_to_agent_id = ua.id
+    LEFT JOIN users uu ON f.assigned_to = uu.id
+    WHERE f.fastag_class = ? `;
+  let params: any[] = [fastagClass];
+
+  // Handle common bank aliases (case-insensitive)
+  const aliasMap: Record<string, string[]> = {
+    'QUIKWALLET': ['QUIKWALLET', 'QuikWallet', 'LIVQUIK', 'LivQuik', 'Livquik'],
+    'LIVQUIK': ['QUIKWALLET', 'QuikWallet', 'LIVQUIK', 'LivQuik', 'Livquik'],
+  };
+  const bankKey = bankRaw.toUpperCase();
+  const bankList = aliasMap[bankKey] || [bankRaw];
+  if (bankList.length) {
+    sql += `AND f.bank_name IN (${bankList.map(() => '?').join(',')}) `;
+    params.push(...bankList);
+  }
 
   if (supplier) {
-    sql += "AND COALESCE(supplier_id,0) = ? ";
+    sql += "AND COALESCE(f.supplier_id,0) = ? ";
     params.push(Number(supplier));
   }
 
@@ -29,25 +59,37 @@ export async function GET(req: NextRequest) {
     const hasMappingDone = await hasTableColumn('fastags', 'mapping_done');
     if (mapping && (hasMappingStatus || hasMappingDone)) {
       if (mapping === 'done') {
-        if (hasMappingStatus) sql += "AND bank_mapping_status = 'done' ";
-        else if (hasMappingDone) sql += "AND COALESCE(mapping_done,0)=1 ";
+        if (hasMappingStatus) sql += "AND f.bank_mapping_status = 'done' ";
+        else if (hasMappingDone) sql += "AND COALESCE(f.mapping_done,0)=1 ";
       } else if (mapping === 'pending') {
-        if (hasMappingStatus) sql += "AND COALESCE(bank_mapping_status,'pending') = 'pending' ";
-        else if (hasMappingDone) sql += "AND COALESCE(mapping_done,0)=0 ";
+        if (hasMappingStatus) sql += "AND COALESCE(f.bank_mapping_status,'pending') = 'pending' ";
+        else if (hasMappingDone) sql += "AND COALESCE(f.mapping_done,0)=0 ";
       }
     }
   } catch {}
 
   // Exclude any tag already used in tickets
-  sql += "AND NOT EXISTS (SELECT 1 FROM tickets_nh t WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (fastags.tag_serial COLLATE utf8mb4_general_ci)) ";
+  sql += "AND NOT EXISTS (SELECT 1 FROM tickets_nh t WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)) ";
+
+  // Optional typed prefix filter
+  if (query) {
+    // Use contains match to make typing anywhere in the barcode useful
+    sql += "AND f.tag_serial LIKE ? ";
+    params.push(`%${query}%`);
+  }
 
   if (assignedTo && assignedTo !== "admin") {
-    sql += "AND assigned_to_agent_id = ? AND status = 'assigned' ORDER BY tag_serial ASC";
+    sql += "AND f.assigned_to_agent_id = ? AND f.status = 'assigned' ORDER BY f.tag_serial ASC";
     params.push(Number(assignedTo));
+  } else if (assignedTo === 'admin') {
+    // Admin warehouse only
+    sql += "AND f.assigned_to_agent_id IS NULL AND f.status = 'in_stock' ORDER BY f.tag_serial ASC";
   } else {
-    // Admin warehouse
-    sql += "AND assigned_to_agent_id IS NULL AND status = 'in_stock' ORDER BY tag_serial ASC";
+    // No owner specified: show both admin stock and assigned agent stock
+    sql += "AND ((f.assigned_to_agent_id IS NULL AND f.status = 'in_stock') OR (f.assigned_to_agent_id IS NOT NULL AND f.status = 'assigned')) ORDER BY f.tag_serial ASC";
   }
+  sql += " LIMIT ?";
+  params.push(limit);
 
   try {
     const [rows] = await pool.query(sql, params);
@@ -56,3 +98,4 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+

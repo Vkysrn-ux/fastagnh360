@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
@@ -672,6 +672,32 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     return null;
   });
   const [pickupSameAsLead, setPickupSameAsLead] = React.useState<boolean>(false);
+  // Load FASTag suggestions for Edit modal when user types (>= 2 chars)
+  React.useEffect(() => {
+    const term = (fastagQuery || (form as any).fastag_serial || "").toString().trim();
+    if (term.length < 2) { setFastagOptions([]); return; }
+    const bank = String((form as any).fastag_bank || '').trim();
+    const klass = String((form as any).fastag_class || '').trim();
+    if (bank && klass) {
+      const p = new URLSearchParams();
+      p.set('bank', bank);
+      p.set('class', klass);
+      p.set('query', term);
+      p.set('limit', '20');
+      fetch(`/api/fastags/available?${p.toString()}`, { cache: 'no-store' })
+        .then(r => r.json())
+        .then(rows => { const list = Array.isArray(rows) ? rows : []; setFastagOptions(list); if (list.length > 0) setShowFastagSuggestions(true); })
+        .catch(() => setFastagOptions([]));
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set('query', term);
+    if (bank) params.set('bank', bank);
+    fetch(`/api/fastags?${params.toString()}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(rows => { const list = Array.isArray(rows) ? rows : []; setFastagOptions(list); if (list.length > 0) setShowFastagSuggestions(true); })
+      .catch(() => setFastagOptions([]));
+  }, [fastagQuery, (form as any).fastag_bank, (form as any).fastag_class]);
 
   // Helpers to validate requirements when moving ticket to a closed/completed state
   function normalizeStatusClient(v: any): string {
@@ -1071,9 +1097,25 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
   React.useEffect(() => {
     const term = (fastagQuery || form.fastag_serial || "").toString().trim();
     if (term.length < 2 || !showFastagSuggestions) { setFastagOptions([]); return; }
+    const bank = String((form as any).fastag_bank || '').trim();
+    const klass = String((form as any).fastag_class || '').trim();
+    // When both bank and class are known, use the lightweight availability endpoint
+    if (bank && klass) {
+      const p = new URLSearchParams();
+      p.set('bank', bank);
+      p.set('class', klass);
+      p.set('query', term);
+      p.set('limit', '20');
+      fetch(`/api/fastags/available?${p.toString()}`, { cache: 'no-store' })
+        .then(r => r.json())
+        .then(rows => setFastagOptions(Array.isArray(rows) ? rows : []))
+        .catch(() => setFastagOptions([]));
+      return;
+    }
+    // Fallback: generic search
     const params = new URLSearchParams();
     params.set('query', term);
-        if ((form as any).fastag_bank) params.set('bank', String((form as any).fastag_bank));
+    if (bank) params.set('bank', bank);
     fetch(`/api/fastags?${params.toString()}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(rows => {
@@ -1082,7 +1124,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
       })
       .catch(() => setFastagOptions([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fastagQuery, showFastagSuggestions, (form as any).fastag_bank]);
+  }, [fastagQuery, showFastagSuggestions, (form as any).fastag_bank, (form as any).fastag_class]);
 
   async function save() {
     try {
@@ -1093,11 +1135,11 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
       const altStr = String(form.alt_phone || "");
       const re = /^(?:\+?91[\-\s]?|0)?([6-9]\d{9})$/;
       const m = phoneStr.match(re);
-      if (!m) { setError("Enter a valid 10-digit mobile (starts 6â€“9)"); setSaving(false); return; }
+      if (!m) { setError("Enter a valid 10-digit mobile (starts 6-9)"); setSaving(false); return; }
       let altNorm: string | null = null;
       if (altStr.trim() !== "") {
         const ma = altStr.match(re);
-        if (!ma) { setError("Enter a valid 10-digit alt mobile (starts 6â€“9)"); setSaving(false); return; }
+        if (!ma) { setError("Enter a valid 10-digit alt mobile (starts 6-9)"); setSaving(false); return; }
         altNorm = ma[1];
       }
       const statusLower = String(form.status || '').toLowerCase();
@@ -1316,7 +1358,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
                   <div className="mt-1 max-h-40 overflow-auto border rounded">
                     {fastagOptions.map((row) => (
                       <div
-                        key={row.id}
+                        key={row.id || row.tag_serial}
                         className="px-3 py-2 cursor-pointer hover:bg-orange-50 border-b last:border-b-0"
                         onMouseDown={() => {
                           setForm((f) => ({
@@ -1330,7 +1372,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
                           setFastagOptions([]);
                         }}
                       >
-                        {row.tag_serial} â€” {row.bank_name} / {row.fastag_class}
+                        {row.tag_serial} - {row.bank_name} / {row.fastag_class}{row.assigned_to_name ? (' - ' + row.assigned_to_name) : (row.holder ? (' - ' + String(row.holder)) : '')}
                       </div>
                     ))}
                   </div>
@@ -1504,7 +1546,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
         </div>
         {error && <div className="text-sm text-red-600 mt-2">{error}</div>}
         <div className="text-xs mt-1">
-          {autoSaving && <span className="text-gray-500">Auto-savingâ€¦</span>}
+          {autoSaving && <span className="text-gray-500">Auto-saving...</span>}
           {!autoSaving && autoSavedAt && !autoSaveError && (
             <span className="text-gray-500">Auto-saved at {new Date(autoSavedAt).toLocaleTimeString()}</span>
           )}
@@ -1520,6 +1562,12 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     </Dialog>
   );
 }
+
+
+
+
+
+
 
 
 

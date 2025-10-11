@@ -44,7 +44,8 @@ export async function GET(req: NextRequest) {
   const supplierFilter = (searchParams.get("supplier") || searchParams.get("supplier_id") || "").trim();
   const bankLike = (searchParams.get("bank_like") || "").trim();
   const classLike = (searchParams.get("class_like") || "").trim();
-  const mappingFilter = (searchParams.get("mapping") || "").trim().toLowerCase();
+  // Default to only mapping-done FASTags unless explicitly overridden
+  const mappingFilter = (searchParams.get("mapping") || "done").trim().toLowerCase();
   const excludeUsed = (searchParams.get("exclude_used_in_ticket") || "").trim() === '1';
   // Optional pagination (no limit by default)
   const limitParamRaw = searchParams.get("limit");
