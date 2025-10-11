@@ -1,6 +1,19 @@
 // app/api/users/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { pool } from '@/lib/db'
+
+// Lightweight in-memory cache to reduce DB load for repeated lookups
+type CacheRecord = { data: any; expires: number };
+const cache = new Map<string, CacheRecord>();
+function getCache(key: string): any | null {
+  const rec = cache.get(key);
+  if (rec && rec.expires > Date.now()) return rec.data;
+  if (rec) cache.delete(key);
+  return null;
+}
+function setCache(key: string, data: any, ttlMs: number) {
+  cache.set(key, { data, expires: Date.now() + ttlMs });
+}
 import { hasTableColumn } from '@/lib/db-helpers'
 
 export async function GET(req: NextRequest) {
@@ -17,7 +30,7 @@ export async function GET(req: NextRequest) {
     const params: any[] = []
 
     // Small retry helper for transient connection drops (e.g., ECONNRESET)
-    async function queryWithRetry<T = any>(sqlQ: string, paramsQ: any[] = [], attempts = 2): Promise<[T, any]> {
+    async function queryWithRetry<T = any>(sqlQ: string, paramsQ: any[] = [], attempts = 1): Promise<[T, any]> {
       let lastErr: any = null
       for (let i = 0; i < Math.max(1, attempts + 1); i++) {
         try {
@@ -26,11 +39,11 @@ export async function GET(req: NextRequest) {
         } catch (err: any) {
           lastErr = err
           const code = String(err?.code || '')
-          if (!['ECONNRESET','PROTOCOL_CONNECTION_LOST','PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR','PROTOCOL_ENQUEUE_AFTER_QUIT'].includes(code)) {
+          if (!['ECONNRESET','PROTOCOL_CONNECTION_LOST','PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR','PROTOCOL_ENQUEUE_AFTER_QUIT','ER_CON_COUNT_ERROR'].includes(code)) {
             break
           }
           // brief backoff before retry
-          await new Promise(res => setTimeout(res, 200))
+          await new Promise(res => setTimeout(res, code === 'ER_CON_COUNT_ERROR' ? 500 : 200))
         }
       }
       throw lastErr
@@ -39,7 +52,10 @@ export async function GET(req: NextRequest) {
     if (id) {
       sql += ' AND id = ?'
       params.push(Number(id))
-      const [rows]: any = await queryWithRetry(sql + ' LIMIT 1', params, 2)
+      const cacheKey = `users:id:${Number(id)}`
+      const cached = getCache(cacheKey)
+      if (cached) return NextResponse.json(cached)
+      const [rows]: any = await queryWithRetry(sql + ' LIMIT 1', params, 1)
       const result = Array.isArray(rows) ? rows : []
       // If notes missing or empty, omit it from response
       if (result.length && ('notes' in result[0])) {
@@ -47,6 +63,7 @@ export async function GET(req: NextRequest) {
           delete result[0].notes
         }
       }
+      setCache(cacheKey, result, 30_000)
       return NextResponse.json(result)
     }
 
@@ -62,7 +79,10 @@ export async function GET(req: NextRequest) {
 
     sql += ' ORDER BY name LIMIT 10' // (Optional) limit results for performance
 
-    const [rows]: any = await queryWithRetry(sql, params, 2)
+    const cacheKey = `users:list:${role || ''}:${name || ''}`
+    const cachedList = getCache(cacheKey)
+    if (cachedList) return NextResponse.json(cachedList)
+    const [rows]: any = await queryWithRetry(sql, params, 1)
     const cleaned = (Array.isArray(rows) ? rows : []).map((r: any) => {
       if (hasNotes && ('notes' in r)) {
         if (!r.notes || String(r.notes).trim() === '') {
@@ -72,6 +92,7 @@ export async function GET(req: NextRequest) {
       }
       return r
     })
+    setCache(cacheKey, cleaned, 15_000)
     return NextResponse.json(cleaned)
   } catch (error: any) {
     console.error("Error fetching users:", error)
