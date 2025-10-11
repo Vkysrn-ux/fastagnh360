@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
+import { put } from '@vercel/blob';
+
+export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,23 +22,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `File too large. Max allowed is ${Math.round(maxBytes / (1024 * 1024))}MB` }, { status: 413 });
     }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-    await mkdir(uploadDir, { recursive: true });
-
     // Build a safe filename
     const origName = (file as any).name ? String((file as any).name) : 'upload.bin';
     const ext = path.extname(origName) || '';
     const rand = crypto.randomBytes(6).toString('hex');
     const filename = `${Date.now()}-${rand}${ext}`;
-    const outPath = path.join(uploadDir, filename);
 
-    await writeFile(outPath, buffer);
-
-    const urlPath = `/uploads/${filename}`;
-    return NextResponse.json({ url: urlPath });
+    // Try Vercel Blob first (primary path when deployed on Vercel)
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const key = `uploads/${filename}`;
+      const res = await put(key, buffer, {
+        access: 'public',
+        contentType: (file as any).type || undefined,
+        token: process.env.BLOB_READ_WRITE_TOKEN, // optional locally; set on Vercel via integration
+      } as any);
+      return NextResponse.json({ url: res.url });
+    } catch (blobErr) {
+      // Fallback to local public/uploads when blob is not configured (dev/local)
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+        await mkdir(uploadDir, { recursive: true });
+        const outPath = path.join(uploadDir, filename);
+        await writeFile(outPath, buffer);
+        const urlPath = `/uploads/${filename}`;
+        return NextResponse.json({ url: urlPath });
+      } catch (fallbackErr: any) {
+        const message = (fallbackErr?.message || (blobErr as any)?.message || 'Upload failed');
+        return NextResponse.json({ error: message }, { status: 500 });
+      }
+    }
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'Upload failed' }, { status: 500 });
   }
