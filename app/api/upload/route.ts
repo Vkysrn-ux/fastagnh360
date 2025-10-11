@@ -40,7 +40,13 @@ export async function POST(req: NextRequest) {
       } as any);
       return NextResponse.json({ url: res.url });
     } catch (blobErr) {
-      // Fallback to local public/uploads when blob is not configured (dev/local)
+      // On Vercel, filesystem is read-only. If Blob failed, surface a clear error.
+      if (process.env.VERCEL) {
+        const message =
+          'Vercel Blob is not configured. Install the Vercel Blob integration for this project or set BLOB_READ_WRITE_TOKEN.';
+        return NextResponse.json({ error: message, details: String((blobErr as any)?.message || blobErr) }, { status: 500 });
+      }
+      // Fallback to local public/uploads when running locally (non-Vercel)
       try {
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
