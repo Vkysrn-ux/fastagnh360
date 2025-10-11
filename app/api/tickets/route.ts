@@ -490,6 +490,30 @@ export async function POST(req: NextRequest) {
       }
     } catch {}
 
+    // Enforce: FASTag mapping must be done before using in any ticket (parent row)
+    try {
+      if (hasFastagSerialColumn && fastag_serial) {
+        const hasMapStatus = await hasTableColumn('fastags','bank_mapping_status', conn).catch(()=>false);
+        const hasMapDone = await hasTableColumn('fastags','mapping_done', conn).catch(()=>false);
+        if (hasMapStatus || hasMapDone) {
+          const [fr]: any = await conn.query(
+            `SELECT 
+                ${hasMapStatus? 'bank_mapping_status' : "'' AS bank_mapping_status"},
+                ${hasMapDone? 'mapping_done' : 'NULL AS mapping_done'}
+             FROM fastags WHERE (tag_serial COLLATE utf8mb4_general_ci) = (? COLLATE utf8mb4_general_ci) LIMIT 1`,
+            [fastag_serial]
+          );
+          const f = fr?.[0];
+          const s = String(f?.bank_mapping_status || '').toLowerCase();
+          const d = f?.mapping_done === 1 || f?.mapping_done === true;
+          if (!(s === 'done' || d)) {
+            await conn.rollback();
+            return NextResponse.json({ error: 'Cannot use FASTag in ticket until mapping is done.' }, { status: 400 });
+          }
+        }
+      }
+    } catch {}
+
     // Ensure additional optional columns exist (idempotent)
     try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN alt_vehicle_reg_no VARCHAR(64) NULL`); } catch {}
     try { await conn.query(`ALTER TABLE ${TICKETS_TABLE} ADD COLUMN payment_nil TINYINT(1) NOT NULL DEFAULT 0`); } catch {}
@@ -1321,33 +1345,4 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
-
-
-
-
-
-
-
-    // Enforce: FASTag mapping must be done before using in any ticket
-    try {
-      if (hasFastagSerialColumn && fastag_serial) {
-        const hasMapStatus = await hasTableColumn('fastags','bank_mapping_status', conn).catch(()=>false);
-        const hasMapDone = await hasTableColumn('fastags','mapping_done', conn).catch(()=>false);
-        if (hasMapStatus || hasMapDone) {
-          const [fr]: any = await conn.query(
-            `SELECT 
-                ${hasMapStatus? 'bank_mapping_status' : "'' AS bank_mapping_status"},
-                ${hasMapDone? 'mapping_done' : 'NULL AS mapping_done'}
-             FROM fastags WHERE (tag_serial COLLATE utf8mb4_general_ci) = (? COLLATE utf8mb4_general_ci) LIMIT 1`,
-            [fastag_serial]
-          );
-          const f = fr?.[0];
-          const s = String(f?.bank_mapping_status || '').toLowerCase();
-          const d = f?.mapping_done === 1 || f?.mapping_done === true;
-          if (!(s === 'done' || d)) {
-            await conn.rollback();
-            return NextResponse.json({ error: 'Cannot use FASTag in ticket until mapping is done.' }, { status: 400 });
-          }
-        }
-      }
-    } catch {}
+ 

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -235,19 +235,33 @@ export default function CreateTicketFullModal({
   useEffect(() => {
     const term = fastagSerialInput.trim();
     if (term.length < 2) { setFastagOptions([]); return; }
-    const q = new URLSearchParams();
-    q.set('query', term);
-    if (form.bank_name) q.set('bank', form.bank_name);
-    // Map human label to API class code for search
+    // When bank and class are selected, use the availability endpoint with a prefix filter
+    const bank = String(form.bank_name || '').trim();
+    const clsLabel = String(fastagClass || '').trim();
     const labelToCode: Record<string, string> = {
       'Class 4 (Car/Jeep/Van)': 'class4',
       'Class 5/9 (LCV/Mini-Bus 2Axle)': 'class5',
       'Class 6/8/11 (3Axle)': 'class6',
       'Class 7/10 (Truck/Bus 2Axle)': 'class7',
       'Class 12/13/14 (Axle4/5/6)': 'class12',
-      // Others intentionally not mapped to avoid filtering incorrectly
     };
-    const apiClass = labelToCode[fastagClass];
+    const apiClass = labelToCode[clsLabel];
+    if (bank && apiClass) {
+      const p = new URLSearchParams();
+      p.set('bank', bank);
+      p.set('class', apiClass);
+      p.set('query', term);
+      p.set('limit', '20');
+      fetch(`/api/fastags/available?${p.toString()}`)
+        .then(r => r.json())
+        .then(rows => setFastagOptions(Array.isArray(rows) ? rows : []))
+        .catch(() => setFastagOptions([]));
+      return;
+    }
+    // Fallback to generic search
+    const q = new URLSearchParams();
+    q.set('query', term);
+    if (bank) q.set('bank', bank);
     if (apiClass) q.set('class', apiClass);
     fetch(`/api/fastags?${q.toString()}`)
       .then(r => r.json())
@@ -637,8 +651,8 @@ export default function CreateTicketFullModal({
                 {fastagOptions.length > 0 && (
                   <div className="mt-1 max-h-40 overflow-auto border rounded">
                     {fastagOptions.map((row) => (
-                      <div key={row.id} className="px-3 py-2 cursor-pointer hover:bg-orange-50 border-b last:border-b-0" onMouseDown={() => pickFastag(row)}>
-                        {row.tag_serial} â€” {row.bank_name} / {row.fastag_class}
+                      <div key={row.id || row.tag_serial} className="px-3 py-2 cursor-pointer hover:bg-orange-50 border-b last:border-b-0" onMouseDown={() => pickFastag(row)}>
+                        {row.tag_serial} - {row.bank_name} / {row.fastag_class}{row.assigned_to_name ? (' - ' + row.assigned_to_name) : (row.holder ? (' - ' + String(row.holder)) : '')}
                       </div>
                     ))}
                   </div>
@@ -805,5 +819,9 @@ export default function CreateTicketFullModal({
     </Dialog>
   );
 }
+
+
+
+
 
 
