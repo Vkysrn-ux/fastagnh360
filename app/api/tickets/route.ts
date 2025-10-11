@@ -1252,6 +1252,17 @@ export async function PATCH(req: NextRequest) {
 
     const updates: string[] = [];
     const values: any[] = [];
+    const booleanFields = new Set<string>([
+      'payment_received',
+      'delivery_done',
+      'commission_done',
+      'payment_nil',
+      'delivery_nil',
+      'lead_commission_paid',
+      'lead_commission_nil',
+      'pickup_commission_paid',
+      'pickup_commission_nil',
+    ]);
     for (const field of allowedFields) {
       if (typeof data[field] !== "undefined") {
         updates.push(`${field} = ?`);
@@ -1265,11 +1276,36 @@ export async function PATCH(req: NextRequest) {
           values.push(normalizeIndianMobile(data[field]));
         } else if (field === 'paid_via') {
           values.push(normalizePaidVia(data[field]));
+        } else if (booleanFields.has(field)) {
+          values.push(data[field] ? 1 : 0);
         } else {
           values.push(data[field]);
         }
       }
     }
+
+    // Auto-derive commission_done by merging request with current DB flags
+    try {
+      if (includeCommissionDone) {
+        const [curRows]: any = await pool.query(
+          `SELECT lead_commission_paid, lead_commission_nil, pickup_commission_paid, pickup_commission_nil
+             FROM ${TICKETS_TABLE} WHERE id = ? LIMIT 1`,
+          [data.id]
+        );
+        const cur = curRows?.[0] || {};
+        const leadPaid = typeof (data as any).lead_commission_paid !== 'undefined' ? !!(data as any).lead_commission_paid : !!cur.lead_commission_paid;
+        const leadNil = typeof (data as any).lead_commission_nil !== 'undefined' ? !!(data as any).lead_commission_nil : !!cur.lead_commission_nil;
+        const pickupPaid = typeof (data as any).pickup_commission_paid !== 'undefined' ? !!(data as any).pickup_commission_paid : !!cur.pickup_commission_paid;
+        const pickupNil = typeof (data as any).pickup_commission_nil !== 'undefined' ? !!(data as any).pickup_commission_nil : !!cur.pickup_commission_nil;
+        const leadDoneFinal = leadPaid || leadNil;
+        const pickupDoneFinal = pickupPaid || pickupNil;
+        // If both sides are done, ensure commission_done is set to 1 regardless of incoming flag
+        if (leadDoneFinal && pickupDoneFinal) {
+          updates.push(`commission_done = ?`);
+          values.push(1);
+        }
+      }
+    } catch {}
 
     if (updates.length === 0) {
       return NextResponse.json({ error: "No fields to update" }, { status: 400 });
