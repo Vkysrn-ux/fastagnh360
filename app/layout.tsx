@@ -21,7 +21,13 @@ export const metadata: Metadata = {
   title: "NH360fastag.com - FASTag Services Across India",
   description:
     "Register for FASTag for all vehicles, all bank FASTag available, nationwide delivery, recharge services, and blacklist resolution.",
-    generator: 'v0.dev'
+    generator: 'v0.dev',
+    manifest: '/manifest.webmanifest',
+    themeColor: '#0b5cc2',
+    icons: {
+      icon: '/placeholder-logo.png',
+      apple: '/placeholder-logo.png',
+    },
 }
 
 export default function RootLayout({
