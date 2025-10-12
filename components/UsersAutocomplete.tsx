@@ -8,12 +8,14 @@ export default function UsersAutocomplete({
   value,
   onSelect,
   role,
+  roles,
   placeholder = "Type user name",
   minChars = 1,
 }: {
   value: UserOption | null;
   onSelect: (u: UserOption | null) => void;
-  role?: string;
+  role?: string; // single-role filter (legacy)
+  roles?: string[]; // multi-role filter
   placeholder?: string;
   minChars?: number;
 }) {
@@ -30,7 +32,11 @@ export default function UsersAutocomplete({
     const term = input.trim();
     if (term.length >= minChars) {
       const q = new URLSearchParams();
-      if (role) q.set("role", role.toLowerCase());
+      if (Array.isArray(roles) && roles.length > 0) {
+        q.set("roles", roles.map(r => String(r).toLowerCase()).join(","));
+      } else if (role) {
+        q.set("role", role.toLowerCase());
+      }
       q.set("name", term);
       fetch(`/api/users?${q.toString()}`)
         .then((r) => r.json())
@@ -49,7 +55,7 @@ export default function UsersAutocomplete({
       setOpen(false);
       setHighlight(-1);
     }
-  }, [input, role, minChars, focused]);
+  }, [input, role, roles && roles.join(','), minChars, focused]);
 
   useEffect(() => {
     function onDown(e: MouseEvent) {

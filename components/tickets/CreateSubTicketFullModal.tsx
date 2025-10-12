@@ -562,6 +562,7 @@ export default function CreateSubTicketFullModal({
           <div className="flex gap-2">
             <div className="flex-1">
               <UsersAutocomplete
+                roles={["admin","super-admin"]}
                 value={assignedUser}
                 onSelect={(u) => {
                   setAssignedUser(u);

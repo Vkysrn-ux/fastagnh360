@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const role = searchParams.get('role')
+    const rolesParam = searchParams.get('roles')
     const name = searchParams.get('name')
     const id = searchParams.get('id')
 
@@ -67,7 +68,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(result)
     }
 
-    if (role) {
+    if (rolesParam) {
+      const list = rolesParam.split(',').map(s => s.trim()).filter(Boolean)
+      if (list.length > 0) {
+        sql += ` AND role IN (${list.map(() => '?').join(',')})`
+        params.push(...list)
+      }
+    } else if (role) {
       sql += ' AND role = ?'
       params.push(role)
     }
@@ -79,7 +86,7 @@ export async function GET(req: NextRequest) {
 
     sql += ' ORDER BY name LIMIT 10' // (Optional) limit results for performance
 
-    const cacheKey = `users:list:${role || ''}:${name || ''}`
+    const cacheKey = `users:list:${rolesParam || role || ''}:${name || ''}`
     const cachedList = getCache(cacheKey)
     if (cachedList) return NextResponse.json(cachedList)
     const [rows]: any = await queryWithRetry(sql, params, 1)
