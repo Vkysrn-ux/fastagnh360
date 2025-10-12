@@ -691,6 +691,8 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
       p.set('class', klass);
       p.set('query', term);
       p.set('limit', '20');
+      // Restrict to mapping-done when picking FASTag for ticket updates
+      p.set('mapping', 'done');
       fetch(`/api/fastags/available?${p.toString()}`, { cache: 'no-store' })
         .then(r => r.json())
         .then(rows => { const list = Array.isArray(rows) ? rows : []; setFastagOptions(list); if (list.length > 0) setShowFastagSuggestions(true); })
@@ -700,6 +702,8 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     const params = new URLSearchParams();
     params.set('query', term);
     if (bank) params.set('bank', bank);
+    // Restrict to mapping-done in generic search as well
+    params.set('mapping', 'done');
     fetch(`/api/fastags?${params.toString()}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(rows => { const list = Array.isArray(rows) ? rows : []; setFastagOptions(list); if (list.length > 0) setShowFastagSuggestions(true); })
@@ -804,6 +808,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
   async function uploadToServer(file: File): Promise<string> {
     const fd = new FormData();
     fd.set('file', file);
+    try { fd.set('ticket', String(ticket?.ticket_no || ticket?.id || 'misc')); } catch {}
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
     const ct = (res.headers.get('content-type') || '').toLowerCase();
     let data: any = null;
@@ -1113,6 +1118,8 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
       p.set('class', klass);
       p.set('query', term);
       p.set('limit', '20');
+      // Restrict to mapping-done when picking FASTag (secondary Edit flow)
+      p.set('mapping', 'done');
       fetch(`/api/fastags/available?${p.toString()}`, { cache: 'no-store' })
         .then(r => r.json())
         .then(rows => setFastagOptions(Array.isArray(rows) ? rows : []))
@@ -1123,6 +1130,8 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     const params = new URLSearchParams();
     params.set('query', term);
     if (bank) params.set('bank', bank);
+    // Restrict to mapping-done in fallback generic search
+    params.set('mapping', 'done');
     fetch(`/api/fastags?${params.toString()}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(rows => {
@@ -1373,7 +1382,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
                             fastag_serial: row.tag_serial || (f as any).fastag_serial,
                             fastag_bank: row.bank_name || (f as any).fastag_bank,
                             fastag_class: row.fastag_class || (f as any).fastag_class,
-                            fastag_owner: row.holder ? String(row.holder) : (row.assigned_to_name || (f as any).fastag_owner || ""),
+                            fastag_owner: (row as any).owner_name || row.assigned_to_name || (row.holder ? String(row.holder) : (f as any).fastag_owner || ""),
                           } as any));
                           setFastagQuery(String(row.tag_serial || ""));
                           setFastagOptions([]);

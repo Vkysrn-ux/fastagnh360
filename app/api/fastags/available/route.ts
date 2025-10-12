@@ -18,6 +18,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json([], { status: 200 });
   }
 
+  // Build dynamic owner subselect based on available columns in tickets_nh
+  const hasPickup = await hasTableColumn('tickets_nh', 'pickup_point_name').catch(() => false);
+  const hasFirst = await hasTableColumn('tickets_nh', 'first_name').catch(() => false);
+  const hasLast = await hasTableColumn('tickets_nh', 'last_name').catch(() => false);
+  const ownerParts: string[] = ["NULLIF(TRIM(t.customer_name), '')", "NULLIF(TRIM(t.phone), '')"];
+  if (hasPickup) ownerParts.splice(1, 0, "NULLIF(TRIM(t.pickup_point_name), '')");
+  if (hasFirst || hasLast) ownerParts.splice(ownerParts.length - 1, 0, "NULLIF(TRIM(CONCAT_WS(' ', t.first_name, t.last_name)), '')");
+  const ownerSubselect = `SELECT COALESCE(${ownerParts.join(', ')})\n            FROM tickets_nh t\n            WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)\n            ORDER BY t.created_at DESC LIMIT 1`;
+
   let sql = `SELECT 
       f.tag_serial,
       f.bank_name,
@@ -25,6 +34,17 @@ export async function GET(req: NextRequest) {
       f.assigned_to_agent_id,
       f.assigned_to,
       COALESCE(ua.name, uu.name, '') AS assigned_to_name,
+      COALESCE(
+        CASE 
+          WHEN f.status = 'sold' THEN ( ${ownerSubselect} )
+          WHEN f.assigned_to IS NOT NULL THEN uu.name
+          WHEN f.assigned_to_agent_id IS NOT NULL THEN ua.name
+          ELSE ''
+        END,
+        ua.name,
+        uu.name,
+        ''
+      ) AS owner_name,
       CASE
         WHEN f.status = 'sold' THEN 'User'
         WHEN f.assigned_to_agent_id IS NOT NULL THEN 'Agent'

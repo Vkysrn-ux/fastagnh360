@@ -252,6 +252,8 @@ export default function CreateTicketFullModal({
       p.set('class', apiClass);
       p.set('query', term);
       p.set('limit', '20');
+      // Only include mapping-done tags for ticket barcode picking
+      p.set('mapping', 'done');
       fetch(`/api/fastags/available?${p.toString()}`)
         .then(r => r.json())
         .then(rows => setFastagOptions(Array.isArray(rows) ? rows : []))
@@ -262,6 +264,8 @@ export default function CreateTicketFullModal({
     const q = new URLSearchParams();
     q.set('query', term);
     if (bank) q.set('bank', bank);
+    // Ensure only mapping-done tags are suggested during picking
+    q.set('mapping', 'done');
     if (apiClass) q.set('class', apiClass);
     fetch(`/api/fastags?${q.toString()}`)
       .then(r => r.json())
@@ -271,7 +275,7 @@ export default function CreateTicketFullModal({
 
   function pickFastag(row: any) {
     setFastagSerialInput(row.tag_serial || "");
-    setFastagOwner(row.assigned_to_name || (row.holder ? String(row.holder) : ""));
+    setFastagOwner((row as any).owner_name || row.assigned_to_name || (row.holder ? String(row.holder) : ""));
     setForm((f) => ({ ...f, fastag_serial: row.tag_serial || "", bank_name: row.bank_name || f.bank_name }));
     if (row.fastag_class) {
       const code = String(row.fastag_class).toLowerCase();
@@ -290,6 +294,8 @@ export default function CreateTicketFullModal({
   async function uploadToServer(file: File): Promise<string> {
     const fd = new FormData();
     fd.set('file', file);
+    // For new ticket flows, we may not yet have a ticket number; use 'draft'
+    fd.set('ticket', 'draft');
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
     const ct = (res.headers.get('content-type') || '').toLowerCase();
     let data: any = null;

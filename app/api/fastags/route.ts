@@ -17,9 +17,8 @@ function normalizeFastagRow(row: any) {
         : null,
     assigned_to:
       row.assigned_to !== undefined && row.assigned_to !== null ? Number(row.assigned_to) : null,
-    assigned_to_name: row.assigned_to_name
-      ? String(row.assigned_to_name)
-      : (row.owner_name ? String(row.owner_name) : ""),
+    assigned_to_name: row.assigned_to_name ? String(row.assigned_to_name) : "",
+    owner_name: row.owner_name ? String(row.owner_name) : "",
     holder: row.holder ? String(row.holder) : "",
     supplier_id: row.supplier_id !== undefined && row.supplier_id !== null ? Number(row.supplier_id) : null,
     supplier_name: row.supplier_name ? String(row.supplier_name) : "",
@@ -249,6 +248,15 @@ export async function GET(req: NextRequest) {
     hasMappingDone ? 'f.mapping_done AS mapping_done' : null,
   ].filter(Boolean).join(', ');
 
+  // Build dynamic owner subselect based on available columns in tickets_nh
+  const hasPickup = await hasTableColumn('tickets_nh', 'pickup_point_name').catch(() => false);
+  const hasFirst = await hasTableColumn('tickets_nh', 'first_name').catch(() => false);
+  const hasLast = await hasTableColumn('tickets_nh', 'last_name').catch(() => false);
+  const ownerParts: string[] = ["NULLIF(TRIM(t.customer_name), '')", "NULLIF(TRIM(t.phone), '')"];
+  if (hasPickup) ownerParts.splice(1, 0, "NULLIF(TRIM(t.pickup_point_name), '')");
+  if (hasFirst || hasLast) ownerParts.splice(ownerParts.length - 1, 0, "NULLIF(TRIM(CONCAT_WS(' ', t.first_name, t.last_name)), '')");
+  const ownerSubselect = `SELECT COALESCE(${ownerParts.join(', ')})\n              FROM tickets_nh t\n              WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)\n              ORDER BY t.created_at DESC LIMIT 1`;
+
   const baseQuery = `
       SELECT
         f.id,
@@ -274,6 +282,17 @@ export async function GET(req: NextRequest) {
           LIMIT 1
         ) AS sold_by_user_id,
         COALESCE(u.name, '') AS assigned_to_name,
+        COALESCE(
+          CASE 
+            WHEN f.status = 'sold' THEN ( ${ownerSubselect} )
+            WHEN f.assigned_to IS NOT NULL THEN uu.name
+            WHEN f.assigned_to_agent_id IS NOT NULL THEN u.name
+            ELSE ''
+          END,
+          u.name,
+          uu.name,
+          ''
+        ) AS owner_name,
         COALESCE(s.name, '') AS supplier_name,
         CASE
           WHEN f.status = 'sold' THEN 'User'
@@ -287,6 +306,7 @@ export async function GET(req: NextRequest) {
         ${mappingSelect ? `, ${mappingSelect}` : ''}
       FROM fastags f
       LEFT JOIN users u ON f.assigned_to_agent_id = u.id
+      LEFT JOIN users uu ON f.assigned_to = uu.id
       LEFT JOIN suppliers s ON f.supplier_id = s.id
       ${whereClause}
       ORDER BY f.created_at DESC
@@ -318,8 +338,22 @@ export async function GET(req: NextRequest) {
           f.assigned_at,
           f.assigned_date,
           NULL AS sold_at,
-          NULL AS sold_by_user_id${mappingSelect ? `, ${mappingSelect}` : ''}
+          NULL AS sold_by_user_id,
+          COALESCE(u.name, '') AS assigned_to_name,
+          COALESCE(
+            CASE 
+              WHEN f.status = 'sold' THEN ( ${ownerSubselect} )
+              WHEN f.assigned_to IS NOT NULL THEN uu.name
+              WHEN f.assigned_to_agent_id IS NOT NULL THEN u.name
+              ELSE ''
+            END,
+            u.name,
+            uu.name,
+            ''
+          ) AS owner_name${mappingSelect ? `, ${mappingSelect}` : ''}
         FROM fastags f
+        LEFT JOIN users u ON f.assigned_to_agent_id = u.id
+        LEFT JOIN users uu ON f.assigned_to = uu.id
         ${whereClause}
         ORDER BY f.created_at DESC
         ${limitClause}

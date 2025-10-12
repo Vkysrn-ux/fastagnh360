@@ -120,6 +120,7 @@ export default function CreateSubTicketFullModal({
   async function uploadToServer(file: File): Promise<string> {
     const fd = new FormData();
     fd.set('file', file);
+    try { fd.set('ticket', String((parent as any)?.ticket_no || (parent as any)?.id || 'sub')); } catch { fd.set('ticket', 'sub'); }
     const res = await fetch('/api/upload', { method: 'POST', body: fd });
     const ct = (res.headers.get('content-type') || '').toLowerCase();
     let data: any = null; let text: string | null = null;
@@ -341,6 +342,8 @@ export default function CreateSubTicketFullModal({
     if (term.length < 2 || !showFastagSuggestions) { setFastagOptions([]); return; }
     const q = new URLSearchParams();
     q.set('query', term);
+    // Only include mapping-done tags in sub-ticket barcode suggestions
+    q.set('mapping', 'done');
     // bank/class filters are optional for narrowing results
     // @ts-ignore - keep local filter only
     if ((form as any).bank_name) q.set('bank', (form as any).bank_name);
@@ -356,7 +359,7 @@ export default function CreateSubTicketFullModal({
     const exact = (fastagOptions || []).find((r: any) => String(r.tag_serial) === fastagSerialInput.trim());
     if (exact) {
       setFastagSerialInput(exact.tag_serial || "");
-      setFastagOwner((exact as any).assigned_to_name || (exact.holder ? String(exact.holder) : ""));
+      setFastagOwner((exact as any).owner_name || (exact as any).assigned_to_name || (exact.holder ? String(exact.holder) : ""));
       // @ts-ignore
       setForm((f) => ({ ...f, fastag_serial: exact.tag_serial || "", bank_name: exact.bank_name || (f as any).bank_name }));
       if (exact.fastag_class) setFastagClass(String(exact.fastag_class));
@@ -366,7 +369,7 @@ export default function CreateSubTicketFullModal({
 
   function pickFastag(row: any) {
     setFastagSerialInput(row.tag_serial || "");
-    setFastagOwner(row.assigned_to_name || (row.holder ? String(row.holder) : ""));
+    setFastagOwner((row as any).owner_name || row.assigned_to_name || (row.holder ? String(row.holder) : ""));
     // @ts-ignore
     setForm((f) => ({ ...f, fastag_serial: row.tag_serial || "", bank_name: row.bank_name || (f as any).bank_name }));
     if (row.fastag_class) setFastagClass(String(row.fastag_class));
