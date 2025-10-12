@@ -293,6 +293,8 @@ export default function AdminFastagsPage() {
   useEffect(() => {
     const fetchFastags = async () => {
       const params: string[] = [];
+      // Show ALL fastags on dashboard (do not restrict by mapping)
+      params.push(`mapping=all`);
       if (createdFrom) params.push(`created_from=${encodeURIComponent(createdFrom)}`);
       if (createdTo) params.push(`created_to=${encodeURIComponent(createdTo)}`);
       if (assignedFrom) params.push(`assigned_from=${encodeURIComponent(assignedFrom)}`);

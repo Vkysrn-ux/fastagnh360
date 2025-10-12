@@ -15,6 +15,7 @@ import CreateSubTicketFullModal from "@/components/tickets/CreateSubTicketFullMo
 import { formatERPDate } from "@/lib/date-format";
 import CreateTicketFullModal from "@/components/tickets/CreateTicketFullModal";
 import UsersAutocomplete, { type UserOption } from "@/components/UsersAutocomplete";
+import PickupPointAutocomplete, { type PickupPoint } from "@/components/PickupPointAutocomplete";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Ticket {
@@ -603,7 +604,7 @@ export default function TicketListPage() {
 }
 
 
-function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: () => void; onSaved: () => void }) {
+  function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = React.useState({
     vehicle_reg_no: ticket?.vehicle_reg_no || ticket?.vehicle_number || "",
     alt_vehicle_reg_no: (ticket as any)?.alt_vehicle_reg_no || "",
@@ -679,6 +680,10 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
     return null;
   });
   const [pickupSameAsLead, setPickupSameAsLead] = React.useState<boolean>(false);
+  const [selectedPickup, setSelectedPickup] = React.useState<PickupPoint | null>(() => {
+    const name = String((ticket as any)?.pickup_point_name || '').trim();
+    return name ? ({ id: 0, name, type: 'user' } as PickupPoint) : null;
+  });
   // Load FASTag suggestions for Edit modal when user types (>= 2 chars)
   React.useEffect(() => {
     const term = (fastagQuery || (form as any).fastag_serial || "").toString().trim();
@@ -781,6 +786,7 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
   React.useEffect(() => {
     if (pickupSameAsLead) {
       setForm((f) => ({ ...f, pickup_point_name: f.lead_received_from }));
+      setSelectedPickup({ id: 0, name: String((form as any).lead_received_from || ''), type: 'user' } as any);
     }
   }, [pickupSameAsLead, (form as any).lead_received_from]);
 
@@ -1318,7 +1324,17 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Pick-up Point</label>
-                <Input value={form.pickup_point_name} readOnly={pickupSameAsLead} onChange={(e) => setForm({ ...form, pickup_point_name: e.target.value })} placeholder="Type pick-up point" />
+                <div className={pickupSameAsLead ? 'opacity-60 pointer-events-none' : ''}>
+                  <PickupPointAutocomplete
+                    value={selectedPickup}
+                    onSelect={(p) => {
+                      setSelectedPickup(p);
+                      setForm((f) => ({ ...f, pickup_point_name: p ? p.name : '' }));
+                    }}
+                    placeholder="Type pick-up point name"
+                    minChars={1}
+                  />
+                </div>
                 <label className="inline-flex items-center gap-2 text-xs mt-2">
                   <input
                     type="checkbox"
@@ -1326,7 +1342,13 @@ function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: (
                     onChange={(e) => {
                       const v = e.target.checked;
                       setPickupSameAsLead(v);
-                      if (v) setForm((f) => ({ ...f, pickup_point_name: f.lead_received_from }));
+                      if (v) {
+                        setSelectedPickup({ id: 0, name: String((form as any).lead_received_from || ''), type: 'user' });
+                        setForm((f) => ({ ...f, pickup_point_name: f.lead_received_from }));
+                      } else {
+                        // allow manual editing again; keep current text in field
+                        setSelectedPickup((prev) => (prev ? { ...prev } : null));
+                      }
                     }}
                   />
                   <span>Same as Lead</span>
