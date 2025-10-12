@@ -24,9 +24,9 @@ export const metadata: Metadata = {
     generator: 'v0.dev',
     manifest: '/manifest.webmanifest',
     themeColor: '#0b5cc2',
-    icons: {
-      icon: '/placeholder-logo.png',
-      apple: '/placeholder-logo.png',
+  icons: {
+      icon: '/logo.png',
+      apple: '/logo.png',
     },
 }
 

@@ -12,17 +12,13 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: '#ffffff',
     theme_color: '#0b5cc2',
     icons: [
+      // Use the square app logo (1200x1200). Browsers will downscale as needed.
       {
-        src: '/placeholder-logo.png',
-        sizes: '192x192',
+        src: '/logo.png',
+        sizes: '1200x1200',
         type: 'image/png',
-      },
-      {
-        src: '/placeholder-logo.png',
-        sizes: '512x512',
-        type: 'image/png',
+        purpose: 'any maskable',
       },
     ],
   }
 }
-

@@ -19,6 +19,9 @@ const withPWA = createNextPWA({
   skipWaiting: true,
   cacheOnFrontEndNav: true,
   disable: process.env.NODE_ENV === 'development',
+  fallbacks: {
+    document: '/offline',
+  },
 })
 
 export default withPWA(nextConfig)

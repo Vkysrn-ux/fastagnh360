@@ -51,17 +51,7 @@ function findVehicleInText(text: string): string | null {
   for (const t of tokens) {
     if (t.length >= 6 && /[A-Z]/.test(t) && /\d/.test(t)) return t;
   }
-  return null;
-}
-
-// Strict VRN matcher for format like: TN38BV5191 (optionally spaced)
-function findVehicleInTextStrict(text: string): string | null {
-  const s = String(text || "").toUpperCase().replace(/[^A-Z0-9\s]/g, " ");
-  // Accept contiguous or spaced variants
-  const re = /\b([A-Z]{2})\s*(\d{1,2})\s*([A-Z]{1,3})\s*(\d{3,4})\b/;
-  const m = s.match(re);
-  if (!m) return null;
-  return `${m[1]}${m[2]}${m[3]}${m[4]}`;
+    return null;
 }
 
 async function sendUltraMsgReply(to10: string, body: string) {
@@ -119,61 +109,24 @@ async function insertTicket({ phone, vehicle, subject, source }: { phone: string
   await pool.query(`INSERT INTO tickets_nh (${cols.join(", ")}, created_at, updated_at) VALUES (${placeholders}, NOW(), NOW())`, vals);
 }
 
-// --- lightweight buffer to pair separate VRN and mobile messages from same sender ---
-async function ensureBufferTable() {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS whatsapp_buffer (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        sender VARCHAR(32) NOT NULL,
-        vehicle VARCHAR(64) NULL,
-        phone VARCHAR(32) NULL,
-        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        UNIQUE KEY uniq_sender (sender)
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-    `);
-    // cleanup old partial entries (older than 6 hours)
-    await pool.query(`DELETE FROM whatsapp_buffer WHERE updated_at < (NOW() - INTERVAL 6 HOUR)`);
-  } catch {}
-}
-
-async function readBuffer(sender: string) {
-  const [rows]: any = await pool.query(`SELECT vehicle, phone, updated_at FROM whatsapp_buffer WHERE sender = ? LIMIT 1`, [sender]);
-  return Array.isArray(rows) && rows[0] ? rows[0] : null;
-}
-
-async function writeBuffer(sender: string, vehicle: string | null, phone: string | null) {
-  const cols: string[] = ["sender"]; const vals: any[] = [sender]; const sets: string[] = [];
-  if (vehicle !== null) { cols.push("vehicle"); vals.push(vehicle); sets.push("vehicle = VALUES(vehicle)"); }
-  if (phone !== null) { cols.push("phone"); vals.push(phone); sets.push("phone = VALUES(phone)"); }
-  const placeholders = cols.map(() => "?").join(", ");
-  await pool.query(`INSERT INTO whatsapp_buffer (${cols.join(", ")}) VALUES (${placeholders})
-                    ON DUPLICATE KEY UPDATE ${sets.length ? sets.join(", ") + "," : ""} updated_at = CURRENT_TIMESTAMP`, vals);
-}
-
-async function clearBuffer(sender: string) {
-  await pool.query(`DELETE FROM whatsapp_buffer WHERE sender = ?`, [sender]);
-}
-
 // POST: receive inbound messages from WhatsApp providers and create a ticket
 export async function POST(req: NextRequest) {
   try {
-    const contentType = (req.headers.get("content-type") || "").toLowerCase();
+    const contentType = req.headers.get("content-type") || "";
     let senderPhone: string | null = null;
     let text: string | null = null;
     let source = "whatsapp";
 
-    if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
+    if (contentType.includes("application/x-www-form-urlencoded")) {
       // Twilio-style webhook
       const form = await req.formData();
-      text = String(form.get("Body") || form.get("body") || form.get("caption") || "");
-      const from = String(form.get("From") || form.get("from") || ""); // e.g., whatsapp:+9198...
+      text = String(form.get("Body") || "");
+      const from = String(form.get("From") || ""); // e.g., whatsapp:+9198...
       const num = from.replace(/[^0-9]/g, "");
       const parsed = parseIndianMobile(num);
       senderPhone = parsed.ok ? parsed.value : null;
       source = "whatsapp_twilio";
-    } else if (contentType.includes("application/json")) {
+    } else {
       // JSON providers: Meta (Cloud API) or UltraMsg
       const body: any = await req.json().catch(() => ({}));
 
@@ -181,13 +134,12 @@ export async function POST(req: NextRequest) {
       const isUltra = !!(body?.instanceId || body?.chatId || (body?.from && typeof body?.body !== 'undefined'));
       if (isUltra) {
         // UltraMsg webhook payload typically includes: from, body, chatId, instanceId
-        const rawFrom = String(body?.from || body?.phone || body?.chatId || ""); // e.g., 919876543210@c.us
+        const rawFrom = String(body?.from || body?.chatId || ""); // e.g., 919876543210@c.us
         const normalizedFrom = rawFrom.replace(/@c\.us|@g\.us/gi, "");
         const digits = normalizedFrom.replace(/[^0-9]/g, "");
         const parsed = parseIndianMobile(digits);
         senderPhone = parsed.ok ? parsed.value : null;
-        const candidates = [body?.body, body?.caption, body?.message?.body, body?.text, body?.title, body?.message, body?.listResponseMessage?.title];
-        text = String((candidates.find((v: any) => typeof v === 'string' && v.length > 0)) || "");
+        text = String(body?.body || body?.message?.body || body?.text || "");
         source = "whatsapp_ultramsg";
       } else {
         // Meta (WhatsApp Cloud API)
@@ -199,77 +151,23 @@ export async function POST(req: NextRequest) {
         senderPhone = parsed.ok ? parsed.value : findMobileInText(text);
         source = "whatsapp_meta";
       }
-    } else {
-      // Fallback: try to decode as text (some providers may not send content-type)
-      const raw = await req.text().catch(() => "");
-      try {
-        const body = JSON.parse(raw);
-        const rawFrom = String(body?.from || body?.phone || body?.chatId || "");
-        const digits = rawFrom.replace(/[^0-9]/g, "");
-        const parsed = parseIndianMobile(digits);
-        senderPhone = parsed.ok ? parsed.value : null;
-        const candidates = [body?.body, body?.caption, body?.message?.body, body?.text, body?.title];
-        text = String((candidates.find((v: any) => typeof v === 'string' && v.length > 0)) || "");
-        source = body?.instanceId ? "whatsapp_ultramsg" : "whatsapp";
-      } catch {
-        // try form-style
-        const p = new URLSearchParams(raw);
-        const from = p.get("From") || p.get("from") || "";
-        const num = (from || "").replace(/[^0-9]/g, "");
-        const parsed = parseIndianMobile(num);
-        senderPhone = parsed.ok ? parsed.value : null;
-        text = p.get("Body") || p.get("body") || p.get("caption") || "";
-        source = "whatsapp";
-      }
     }
 
     if (!text && !senderPhone) {
       return NextResponse.json({ ok: true, note: "no message" });
     }
 
-    await ensureBufferTable();
-    // STRICT: require VRN + 10-digit mobile. Allow them to arrive across two separate messages per sender.
-    const vehicle = findVehicleInTextStrict(text || "");
-    const mobileFromText = findMobileInText(text || "");
+    const mobile = senderPhone || findMobileInText(text || "");
+    const vehicle = findVehicleInText(text || "");
 
-    const senderKey = senderPhone || "unknown"; // still store to pair if phone missing
-
-    if (vehicle && mobileFromText) {
-      await insertTicket({ phone: mobileFromText, vehicle, subject: "WhatsApp Lead", source });
-      if (source === "whatsapp_ultramsg") {
-        await sendUltraMsgReply(mobileFromText, "Thanks! Your details are received. We created a ticket and will contact you shortly.");
-      }
-      await clearBuffer(senderKey);
-      return NextResponse.json({ ok: true, created: true });
+    await insertTicket({ phone: mobile, vehicle, subject: "WhatsApp Lead", source });
+    if (source === "whatsapp_ultramsg" && mobile) {
+      await sendUltraMsgReply(mobile, "Thanks! Your details are received. We created a ticket and will contact you shortly.");
     }
 
-    // If only one is present, write to buffer and try to pair
-    const existing = await readBuffer(senderKey);
-    const bufVehicle = vehicle ?? existing?.vehicle ?? null;
-    const bufPhone = mobileFromText ?? existing?.phone ?? null;
-
-    if (bufVehicle && bufPhone) {
-      await insertTicket({ phone: bufPhone, vehicle: bufVehicle, subject: "WhatsApp Lead", source });
-      if (source === "whatsapp_ultramsg") {
-        await sendUltraMsgReply(bufPhone, "Thanks! Your details are received. We created a ticket and will contact you shortly.");
-      }
-      await clearBuffer(senderKey);
-      return NextResponse.json({ ok: true, created: true });
-    }
-
-    // update buffer with whatever we have
-    await writeBuffer(senderKey, vehicle ?? null, mobileFromText ?? null);
-    return NextResponse.json({ ok: true, pending: true });
-
-    
+    return NextResponse.json({ ok: true, created: true });
   } catch (e: any) {
     // Avoid failing provider retries; respond 200 with note
-    try {
-      if (String(process.env.WHATSAPP_DEBUG || "").toLowerCase() === "true") {
-        // eslint-disable-next-line no-console
-        console.error("/api/whatsapp error:", e);
-      }
-    } catch {}
     return NextResponse.json({ ok: true, note: e?.message || "error" });
   }
 }
