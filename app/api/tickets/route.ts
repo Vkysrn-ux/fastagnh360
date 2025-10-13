@@ -179,6 +179,7 @@ async function recordFastagSale(opts: {
           bank_name VARCHAR(255) NULL,
           fastag_class VARCHAR(32) NULL,
           supplier_id INT NULL,
+          bank_login_user_id INT NULL,
           sold_by_user_id INT NULL,
           sold_by_agent_id INT NULL,
           payment_to_collect DECIMAL(10,2) NULL,
@@ -200,16 +201,16 @@ async function recordFastagSale(opts: {
     } catch {}
 
     const [rows]: any = await conn.query(
-      `SELECT supplier_id, bank_name, fastag_class, assigned_to_agent_id FROM fastags WHERE tag_serial = ? LIMIT 1`,
+      `SELECT supplier_id, bank_name, fastag_class, assigned_to_agent_id, bank_login_user_id FROM fastags WHERE tag_serial = ? LIMIT 1`,
       [serial]
     );
     const f = rows?.[0] || {};
     await conn.query(
       `INSERT INTO fastag_sales (
-         tag_serial, ticket_id, vehicle_reg_no, bank_name, fastag_class, supplier_id,
+         tag_serial, ticket_id, vehicle_reg_no, bank_name, fastag_class, supplier_id, bank_login_user_id,
          sold_by_user_id, sold_by_agent_id, payment_to_collect, payment_to_send, net_value,
          commission_amount, created_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
       [
         serial,
         opts.ticketId,
@@ -217,6 +218,7 @@ async function recordFastagSale(opts: {
         f.bank_name ?? null,
         f.fastag_class ?? null,
         f.supplier_id ?? null,
+        f.bank_login_user_id ?? null,
         opts.assignedToUserId ?? null,
         f.assigned_to_agent_id ?? null,
         opts.payment_to_collect ?? null,
@@ -279,6 +281,8 @@ export async function GET(req: NextRequest) {
             COALESCE(u.name, '') AS assigned_to_name${createdBySelect},
             f.bank_name AS fastag_bank,
             f.fastag_class,
+            f.bank_login_user_id AS fastag_bank_login_user_id,
+            COALESCE(blu.name,'') AS fastag_bank_login_user_name,
             CASE
               WHEN f.status = 'sold' THEN 'User'
               WHEN f.assigned_to_agent_id IS NOT NULL THEN 'Agent'
@@ -287,6 +291,7 @@ export async function GET(req: NextRequest) {
           FROM tickets_nh t
           LEFT JOIN users u ON t.assigned_to = u.id${createdByJoin}
           LEFT JOIN fastags f ON f.tag_serial = t.fastag_serial
+          LEFT JOIN users blu ON blu.id = f.bank_login_user_id
           WHERE t.parent_ticket_id = ?
           ORDER BY t.created_at DESC
           `,
@@ -322,6 +327,8 @@ export async function GET(req: NextRequest) {
             END AS shop_name,
             f.bank_name AS fastag_bank,
             f.fastag_class,
+            f.bank_login_user_id AS fastag_bank_login_user_id,
+            COALESCE(blu.name,'') AS fastag_bank_login_user_name,
             CASE
               WHEN f.status = 'sold' THEN 'User'
               WHEN f.assigned_to_agent_id IS NOT NULL THEN 'Agent'
@@ -330,6 +337,7 @@ export async function GET(req: NextRequest) {
           FROM tickets_nh t
           LEFT JOIN users u ON t.assigned_to = u.id${createdByJoin}
           LEFT JOIN fastags f ON f.tag_serial = t.fastag_serial
+          LEFT JOIN users blu ON blu.id = f.bank_login_user_id
           WHERE COALESCE(t.status, '') <> 'draft'
           ORDER BY t.created_at DESC
         `);
@@ -364,6 +372,8 @@ export async function GET(req: NextRequest) {
           END AS shop_name,
           f.bank_name AS fastag_bank,
           f.fastag_class,
+          f.bank_login_user_id AS fastag_bank_login_user_id,
+          COALESCE(blu.name,'') AS fastag_bank_login_user_name,
           CASE
             WHEN f.status = 'sold' THEN 'User'
             WHEN f.assigned_to_agent_id IS NOT NULL THEN 'Agent'
@@ -373,6 +383,7 @@ export async function GET(req: NextRequest) {
         FROM tickets_nh t
         LEFT JOIN users u ON t.assigned_to = u.id${createdByJoin}
         LEFT JOIN fastags f ON f.tag_serial = t.fastag_serial
+        LEFT JOIN users blu ON blu.id = f.bank_login_user_id
         LEFT JOIN (
           SELECT parent_ticket_id, COUNT(*) AS cnt
           FROM tickets_nh

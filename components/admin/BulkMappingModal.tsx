@@ -29,6 +29,8 @@ export default function BulkMappingModal({ onSuccess }: { onSuccess?: () => void
   const [filterClass, setFilterClass] = useState('');
   const [mapping, setMapping] = useState<'pending'|'done'|'all'>('pending');
   const [loadingList, setLoadingList] = useState(false);
+  // Bank login user (optional)
+  const [bankUser, setBankUser] = useState<UserOption | null>(null);
   // Supplier filter
   const [suppliers, setSuppliers] = useState<Array<{ id: number; name: string }>>([]);
   const [supplierId, setSupplierId] = useState<string>("");
@@ -102,7 +104,7 @@ export default function BulkMappingModal({ onSuccess }: { onSuccess?: () => void
     try {
       const res = await fetch('/api/fastags/bulk-mapping', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tag_serials: list, status })
+        body: JSON.stringify({ tag_serials: list, status, bank_login_user_id: bankUser?.id ?? undefined })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Failed to update mapping');
@@ -167,6 +169,12 @@ export default function BulkMappingModal({ onSuccess }: { onSuccess?: () => void
                   <option value="done">Done</option>
                   <option value="all">All</option>
                 </select>
+              </div>
+              {/* Optional: set bank login user for selected tags when updating mapping */}
+              <div className="min-w-[260px]">
+                <label className="block text-xs mb-1">Bank Login User (optional)</label>
+                <UsersAutocomplete value={bankUser} onSelect={(u)=> setBankUser(u as any)} placeholder="Search user to set as holder" />
+                <div className="text-xs text-muted-foreground mt-1">If set, saves as bank login holder for these tags.</div>
               </div>
               <Button variant="outline" onClick={loadList} disabled={loadingList}>Reload</Button>
             </div>

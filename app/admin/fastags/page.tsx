@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import BulkTransferModal from "@/components/admin/BulkTransferModal";
 import BulkMarkSoldModal from "@/components/admin/BulkMarkSoldModal";
 import BulkMappingModal from "@/components/admin/BulkMappingModal";
+import UsersAutocomplete, { type UserOption } from "@/components/UsersAutocomplete";
 import { PieChart, Pie, Cell, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from "recharts";
 
 const COLORS = ["#2ecc40", "#0074d9", "#ff4136", "#ffb347", "#a569bd", "#5dade2"];
@@ -282,6 +283,7 @@ export default function AdminFastagsPage() {
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [agentIdFilter, setAgentIdFilter] = useState("all");
+  const [bankUserFilter, setBankUserFilter] = useState<UserOption | null>(null);
   // Date filters
   const [createdFrom, setCreatedFrom] = useState("");
   const [createdTo, setCreatedTo] = useState("");
@@ -295,6 +297,7 @@ export default function AdminFastagsPage() {
       const params: string[] = [];
       // Show ALL fastags on dashboard (do not restrict by mapping)
       params.push(`mapping=all`);
+      if (bankUserFilter?.id) params.push(`bank_user=${encodeURIComponent(String(bankUserFilter.id))}`);
       if (createdFrom) params.push(`created_from=${encodeURIComponent(createdFrom)}`);
       if (createdTo) params.push(`created_to=${encodeURIComponent(createdTo)}`);
       if (assignedFrom) params.push(`assigned_from=${encodeURIComponent(assignedFrom)}`);
@@ -315,7 +318,7 @@ export default function AdminFastagsPage() {
     fetch("/api/agents")
       .then(res => res.json())
       .then(data => setAgents(Array.isArray(data) ? data : []));
-  }, [createdFrom, createdTo, assignedFrom, assignedTo, soldFrom, soldTo]);
+  }, [createdFrom, createdTo, assignedFrom, assignedTo, soldFrom, soldTo, bankUserFilter?.id]);
 
   // Filter logic for table
   const filtered = useMemo(() => {
@@ -524,15 +527,18 @@ export default function AdminFastagsPage() {
               <CardTitle>FASTag Inventory</CardTitle>
               <CardDescription>View and manage all FASTags in the system.</CardDescription>
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mt-4">
-                <div className="relative">
-                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search FASTags..."
-                    className="pl-8"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
+              <div className="relative">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search FASTags..."
+                  className="pl-8"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <div>
+                <UsersAutocomplete value={bankUserFilter} onSelect={(u)=> setBankUserFilter(u as any)} placeholder="Filter by bank login user" />
+              </div>
                 <div>
                   <Select value={filterBank} onValueChange={setFilterBank}>
                     <SelectTrigger>

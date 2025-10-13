@@ -8,12 +8,20 @@ export async function POST(req: NextRequest) {
   try {
     // Check optional bank mapping column once
     let hasBankMappingStatus = false;
+    let hasBankLoginUser = false;
     try { hasBankMappingStatus = await hasTableColumn('fastags', 'bank_mapping_status'); } catch {}
     // Attempt to add column if missing
     if (!hasBankMappingStatus) {
       try {
         await pool.query(`ALTER TABLE fastags ADD COLUMN bank_mapping_status ENUM('pending','done') NULL`);
         hasBankMappingStatus = true;
+      } catch {}
+    }
+    try { hasBankLoginUser = await hasTableColumn('fastags', 'bank_login_user_id'); } catch {}
+    if (!hasBankLoginUser) {
+      try {
+        await pool.query(`ALTER TABLE fastags ADD COLUMN bank_login_user_id INT NULL`);
+        hasBankLoginUser = true;
       } catch {}
     }
     // Ensure audit table exists
@@ -72,6 +80,14 @@ export async function POST(req: NextRequest) {
       if (hasBankMappingStatus && (mappingValue === 'pending' || mappingValue === 'done')) {
         setParts.push(`bank_mapping_status = ?`);
         params.push(mappingValue);
+      }
+      if (hasBankLoginUser && (row.bankLoginUserId === null || row.bankLoginUserId === undefined || !isNaN(Number(row.bankLoginUserId)))) {
+        if (row.bankLoginUserId === null || row.bankLoginUserId === undefined) {
+          setParts.push('bank_login_user_id = NULL');
+        } else {
+          setParts.push('bank_login_user_id = ?');
+          params.push(Number(row.bankLoginUserId));
+        }
       }
       const inClause = row.serials.map(() => '?').join(',');
       const sql = `UPDATE fastags SET ${setParts.join(', ')} WHERE tag_serial IN (${inClause})

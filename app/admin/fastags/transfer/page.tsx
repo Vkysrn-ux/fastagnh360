@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { getAdminSession } from "@/lib/actions/auth-actions";
+import UsersAutocomplete, { type UserOption } from "@/components/UsersAutocomplete";
 
 export default function FastagTransferPage() {
   const router = useRouter();
@@ -23,6 +24,7 @@ export default function FastagTransferPage() {
   const [selectedMap, setSelectedMap] = useState<Record<string, Record<string, boolean>>>({});
   const [message, setMessage] = useState("");
   const [mappingFilter, setMappingFilter] = useState<'all'|'pending'|'done'>('all');
+  const [bankLoginUser, setBankLoginUser] = useState<UserOption | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -41,7 +43,7 @@ export default function FastagTransferPage() {
       return;
     }
     try {
-      const assignments: Array<{ agentId: string | number; serials: string[] }> = [];
+      const assignments: Array<{ agentId: string | number; serials: string[]; bankLoginUserId?: number }> = [];
       for (const row of summary) {
         const key = `${row.supplier_id}|${row.bank_name}|${row.fastag_class}`;
         const qty = Number(qtyMap[key] || 0);
@@ -72,6 +74,9 @@ export default function FastagTransferPage() {
           if (mappingFilter === 'pending' || mappingFilter === 'done') {
             payload.mapping = mappingFilter;
           }
+          if (bankLoginUser?.id) {
+            payload.bankLoginUserId = Number(bankLoginUser.id);
+          }
           assignments.push(payload);
         }
       }
@@ -100,6 +105,13 @@ export default function FastagTransferPage() {
           <CardTitle>Quick Transfer</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <Label>Bank Login User (optional)</Label>
+              <UsersAutocomplete value={bankLoginUser} onSelect={(u)=> setBankLoginUser(u as any)} placeholder="Search user to set as holder" />
+              <div className="text-xs text-muted-foreground mt-1">Applies to all selected transfers below.</div>
+            </div>
+          </div>
           <div>
             <Label>From Agent</Label>
             <Select onValueChange={async (val) => {

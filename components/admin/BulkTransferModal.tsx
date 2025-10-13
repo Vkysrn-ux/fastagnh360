@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import UsersAutocomplete, { type UserOption } from "@/components/UsersAutocomplete";
 
 // Helpers for FASTag serial handling
 function findFullSerial(serials, unique) {
@@ -128,6 +129,8 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
   const [rows, setRows] = useState([
     { supplierId: "", bank: "", fastagClass: "", prefix: "", availableSerials: [], startSerial: "", endSerial: "", quantity: 1, note: "", mapping: "pending" }
   ]);
+  // Optional bank login user to set on transferred tags
+  const [bankUser, setBankUser] = useState<UserOption | null>(null);
   const [loading, setLoading] = useState(false);
   const [allSerialsCache, setAllSerialsCache] = useState({});
   const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -317,7 +320,8 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
             serials,
             note: row.note || "",
             // include mapping intent so API can set bank mapping status on tags
-            mapping: (row as any).mapping || 'pending'
+            mapping: (row as any).mapping || 'pending',
+            bankLoginUserId: bankUser?.id ?? undefined
           };
         })
         .filter(a => a.from && a.to && Array.isArray(a.serials) && a.serials.length > 0);
@@ -335,6 +339,7 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
       if (result.success) {
         alert(`Total ${assignments.reduce((sum, a) => sum + a.serials.length, 0)} FASTags transferred.`);
         setRows([{ supplierId: "", bank: "", fastagClass: "", prefix: "", availableSerials: [], startSerial: "", endSerial: "", quantity: 1, note: "", mapping: "pending" }]);
+        setBankUser(null);
         onSuccess && onSuccess();
         onClose();
       } else {
@@ -424,6 +429,13 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
               </SelectContent>
             </Select>
           )}
+        </div>
+        <div className="flex gap-3 mb-4 flex-wrap">
+          <div className="min-w-[260px]">
+            <label className="block text-xs mb-1">Bank Login User (optional)</label>
+            <UsersAutocomplete value={bankUser} onSelect={(u)=> setBankUser(u as any)} placeholder="Set bank login holder for transferred tags" />
+            <div className="text-xs text-muted-foreground mt-1">Applied to all rows in this transfer.</div>
+          </div>
         </div>
         <div className="flex flex-col gap-4">
           {rows.map((row, i) => {

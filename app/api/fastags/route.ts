@@ -22,6 +22,11 @@ function normalizeFastagRow(row: any) {
     holder: row.holder ? String(row.holder) : "",
     supplier_id: row.supplier_id !== undefined && row.supplier_id !== null ? Number(row.supplier_id) : null,
     supplier_name: row.supplier_name ? String(row.supplier_name) : "",
+    bank_login_user_id:
+      row.bank_login_user_id !== undefined && row.bank_login_user_id !== null
+        ? Number(row.bank_login_user_id)
+        : null,
+    bank_login_user_name: row.bank_login_user_name ? String(row.bank_login_user_name) : "",
     created_at: row.created_at ?? null,
     assigned_at: row.assigned_at ?? null,
     assigned_date: row.assigned_date ?? null,
@@ -39,6 +44,7 @@ export async function GET(req: NextRequest) {
   const bankFilter = (searchParams.get("bank") || "").trim();
   const classFilter = (searchParams.get("class") || "").trim();
   const ownerFilter = (searchParams.get("owner") || searchParams.get("assigned_to") || "").trim();
+  const bankLoginUserFilter = (searchParams.get("bank_user") || searchParams.get("bank_login_user_id") || "").trim();
   const statusFilter = (searchParams.get("status") || "").trim();
   const supplierFilter = (searchParams.get("supplier") || searchParams.get("supplier_id") || "").trim();
   const bankLike = (searchParams.get("bank_like") || "").trim();
@@ -72,19 +78,27 @@ export async function GET(req: NextRequest) {
     return NextResponse.json([]);
   }
 
-  // Discover optional mapping columns once
+  // Discover optional columns once
   let hasMappingStatus = false;
   let hasMappingDone = false;
+  let hasBankLoginUser = false;
   try {
     hasMappingStatus = await hasTableColumn('fastags', 'bank_mapping_status');
   } catch {}
   try {
     hasMappingDone = await hasTableColumn('fastags', 'mapping_done');
   } catch {}
+  try {
+    hasBankLoginUser = await hasTableColumn('fastags', 'bank_login_user_id');
+  } catch {}
   const simpleMappingSelect = [
     hasMappingStatus ? 'f.bank_mapping_status AS bank_mapping_status' : null,
     hasMappingDone ? 'f.mapping_done AS mapping_done' : null,
   ].filter(Boolean).join(', ');
+  const simpleBankUserSelect = hasBankLoginUser
+    ? ', f.bank_login_user_id, COALESCE(blu.name,\'\') AS bank_login_user_name'
+    : ', NULL AS bank_login_user_id, \"\" AS bank_login_user_name';
+  const simpleBankUserJoin = hasBankLoginUser ? ' LEFT JOIN users blu ON f.bank_login_user_id = blu.id' : '';
 
   if (isSimpleLookup) {
     try {
@@ -93,6 +107,8 @@ export async function GET(req: NextRequest) {
         `SELECT f.id, f.tag_serial, f.fastag_class, f.bank_name, f.status,
                 f.assigned_to_agent_id, f.assigned_to,
                 COALESCE(ua.name,'') AS assigned_to_name,
+                ${hasBankLoginUser ? 'f.bank_login_user_id' : 'NULL AS bank_login_user_id'},
+                ${hasBankLoginUser ? "COALESCE(blu.name,'')" : "''"} AS bank_login_user_name,
                 COALESCE(
                   CASE WHEN f.status = 'sold' THEN (
                     SELECT t.customer_name FROM tickets_nh t
@@ -111,9 +127,10 @@ export async function GET(req: NextRequest) {
            FROM fastags f
             LEFT JOIN users ua ON f.assigned_to_agent_id = ua.id
             LEFT JOIN users uu ON f.assigned_to = uu.id
-           WHERE f.tag_serial LIKE ?
-           ORDER BY f.created_at DESC
-           LIMIT 20`,
+            ${simpleBankUserJoin}
+            WHERE f.tag_serial LIKE ?
+            ORDER BY f.created_at DESC
+            LIMIT 20`,
         [`${queryTerm}%`]
       );
       // If no prefix matches, try a contains search as a fallback
@@ -122,6 +139,8 @@ export async function GET(req: NextRequest) {
           `SELECT f.id, f.tag_serial, f.fastag_class, f.bank_name, f.status,
                   f.assigned_to_agent_id, f.assigned_to,
                   COALESCE(ua.name,'') AS assigned_to_name,
+                  ${hasBankLoginUser ? 'f.bank_login_user_id' : 'NULL AS bank_login_user_id'},
+                  ${hasBankLoginUser ? "COALESCE(blu.name,'')" : "''"} AS bank_login_user_name,
                   COALESCE(
                     CASE WHEN f.status = 'sold' THEN (
                       SELECT t.customer_name FROM tickets_nh t
@@ -140,9 +159,10 @@ export async function GET(req: NextRequest) {
              FROM fastags f
              LEFT JOIN users ua ON f.assigned_to_agent_id = ua.id
              LEFT JOIN users uu ON f.assigned_to = uu.id
-            WHERE f.tag_serial LIKE ?
-            ORDER BY f.created_at DESC
-            LIMIT 20`,
+             ${simpleBankUserJoin}
+             WHERE f.tag_serial LIKE ?
+             ORDER BY f.created_at DESC
+             LIMIT 20`,
           [`%${queryTerm}%`]
         );
         rows = rowsContains as any;
@@ -180,6 +200,10 @@ export async function GET(req: NextRequest) {
   if (ownerFilter) {
     conditions.push("(f.assigned_to_agent_id = ? OR f.assigned_to = ?)");
     values.push(ownerFilter, ownerFilter);
+  }
+  if (bankLoginUserFilter) {
+    conditions.push("f.bank_login_user_id = ?");
+    values.push(bankLoginUserFilter);
   }
   if (statusFilter) {
     conditions.push("f.status = ?");
@@ -247,6 +271,10 @@ export async function GET(req: NextRequest) {
     hasMappingStatus ? 'f.bank_mapping_status AS bank_mapping_status' : null,
     hasMappingDone ? 'f.mapping_done AS mapping_done' : null,
   ].filter(Boolean).join(', ');
+  const bankUserSelect = hasBankLoginUser
+    ? ', f.bank_login_user_id, COALESCE(blu.name, \"\") AS bank_login_user_name'
+    : ', NULL AS bank_login_user_id, \"\" AS bank_login_user_name';
+  const bankUserJoin = hasBankLoginUser ? ' LEFT JOIN users blu ON f.bank_login_user_id = blu.id' : '';
 
   // Build dynamic owner subselect based on available columns in tickets_nh
   const hasPickup = await hasTableColumn('tickets_nh', 'pickup_point_name').catch(() => false);
@@ -281,7 +309,7 @@ export async function GET(req: NextRequest) {
           ORDER BY s.created_at DESC
           LIMIT 1
         ) AS sold_by_user_id,
-        COALESCE(u.name, '') AS assigned_to_name,
+        COALESCE(u.name, '') AS assigned_to_name${bankUserSelect},
         COALESCE(
           CASE 
             WHEN f.status = 'sold' THEN ( ${ownerSubselect} )
@@ -307,6 +335,7 @@ export async function GET(req: NextRequest) {
       FROM fastags f
       LEFT JOIN users u ON f.assigned_to_agent_id = u.id
       LEFT JOIN users uu ON f.assigned_to = uu.id
+      ${bankUserJoin}
       LEFT JOIN suppliers s ON f.supplier_id = s.id
       ${whereClause}
       ORDER BY f.created_at DESC
@@ -339,7 +368,7 @@ export async function GET(req: NextRequest) {
           f.assigned_date,
           NULL AS sold_at,
           NULL AS sold_by_user_id,
-          COALESCE(u.name, '') AS assigned_to_name,
+          COALESCE(u.name, '') AS assigned_to_name${bankUserSelect},
           COALESCE(
             CASE 
               WHEN f.status = 'sold' THEN ( ${ownerSubselect} )
@@ -354,6 +383,7 @@ export async function GET(req: NextRequest) {
         FROM fastags f
         LEFT JOIN users u ON f.assigned_to_agent_id = u.id
         LEFT JOIN users uu ON f.assigned_to = uu.id
+        ${bankUserJoin}
         ${whereClause}
         ORDER BY f.created_at DESC
         ${limitClause}
