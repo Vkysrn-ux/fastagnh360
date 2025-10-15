@@ -69,14 +69,39 @@ export async function GET(req: NextRequest) {
     }
 
     if (rolesParam) {
-      const list = rolesParam.split(',').map(s => s.trim()).filter(Boolean)
+      // Compare roles case-insensitively in SQL and expand common synonyms
+      const raw = rolesParam
+        .split(',')
+        .map(s => s.trim().toLowerCase())
+        .filter(Boolean)
+      const expand = (r: string): string[] => {
+        if (r === 'super' || r === 'super-admin' || r === 'super_admin' || r === 'super admin' || r === 'superadmin') {
+          return ['super', 'super-admin', 'super_admin', 'super admin', 'superadmin']
+        }
+        if (r === 'admin' || r === 'administrator') return ['admin','administrator']
+        return [r]
+      }
+      const list = Array.from(new Set(raw.flatMap(expand)))
       if (list.length > 0) {
-        sql += ` AND role IN (${list.map(() => '?').join(',')})`
+        sql += ` AND LOWER(role) IN (${list.map(() => '?').join(',')})`
         params.push(...list)
       }
     } else if (role) {
-      sql += ' AND role = ?'
-      params.push(role)
+      const r = role.toLowerCase()
+      const list = ((): string[] => {
+        if (r === 'super' || r === 'super-admin' || r === 'super_admin' || r === 'super admin' || r === 'superadmin') {
+          return ['super', 'super-admin', 'super_admin', 'super admin', 'superadmin']
+        }
+        if (r === 'admin' || r === 'administrator') return ['admin','administrator']
+        return [r]
+      })()
+      if (list.length === 1) {
+        sql += ' AND LOWER(role) = ?'
+        params.push(list[0])
+      } else {
+        sql += ` AND LOWER(role) IN (${list.map(() => '?').join(',')})`
+        params.push(...list)
+      }
     }
 
     if (name) {

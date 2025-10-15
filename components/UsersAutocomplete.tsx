@@ -33,9 +33,25 @@ export default function UsersAutocomplete({
     if (term.length >= minChars) {
       const q = new URLSearchParams();
       if (Array.isArray(roles) && roles.length > 0) {
-        q.set("roles", roles.map(r => String(r).toLowerCase()).join(","));
+        const normalize = (r: string): string[] => {
+          const v = String(r || '').toLowerCase().trim()
+          if (['super','super-admin','super_admin','super admin','superadmin'].includes(v)) {
+            return ['super','super-admin','super_admin','super admin','superadmin']
+          }
+          if (['admin','administrator'].includes(v)) return ['admin','administrator']
+          return [v]
+        }
+        const expanded = Array.from(new Set(roles.flatMap(r => normalize(String(r)))))
+        q.set("roles", expanded.join(","));
       } else if (role) {
-        q.set("role", role.toLowerCase());
+        const v = role.toLowerCase();
+        if (['super','super-admin','super_admin','super admin','superadmin'].includes(v)) {
+          q.set("roles", ['super','super-admin','super_admin','super admin','superadmin'].join(','))
+        } else if (['admin','administrator'].includes(v)) {
+          q.set("roles", ['admin','administrator'].join(','))
+        } else {
+          q.set("role", v);
+        }
       }
       q.set("name", term);
       fetch(`/api/users?${q.toString()}`)

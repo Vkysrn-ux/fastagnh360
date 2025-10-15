@@ -722,7 +722,7 @@ export default function CreateTicketFullModal({
                 <label className="block font-semibold mb-1">Assigned To</label>
                 <div className="flex gap-2">
                   <div className="flex-1">
-                    <UsersAutocomplete roles={["admin","super-admin"]} value={assignedUser} onSelect={(u) => { setAssignedUser(u as any); setForm((f) => ({ ...f, assigned_to: u ? String(u.id) : "" })); }} placeholder="Type user name" />
+                    <UsersAutocomplete roles={["admin","administrator","super","super-admin","super_admin","super admin","superadmin"]} value={assignedUser} onSelect={(u) => { setAssignedUser(u as any); setForm((f) => ({ ...f, assigned_to: u ? String(u.id) : "" })); }} placeholder="Type user name" />
                   </div>
                   <button type="button" className="px-3 py-2 border rounded" onClick={() => { if (currentUser) { setAssignedUser(currentUser); setForm((f) => ({ ...f, assigned_to: String(currentUser.id) })); } }}>Self</button>
                 </div>
