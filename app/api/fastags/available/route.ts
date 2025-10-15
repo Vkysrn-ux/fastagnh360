@@ -27,6 +27,12 @@ export async function GET(req: NextRequest) {
   if (hasFirst || hasLast) ownerParts.splice(ownerParts.length - 1, 0, "NULLIF(TRIM(CONCAT_WS(' ', t.first_name, t.last_name)), '')");
   const ownerSubselect = `SELECT COALESCE(${ownerParts.join(', ')})\n            FROM tickets_nh t\n            WHERE (t.fastag_serial COLLATE utf8mb4_general_ci) = (f.tag_serial COLLATE utf8mb4_general_ci)\n            ORDER BY t.created_at DESC LIMIT 1`;
 
+  // Include bank login user details if the optional column exists
+  let hasBankLoginUser = false;
+  try {
+    hasBankLoginUser = await hasTableColumn('fastags', 'bank_login_user_id');
+  } catch {}
+
   let sql = `SELECT 
       f.tag_serial,
       f.bank_name,
@@ -34,6 +40,8 @@ export async function GET(req: NextRequest) {
       f.assigned_to_agent_id,
       f.assigned_to,
       COALESCE(ua.name, uu.name, '') AS assigned_to_name,
+      ${hasBankLoginUser ? 'f.bank_login_user_id' : 'NULL AS bank_login_user_id'},
+      ${hasBankLoginUser ? "COALESCE(blu.name,'')" : "''"} AS bank_login_user_name,
       COALESCE(
         CASE 
           WHEN f.status = 'sold' THEN ( ${ownerSubselect} )
@@ -53,6 +61,7 @@ export async function GET(req: NextRequest) {
     FROM fastags f
     LEFT JOIN users ua ON f.assigned_to_agent_id = ua.id
     LEFT JOIN users uu ON f.assigned_to = uu.id
+    ${hasBankLoginUser ? 'LEFT JOIN users blu ON f.bank_login_user_id = blu.id' : ''}
     WHERE f.fastag_class = ? `;
   let params: any[] = [fastagClass];
 

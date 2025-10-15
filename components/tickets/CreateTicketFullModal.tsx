@@ -275,7 +275,9 @@ export default function CreateTicketFullModal({
 
   function pickFastag(row: any) {
     setFastagSerialInput(row.tag_serial || "");
-    setFastagOwner((row as any).owner_name || row.assigned_to_name || (row.holder ? String(row.holder) : ""));
+    const owner = String(((row as any).owner_name || row.assigned_to_name || (row.holder ? String(row.holder) : "")) || '').trim();
+    const login = String(((row as any).bank_login_user_name || '')) .trim();
+    setFastagOwner(owner && login ? `${owner} / ${login}` : owner || login || "");
     setForm((f) => ({ ...f, fastag_serial: row.tag_serial || "", bank_name: row.bank_name || f.bank_name }));
     if (row.fastag_class) {
       const code = String(row.fastag_class).toLowerCase();

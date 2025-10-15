@@ -641,6 +641,7 @@ export default function TicketListPage() {
     fastag_bank: (ticket as any)?.fastag_bank || "",
     fastag_class: (ticket as any)?.fastag_class || "",
     fastag_owner: (ticket as any)?.fastag_owner || "",
+    fastag_bank_login_user_name: (ticket as any)?.fastag_bank_login_user_name || "",
     // documents
     rc_front_url: (ticket as any)?.rc_front_url || "",
     rc_back_url: (ticket as any)?.rc_back_url || "",
@@ -1404,7 +1405,12 @@ export default function TicketListPage() {
                             fastag_serial: row.tag_serial || (f as any).fastag_serial,
                             fastag_bank: row.bank_name || (f as any).fastag_bank,
                             fastag_class: row.fastag_class || (f as any).fastag_class,
-                            fastag_owner: (row as any).owner_name || row.assigned_to_name || (row.holder ? String(row.holder) : (f as any).fastag_owner || ""),
+                            fastag_bank_login_user_name: (row as any).bank_login_user_name || '',
+                            fastag_owner: (() => {
+                              const owner = String(((row as any).owner_name || row.assigned_to_name || (row.holder ? String(row.holder) : (f as any).fastag_owner || "")) || '').trim();
+                              const login = String(((row as any).bank_login_user_name || '')).trim();
+                              return owner && login ? `${owner} / ${login}` : owner || login || '';
+                            })(),
                           } as any));
                           setFastagQuery(String(row.tag_serial || ""));
                           setFastagOptions([]);
@@ -1418,7 +1424,16 @@ export default function TicketListPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">FASTag Owner</label>
-                <Input value={(form as any).fastag_owner as any} readOnly className="bg-gray-50" placeholder="Owner appears after picking" />
+                <Input
+                  value={(() => {
+                    const owner = String(((form as any).fastag_owner || '')).trim();
+                    const login = String(((form as any).fastag_bank_login_user_name || '')).trim();
+                    return owner && login ? `${owner} / ${login}` : owner || login || '';
+                  })() as any}
+                  readOnly
+                  className="bg-gray-50"
+                  placeholder="Owner appears after picking"
+                />
               </div>
             </div>
 

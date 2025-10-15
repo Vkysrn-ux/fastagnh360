@@ -369,7 +369,9 @@ export default function CreateSubTicketFullModal({
 
   function pickFastag(row: any) {
     setFastagSerialInput(row.tag_serial || "");
-    setFastagOwner((row as any).owner_name || row.assigned_to_name || (row.holder ? String(row.holder) : ""));
+    const owner = String(((row as any).owner_name || row.assigned_to_name || (row.holder ? String(row.holder) : "")) || '').trim();
+    const login = String(((row as any).bank_login_user_name || '')) .trim();
+    setFastagOwner(owner && login ? `${owner} / ${login}` : owner || login || "");
     // @ts-ignore
     setForm((f) => ({ ...f, fastag_serial: row.tag_serial || "", bank_name: row.bank_name || (f as any).bank_name }));
     if (row.fastag_class) setFastagClass(String(row.fastag_class));
@@ -457,6 +459,9 @@ export default function CreateSubTicketFullModal({
       if (commissionAmount !== "") payload.commission_amount = Number(commissionAmount) || 0;
       // @ts-ignore
       if (form.fastag_serial) payload.fastag_serial = (form as any).fastag_serial;
+      if ((form as any).bank_name) payload.fastag_bank = (form as any).bank_name;
+      if (fastagClass) payload.fastag_class = fastagClass;
+      if (fastagOwner) payload.fastag_owner = fastagOwner;
       payload.payment_received = !!paymentReceived;
       payload.payment_nil = !!paymentNil;
       payload.delivery_done = !!deliveryDone;

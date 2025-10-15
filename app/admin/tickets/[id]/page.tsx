@@ -226,6 +226,15 @@ export default function TicketDetailPage() {
                   <div>
                     <p className="text-sm text-gray-500">FASTag Barcode</p>
                     <p className="font-medium">{ticket.fastag_serial || '-'}</p>
+                    {(((ticket as any).fastag_owner || (ticket as any).fastag_bank_login_user_name)) && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        Owner / Login: {(() => {
+                          const owner = String(((ticket as any).fastag_owner || '')).trim();
+                          const login = String(((ticket as any).fastag_bank_login_user_name || '')).trim();
+                          return owner && login ? `${owner} / ${login}` : owner || login || '';
+                        })()}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
