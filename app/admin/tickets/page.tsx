@@ -75,6 +75,24 @@ export default function TicketListPage() {
   const [toDate, setToDate] = useState<string>("");
   const [paidViaFilter, setPaidViaFilter] = useState<string>("all");
   const [paymentReceivedFilter, setPaymentReceivedFilter] = useState<string>("all");
+  // More filters
+  const [leadFromFilter, setLeadFromFilter] = useState<string>("all");
+  const [kyvStatusFilter, setKyvStatusFilter] = useState<string>("all");
+  const [npciStatusFilter, setNpciStatusFilter] = useState<string>("all");
+  const [commissionFilter, setCommissionFilter] = useState<string>("all"); // all|done|pending
+  const [deliveryFilter, setDeliveryFilter] = useState<string>("all"); // all|done|nil|pending
+  const [paymentNilFilter, setPaymentNilFilter] = useState<string>("all"); // all|yes|no
+  const [createdByFilter, setCreatedByFilter] = useState<UserOption | null>(null);
+  const [fastagBankFilter, setFastagBankFilter] = useState<string>("all");
+  const [fastagClassFilter, setFastagClassFilter] = useState<string>("all");
+  const [fastagOwnerFilter, setFastagOwnerFilter] = useState<string>("all"); // all|Admin|Agent|User
+  const [bankLoginUserFilter, setBankLoginUserFilter] = useState<string>("all"); // by name
+  const [hasFastagFilter, setHasFastagFilter] = useState<string>("all"); // all|yes|no
+  const [hasSubsFilter, setHasSubsFilter] = useState<string>("all"); // all|yes|no (parents only)
+  // Filters layout
+  const [filtersExpanded, setFiltersExpanded] = useState<boolean>(false);
+  // Role
+  const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
 
   const fetchTickets = async () => {
     setLoading(true);
@@ -113,6 +131,20 @@ export default function TicketListPage() {
 
   useEffect(() => {
     fetchTickets();
+  }, []);
+
+  // Load session to decide if stats should show (Super Admin only)
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/session', { cache: 'no-store' });
+        const data = await res.json();
+        const display = String(data?.session?.displayRole || '').toLowerCase();
+        setIsSuperAdmin(display === 'super admin');
+      } catch {
+        setIsSuperAdmin(false);
+      }
+    })();
   }, []);
 
   // Fetch all tickets (parents + subs) for accurate dashboard stats
@@ -157,6 +189,27 @@ export default function TicketListPage() {
     return { total, pending, closed, cancelled, fastagSold, fastagUsedNotClosed, fastagUsedAll, active };
   }, [tickets, allTickets]);
 
+  // Build dynamic options from current list for certain filters
+  const filterOptions = React.useMemo(() => {
+    const uniq = (arr: any[]) => Array.from(new Set(arr.filter((v) => String(v ?? '').trim() !== '')));
+    const leadFrom = uniq(tickets.map((t: any) => t.lead_received_from));
+    const kyv = uniq(tickets.map((t: any) => t.kyv_status));
+    const npci = uniq(tickets.map((t: any) => t.npci_status));
+    const fBank = uniq(tickets.map((t: any) => t.fastag_bank || t.bank_name));
+    const fClass = uniq(tickets.map((t: any) => t.fastag_class));
+    const fOwner = uniq(tickets.map((t: any) => t.fastag_owner));
+    const bankLoginUsers = uniq(tickets.map((t: any) => t.fastag_bank_login_user_name));
+    return {
+      leadFrom: leadFrom.sort(),
+      kyv: kyv.sort(),
+      npci: npci.sort(),
+      fBank: fBank.sort(),
+      fClass: fClass.sort(),
+      fOwner: fOwner.sort(),
+      bankLoginUsers: bankLoginUsers.sort(),
+    };
+  }, [tickets]);
+
   const filteredTickets = React.useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const from = fromDate ? new Date(fromDate) : null;
@@ -197,9 +250,110 @@ export default function TicketListPage() {
       const prBool = pr === 1 || pr === true || pr === '1';
       const prOk = paymentReceivedFilter === 'all' || (paymentReceivedFilter === 'yes' ? prBool : !prBool);
 
-      return inSearch && statusOk && assignedOk && dateOk && paidViaOk && prOk;
+      // lead from filter
+      const leadFrom = String((t as any).lead_received_from ?? '').trim();
+      const leadFromOk = leadFromFilter === 'all' || leadFrom === leadFromFilter;
+
+      // kyv status filter
+      const kyv = String((t as any).kyv_status ?? '').trim();
+      const kyvOk = kyvStatusFilter === 'all' || kyv === kyvStatusFilter;
+
+      // npci status filter
+      const npci = String((t as any).npci_status ?? '').trim();
+      const npciOk = npciStatusFilter === 'all' || npci === npciStatusFilter;
+
+      // commission filter
+      const commissionDone = !!((t as any).commission_done);
+      const commissionOk =
+        commissionFilter === 'all' ||
+        (commissionFilter === 'done' ? commissionDone : !commissionDone);
+
+      // delivery filter
+      const deliveryDone = !!((t as any).delivery_done);
+      const deliveryNil = !!((t as any).delivery_nil);
+      const deliveryOk =
+        deliveryFilter === 'all' ||
+        (deliveryFilter === 'done' && deliveryDone) ||
+        (deliveryFilter === 'nil' && deliveryNil) ||
+        (deliveryFilter === 'pending' && !deliveryDone && !deliveryNil);
+
+      // payment nil filter
+      const paymentNil = !!((t as any).payment_nil);
+      const paymentNilOk =
+        paymentNilFilter === 'all' ||
+        (paymentNilFilter === 'yes' && paymentNil) ||
+        (paymentNilFilter === 'no' && !paymentNil);
+
+      // created by filter (requires t.created_by presence when column exists)
+      const createdById = (t as any).created_by;
+      const createdByOk = !createdByFilter || String(createdById || '') === String(createdByFilter.id);
+
+      // fastag specific filters
+      const fBank = String(((t as any).fastag_bank || (t as any).bank_name) ?? '').trim();
+      const fClass = String((t as any).fastag_class ?? '').trim();
+      const fOwner = String((t as any).fastag_owner ?? '').trim();
+      const fBankLoginUserName = String((t as any).fastag_bank_login_user_name ?? '').trim();
+      const fSerial = String((t as any).fastag_serial ?? '').trim();
+
+      const fBankOk = fastagBankFilter === 'all' || fBank === fastagBankFilter;
+      const fClassOk = fastagClassFilter === 'all' || fClass === fastagClassFilter;
+      const fOwnerOk = fastagOwnerFilter === 'all' || fOwner === fastagOwnerFilter;
+      const fLoginUserOk = bankLoginUserFilter === 'all' || fBankLoginUserName === bankLoginUserFilter;
+      const hasFastagOk =
+        hasFastagFilter === 'all' ||
+        (hasFastagFilter === 'yes' ? !!fSerial : !fSerial);
+
+      // subs filter (only meaningful for parent rows which is what we list)
+      const subsCount = Number((t as any).subs_count || 0);
+      const subsOk =
+        hasSubsFilter === 'all' ||
+        (hasSubsFilter === 'yes' ? subsCount > 0 : subsCount === 0);
+
+      return (
+        inSearch &&
+        statusOk &&
+        assignedOk &&
+        dateOk &&
+        paidViaOk &&
+        prOk &&
+        leadFromOk &&
+        kyvOk &&
+        npciOk &&
+        commissionOk &&
+        deliveryOk &&
+        paymentNilOk &&
+        createdByOk &&
+        fBankOk &&
+        fClassOk &&
+        fOwnerOk &&
+        fLoginUserOk &&
+        hasFastagOk &&
+        subsOk
+      );
     });
-  }, [tickets, searchQuery, filterStatus, assignedFilter, fromDate, toDate, paidViaFilter, paymentReceivedFilter]);
+  }, [
+    tickets,
+    searchQuery,
+    filterStatus,
+    assignedFilter,
+    fromDate,
+    toDate,
+    paidViaFilter,
+    paymentReceivedFilter,
+    leadFromFilter,
+    kyvStatusFilter,
+    npciStatusFilter,
+    commissionFilter,
+    deliveryFilter,
+    paymentNilFilter,
+    createdByFilter?.id,
+    fastagBankFilter,
+    fastagClassFilter,
+    fastagOwnerFilter,
+    bankLoginUserFilter,
+    hasFastagFilter,
+    hasSubsFilter,
+  ]);
 
   if (loading) {
     return (
@@ -223,45 +377,85 @@ export default function TicketListPage() {
         />
       </div>
 
-      {/* Quick stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-3 mb-4">
-        <div className="rounded border p-4 text-center">
-          <div className="text-xs text-gray-500">Total</div>
-          <div className="text-xl font-semibold">{stats.total}</div>
+      {/* Quick stats (only for Super Admin) */}
+      {isSuperAdmin && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-3 mb-4">
+          <div className="rounded border p-4 text-center">
+            <div className="text-xs text-gray-500">Total</div>
+            <div className="text-xl font-semibold">{stats.total}</div>
+          </div>
+          <div className="rounded border p-4 text-center">
+            <div className="text-xs text-gray-500">Pending</div>
+            <div className="text-xl font-semibold">{stats.pending}</div>
+          </div>
+          <div className="rounded border p-4 text-center">
+            <div className="text-xs text-gray-500">Closed</div>
+            <div className="text-xl font-semibold">{stats.closed}</div>
+          </div>
+          <div className="rounded border p-4 text-center">
+            <div className="text-xs text-gray-500">Cancelled</div>
+            <div className="text-xl font-semibold">{stats.cancelled}</div>
+          </div>
+          <div className="rounded border p-4 text-center">
+            <div className="text-xs text-gray-500">FASTag Sold</div>
+            <div className="text-xl font-semibold">{stats.fastagSold}</div>
+          </div>
+          <div className="rounded border p-4 text-center">
+            <div className="text-xs text-gray-500">FASTag Used (Not Closed)</div>
+            <div className="text-xl font-semibold">{stats.fastagUsedNotClosed}</div>
+          </div>
+          <div className="rounded border p-4 text-center">
+            <div className="text-xs text-gray-500">FASTags Used (All)</div>
+            <div className="text-xl font-semibold">{stats.fastagUsedAll}</div>
+          </div>
+          <div className="rounded border p-4 text-center">
+            <div className="text-xs text-gray-500">Active</div>
+            <div className="text-xl font-semibold">{stats.active}</div>
+          </div>
         </div>
-        <div className="rounded border p-4 text-center">
-          <div className="text-xs text-gray-500">Pending</div>
-          <div className="text-xl font-semibold">{stats.pending}</div>
-        </div>
-        <div className="rounded border p-4 text-center">
-          <div className="text-xs text-gray-500">Closed</div>
-          <div className="text-xl font-semibold">{stats.closed}</div>
-        </div>
-        <div className="rounded border p-4 text-center">
-          <div className="text-xs text-gray-500">Cancelled</div>
-          <div className="text-xl font-semibold">{stats.cancelled}</div>
-        </div>
-        <div className="rounded border p-4 text-center">
-          <div className="text-xs text-gray-500">FASTag Sold</div>
-          <div className="text-xl font-semibold">{stats.fastagSold}</div>
-        </div>
-        <div className="rounded border p-4 text-center">
-          <div className="text-xs text-gray-500">FASTag Used (Not Closed)</div>
-          <div className="text-xl font-semibold">{stats.fastagUsedNotClosed}</div>
-        </div>
-        <div className="rounded border p-4 text-center">
-          <div className="text-xs text-gray-500">FASTags Used (All)</div>
-          <div className="text-xl font-semibold">{stats.fastagUsedAll}</div>
-        </div>
-        <div className="rounded border p-4 text-center">
-          <div className="text-xs text-gray-500">Active</div>
-          <div className="text-xl font-semibold">{stats.active}</div>
-        </div>
-      </div>
+      )}
 
       {/* Filters */}
       <div className="bg-white border rounded-lg p-4 mb-4">
-        <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <div className="text-sm font-medium text-gray-700">Filters</div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setFiltersExpanded(v => !v)}
+              className="text-sm px-3 py-1 border rounded bg-gray-50 hover:bg-gray-100"
+            >
+              {filtersExpanded ? 'Collapse' : 'Expand (show all)'}
+            </button>
+            <button
+              onClick={() => {
+                setSearchQuery("");
+                setFilterStatus("all");
+                setAssignedFilter(null);
+                setFromDate("");
+                setToDate("");
+                setPaidViaFilter("all");
+                setPaymentReceivedFilter("all");
+                setLeadFromFilter("all");
+                setKyvStatusFilter("all");
+                setNpciStatusFilter("all");
+                setCommissionFilter("all");
+                setDeliveryFilter("all");
+                setPaymentNilFilter("all");
+                setCreatedByFilter(null);
+                setFastagBankFilter("all");
+                setFastagClassFilter("all");
+                setFastagOwnerFilter("all");
+                setBankLoginUserFilter("all");
+                setHasFastagFilter("all");
+                setHasSubsFilter("all");
+              }}
+              className="text-sm px-3 py-1 border rounded bg-gray-50 hover:bg-gray-100"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+        <div className={`grid grid-cols-1 ${filtersExpanded ? 'md:grid-cols-7' : 'md:grid-cols-5'} gap-3`}>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Search</label>
             <Input placeholder="Ticket no, customer, phone, vehicle, subject" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
@@ -290,37 +484,176 @@ export default function TicketListPage() {
             <UsersAutocomplete value={assignedFilter} onSelect={setAssignedFilter} placeholder="Type user name" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">From</label>
-            <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">To</label>
-            <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Paid Via</label>
-            <select className="w-full border rounded p-2" value={paidViaFilter} onChange={(e)=> setPaidViaFilter(e.target.value)}>
+            <label className="block text-xs text-gray-500 mb-1">KYV Status</label>
+            <select className="w-full border rounded p-2" value={kyvStatusFilter} onChange={(e)=> setKyvStatusFilter(e.target.value)}>
               <option value="all">All</option>
-              <option value="Pending">Pending</option>
-              <option value="Paytm QR">Paytm QR</option>
-              <option value="GPay Box">GPay Box</option>
-              <option value="IDFC Box">IDFC Box</option>
-              <option value="Cash">Cash</option>
-              <option value="Sriram Gpay">Sriram Gpay</option>
-              <option value="Lakshman Gpay">Lakshman Gpay</option>
-              <option value="Arjunan Gpay">Arjunan Gpay</option>
-              <option value="Vishnu GPay">Vishnu GPay</option>
-              <option value="Vimal GPay">Vimal GPay</option>
+              {filterOptions.kyv.map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Payment Received</label>
+            <label className="block text-xs text-gray-500 mb-1">Payment Status</label>
             <select className="w-full border rounded p-2" value={paymentReceivedFilter} onChange={(e)=> setPaymentReceivedFilter(e.target.value)}>
               <option value="all">All</option>
-              <option value="yes">Yes</option>
-              <option value="no">No</option>
+              <option value="yes">Received</option>
+              <option value="no">Pending</option>
             </select>
           </div>
+          {filtersExpanded && (
+            <>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">From</label>
+                <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">To</label>
+                <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+              </div>
+            </>
+          )}
+          {filtersExpanded && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Paid Via</label>
+              <select className="w-full border rounded p-2" value={paidViaFilter} onChange={(e)=> setPaidViaFilter(e.target.value)}>
+                <option value="all">All</option>
+                <option value="Pending">Pending</option>
+                <option value="Paytm QR">Paytm QR</option>
+                <option value="GPay Box">GPay Box</option>
+                <option value="IDFC Box">IDFC Box</option>
+                <option value="Cash">Cash</option>
+                <option value="Sriram Gpay">Sriram Gpay</option>
+                <option value="Lakshman Gpay">Lakshman Gpay</option>
+                <option value="Arjunan Gpay">Arjunan Gpay</option>
+                <option value="Vishnu GPay">Vishnu GPay</option>
+                <option value="Vimal GPay">Vimal GPay</option>
+              </select>
+            </div>
+          )}
+          {filtersExpanded && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Lead From</label>
+              <select className="w-full border rounded p-2" value={leadFromFilter} onChange={(e)=> setLeadFromFilter(e.target.value)}>
+                <option value="all">All</option>
+                {filterOptions.leadFrom.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          
+          {filtersExpanded && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">NPCI Status</label>
+              <select className="w-full border rounded p-2" value={npciStatusFilter} onChange={(e)=> setNpciStatusFilter(e.target.value)}>
+                <option value="all">All</option>
+                {filterOptions.npci.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {filtersExpanded && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Commission</label>
+              <select className="w-full border rounded p-2" value={commissionFilter} onChange={(e)=> setCommissionFilter(e.target.value)}>
+                <option value="all">All</option>
+                <option value="done">Done</option>
+                <option value="pending">Pending</option>
+              </select>
+            </div>
+          )}
+          {filtersExpanded && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Delivery</label>
+              <select className="w-full border rounded p-2" value={deliveryFilter} onChange={(e)=> setDeliveryFilter(e.target.value)}>
+                <option value="all">All</option>
+                <option value="done">Done</option>
+                <option value="nil">Nil</option>
+                <option value="pending">Pending</option>
+              </select>
+            </div>
+          )}
+          {filtersExpanded && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Payment Nil</label>
+              <select className="w-full border rounded p-2" value={paymentNilFilter} onChange={(e)=> setPaymentNilFilter(e.target.value)}>
+                <option value="all">All</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </select>
+            </div>
+          )}
+          {filtersExpanded && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Created By</label>
+              <UsersAutocomplete value={createdByFilter} onSelect={setCreatedByFilter} placeholder="Type user name" />
+            </div>
+          )}
+          {filtersExpanded && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">FASTag Bank</label>
+              <select className="w-full border rounded p-2" value={fastagBankFilter} onChange={(e)=> setFastagBankFilter(e.target.value)}>
+                <option value="all">All</option>
+                {filterOptions.fBank.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {filtersExpanded && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">FASTag Class</label>
+              <select className="w-full border rounded p-2" value={fastagClassFilter} onChange={(e)=> setFastagClassFilter(e.target.value)}>
+                <option value="all">All</option>
+                {filterOptions.fClass.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {filtersExpanded && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">FASTag Owner</label>
+              <select className="w-full border rounded p-2" value={fastagOwnerFilter} onChange={(e)=> setFastagOwnerFilter(e.target.value)}>
+                <option value="all">All</option>
+                {filterOptions.fOwner.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {filtersExpanded && (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Bank Login User</label>
+              <select className="w-full border rounded p-2" value={bankLoginUserFilter} onChange={(e)=> setBankLoginUserFilter(e.target.value)}>
+                <option value="all">All</option>
+                {filterOptions.bankLoginUsers.map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {filtersExpanded && (
+            <>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Has FASTag</label>
+                <select className="w-full border rounded p-2" value={hasFastagFilter} onChange={(e)=> setHasFastagFilter(e.target.value)}>
+                  <option value="all">All</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Has Sub-tickets</label>
+                <select className="w-full border rounded p-2" value={hasSubsFilter} onChange={(e)=> setHasSubsFilter(e.target.value)}>
+                  <option value="all">All</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </div>
+            </>
+          )}
         </div>
       </div>
 

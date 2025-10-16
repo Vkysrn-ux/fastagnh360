@@ -227,7 +227,7 @@ export default function CreateTicketFullModal({
     // Keep any dynamic banks if API provides, but UI will show predefined list per requirements
     fetch('/api/banks')
       .then(r => r.json())
-      .then(setBanks)
+      .then((d) => setBanks(Array.isArray(d) ? d as string[] : []))
       .catch(() => setBanks([]));
   }, []);
 

@@ -331,7 +331,7 @@ export default function CreateSubTicketFullModal({
   useEffect(() => {
     fetch('/api/banks')
       .then(r => r.json())
-      .then(setBanks)
+      .then((d) => setBanks(Array.isArray(d) ? d as string[] : []))
       .catch(() => setBanks([]));
   }, []);
 
@@ -756,7 +756,7 @@ export default function CreateSubTicketFullModal({
               <label className="block font-semibold mb-1">FASTag Bank</label>
               <select className="w-full border rounded p-2" value={(form as any).bank_name || ""} onChange={(e) => setForm((f) => ({ ...f, bank_name: e.target.value } as any))}>
                 <option value="">Select bank</option>
-                {banks.map((b) => (
+                {(Array.isArray(banks) ? banks : []).map((b) => (
                   <option key={b} value={b}>{b}</option>
                 ))}
               </select>
