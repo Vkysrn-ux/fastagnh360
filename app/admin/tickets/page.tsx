@@ -938,6 +938,26 @@ export default function TicketListPage() {
 
 
   function EditTicketModal({ ticket, onClose, onSaved }: { ticket: any; onClose: () => void; onSaved: () => void }) {
+  // Normalize KYV status values between DB and UI
+  function canonicalizeKyv(val: any): string {
+    const s = String(val ?? '').toLowerCase().trim();
+    if (!s) return '';
+    if (s === 'nil') return 'nil';
+    if (s === 'kyv_success' || s.includes('compliant')) return 'compliant';
+    if (s === 'kyv_pending_approval' || s.includes('submitted')) return 'submitted';
+    if (s === 'kyv_pending' || s.includes('pending')) return 'pending';
+    return s;
+  }
+  function kyvLabelFromCanonical(c: string): string {
+    switch ((c || '').toLowerCase()) {
+      case 'pending': return 'KYV pending';
+      case 'submitted': return 'KYV submitted';
+      case 'compliant': return 'KYV compliant';
+      case 'nil': return 'Nil';
+      default: return c || '';
+    }
+  }
+  const originalKyvRef = React.useRef<string | null>(canonicalizeKyv((ticket as any)?.kyv_status ?? ''));
   const [form, setForm] = React.useState({
     vehicle_reg_no: ticket?.vehicle_reg_no || ticket?.vehicle_number || "",
     alt_vehicle_reg_no: (ticket as any)?.alt_vehicle_reg_no || "",
@@ -946,7 +966,7 @@ export default function TicketListPage() {
     subject: ticket?.subject || "",
     details: ticket?.details || "",
     status: ticket?.status || "open",
-    kyv_status: ticket?.kyv_status || "",
+    kyv_status: canonicalizeKyv(ticket?.kyv_status || ""),
     npci_status: (ticket as any)?.npci_status || "Activation Pending",
     assigned_to: ticket?.assigned_to ? String(ticket.assigned_to) : "",
     lead_received_from: ticket?.lead_received_from || "",
@@ -990,6 +1010,10 @@ export default function TicketListPage() {
   const [showFastagSuggestions, setShowFastagSuggestions] = React.useState<boolean>(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // Keep originalKyvRef in sync when opening a different ticket in the modal
+  React.useEffect(() => {
+    try { originalKyvRef.current = canonicalizeKyv((ticket as any)?.kyv_status ?? ''); } catch {}
+  }, [ticket?.id]);
   // Auto-save state
   const autoSaveTimer = React.useRef<any>(null);
   const [autoSaving, setAutoSaving] = React.useState(false);
@@ -1371,7 +1395,6 @@ export default function TicketListPage() {
         subject: form.subject,
         details: form.details,
         status: form.status,
-        kyv_status: form.kyv_status || null,
         npci_status: (form as any).npci_status || null,
         assigned_to: form.assigned_to === "" ? null : (isNaN(Number(form.assigned_to)) ? null : Number(form.assigned_to)),
         lead_received_from: form.lead_received_from,
@@ -1411,6 +1434,14 @@ export default function TicketListPage() {
         vehicle_side_url: (form as any).vehicle_side_url || null,
         sticker_pasted_url: (form as any).sticker_pasted_url || null,
       };
+      // Include kyv_status only if changed by user (send friendly label)
+      try {
+        const orig = canonicalizeKyv(originalKyvRef.current ?? '');
+        const curr = canonicalizeKyv(form.kyv_status ?? '');
+        if (orig !== curr) {
+          payload.kyv_status = kyvLabelFromCanonical(curr) || null;
+        }
+      } catch {}
       const res = await fetch("/api/tickets", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1530,7 +1561,6 @@ export default function TicketListPage() {
         subject: form.subject,
         details: form.details,
         status: form.status,
-        kyv_status: form.kyv_status || null,
         npci_status: (form as any).npci_status || null,
         assigned_to: form.assigned_to === "" ? null : (isNaN(Number(form.assigned_to)) ? null : Number(form.assigned_to)),
         lead_received_from: form.lead_received_from,
@@ -1571,6 +1601,14 @@ export default function TicketListPage() {
         vehicle_side_url: (form as any).vehicle_side_url || null,
         sticker_pasted_url: (form as any).sticker_pasted_url || null,
       };
+      // Include kyv_status only if changed by user (send friendly label)
+      try {
+        const orig = canonicalizeKyv(originalKyvRef.current ?? '');
+        const curr = canonicalizeKyv(form.kyv_status ?? '');
+        if (orig !== curr) {
+          payload.kyv_status = kyvLabelFromCanonical(curr) || null;
+        }
+      } catch {}
       const res = await fetch("/api/tickets", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1878,11 +1916,15 @@ export default function TicketListPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
               <div>
                 <label className="block text-sm font-medium mb-1">KYV Status</label>
-                <select className="w-full border rounded p-2" value={form.kyv_status} onChange={(e) => setForm({ ...form, kyv_status: e.target.value })}>
-                  <option>KYV pending</option>
-                  <option>KYV submitted</option>
-                  <option>KYV compliant</option>
-                  <option>Nil</option>
+                <select
+                  className="w-full border rounded p-2"
+                  value={form.kyv_status}
+                  onChange={(e) => setForm({ ...form, kyv_status: e.target.value })}
+                >
+                  <option value="pending">KYV pending</option>
+                  <option value="submitted">KYV submitted</option>
+                  <option value="compliant">KYV compliant</option>
+                  <option value="nil">Nil</option>
                 </select>
               </div>
               <div>
