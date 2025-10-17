@@ -159,7 +159,10 @@ export default function BulkTransferModal({ open, onClose, banks, classes, users
             )
           );
         } else {
-          let url = `/api/fastags/available?bank=${row.bank}&class=${row.fastagClass}`;
+          // Include mapping=all so availability isn't filtered by bank mapping status.
+          // In this modal, the Mapping dropdown is the intended state to APPLY on transfer,
+          // not a filter for which tags are selectable.
+          let url = `/api/fastags/available?bank=${row.bank}&class=${row.fastagClass}&mapping=all`;
           if (fromKey !== "admin") url += `&assigned_to=${fromKey}`;
           // mapping acts as a SET value during transfer, not as a filter here
           if (row.supplierId) url += `&supplier=${row.supplierId}`;
