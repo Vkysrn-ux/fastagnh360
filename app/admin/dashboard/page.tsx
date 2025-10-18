@@ -8,11 +8,15 @@ import { InfoIcon, ShoppingCart, TrendingUp, Users, CreditCard, Building, UserCi
 import { getScopedStats } from "@/lib/actions/admin-actions"
 import { useRouter } from "next/navigation"
 import { getAdminSession } from "@/lib/actions/auth-actions"
-import { RecentTransactions } from "@/components/agent/recent-transactions"
+// Removed RecentTransactions from the Transactions tab per request
 import { AgentPerformance } from "@/components/admin/agent-performance"
 import { CommissionSummary } from "@/components/admin/commission-summary"
 import RegisterAgentForm from "@/components/admin/RegisterAgentForm";
 import RoleDashboard from "@/components/dashboard/RoleDashboard";
+import TicketsProgress from "@/components/admin/TicketsProgress";
+import TicketsStatusProgress from "@/components/admin/TicketsStatusProgress";
+import AdminTicketsPerformance from "@/components/admin/AdminTicketsPerformance";
+import AdminPendingSummary from "@/components/admin/AdminPendingSummary";
 
 
 
@@ -143,11 +147,12 @@ export default function AdminDashboardPage() {
         <Tabs defaultValue="transactions" className="space-y-4">
           <TabsList>
             <TabsTrigger value="transactions">Recent Transactions</TabsTrigger>
-            <TabsTrigger value="agents">Agent Performance</TabsTrigger>
+            <TabsTrigger value="agents">Admins Performance</TabsTrigger>
             <TabsTrigger value="commissions">Commission Summary</TabsTrigger>
           </TabsList>
-          <TabsContent value="transactions" className="space-y-4">
-            <RecentTransactions />
+        <TabsContent value="transactions" className="space-y-4">
+            <TicketsProgress />
+            <TicketsStatusProgress />
           </TabsContent>
           <TabsContent value="agents" className="space-y-4">
             <AgentPerformance />
@@ -156,6 +161,13 @@ export default function AdminDashboardPage() {
             <CommissionSummary />
           </TabsContent>
         </Tabs>
+
+        {session?.displayRole === 'Super Admin' && (
+          <div className="mt-4 grid grid-cols-1 gap-4">
+            <AdminPendingSummary />
+            <AdminTicketsPerformance />
+          </div>
+        )}
 
         {session?.displayRole && (
           <div className="mt-8">

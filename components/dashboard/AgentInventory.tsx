@@ -15,7 +15,7 @@ export function AgentInventory() {
   }, []);
 
   return (
-    <Card className="col-span-4">
+    <Card className="col-span-1">
       <CardHeader>
         <CardTitle>My Inventory</CardTitle>
       </CardHeader>

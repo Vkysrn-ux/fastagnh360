@@ -18,7 +18,7 @@ export default function Dashboard({ userRole }: DashboardProps) {
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold">Dashboard</h1>
       
-      <div className="grid grid-cols-12 gap-6">
+      <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {/* Conditional rendering based on permissions */}
         {canViewDailySales && <DailySales />}
         {canViewPendingAmount && <PendingAmount />}

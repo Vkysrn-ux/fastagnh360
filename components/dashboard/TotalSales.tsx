@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function TotalSales() {
   return (
-    <Card className="col-span-3">
+    <Card className="col-span-1">
       <CardHeader>
         <CardTitle>Total Sales</CardTitle>
       </CardHeader>

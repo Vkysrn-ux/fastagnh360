@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function PendingAmount() {
   return (
-    <Card className="col-span-3">
+    <Card className="col-span-1">
       <CardHeader>
         <CardTitle>Pending Amounts</CardTitle>
       </CardHeader>

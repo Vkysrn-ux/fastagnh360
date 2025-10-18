@@ -13,7 +13,7 @@ export function AdminHeader() {
   const router = useRouter()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [canManageUsers, setCanManageUsers] = useState(false)
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
 
   useEffect(() => {
     const checkSession = async () => {
@@ -24,8 +24,8 @@ export function AdminHeader() {
         const isAdmin = !!session && session.userType === 'admin';
         setIsAuthenticated(isAdmin);
         const display = String(session?.displayRole || '').toLowerCase();
-        // Only Super Admin can manage users
-        setCanManageUsers(isAdmin && display === 'super admin');
+        // Track Super Admin
+        setIsSuperAdmin(isAdmin && display === 'super admin');
         if (!isAdmin) router.push('/admin/login');
       } catch {
         router.push('/admin/login');
@@ -51,20 +51,24 @@ export function AdminHeader() {
   //   return null
   // }
 
-  const navItems = [
+  // Build menus based on role rules:
+  // - Super Admin: all menus
+  // - Admin: only Fastags, Agents, Suppliers, Tickets (+Dashboard retained for navigation)
+  const baseItems = [
     { href: "/admin/dashboard", label: "Dashboard", icon: <BarChart3 className="mr-2 h-4 w-4" /> },
     { href: "/admin/fastags", label: "FASTags", icon: <CreditCard className="mr-2 h-4 w-4" /> },
     { href: "/admin/agents", label: "Agents", icon: <UserCircle className="mr-2 h-4 w-4" /> },
     { href: "/admin/suppliers", label: "Suppliers", icon: <Users className="mr-2 h-4 w-4" /> },
-    // Users menu only for Admin-level (Admin or Super Admin)
-    ...(canManageUsers ? [{ href: "/admin/users", label: "Users", icon: <UserCog className="mr-2 h-4 w-4" /> }] as const : []),
-    // { href: "/admin/employees", label: "Employees", icon: <Users className="mr-2 h-4 w-4" /> },
-    { href: "/admin/reports", label: "Reports", icon: <BarChart3 className="mr-2 h-4 w-4" /> },
-    // { href: "/admin/commissions", label: "Commissions", icon: <Package className="mr-2 h-4 w-4" /> },
-    // { href: "/admin/settings", label: "Settings", icon: <Settings className="mr-2 h-4 w-4" /> },
-    { href: "/admin/tickets", label: "Tickets", icon : <Ticket className="mr-2 h-4 w-4" /> }
+    { href: "/admin/tickets", label: "Tickets", icon : <Ticket className="mr-2 h-4 w-4" /> },
+  ] as const;
 
-  ]
+  const superExtra = [
+    { href: "/admin/users", label: "Users", icon: <UserCog className="mr-2 h-4 w-4" /> },
+    { href: "/admin/reports", label: "Reports", icon: <BarChart3 className="mr-2 h-4 w-4" /> },
+    // Future: settings/commissions can be added back here
+  ] as const;
+
+  const navItems = isSuperAdmin ? [...baseItems, ...superExtra] : [...baseItems]
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
