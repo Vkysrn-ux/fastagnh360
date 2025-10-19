@@ -122,6 +122,12 @@ export default function NewTicketPage() {
     setError(null);
     setMessage(null);
     try {
+      // Require explicit Paid Via when marking payment received
+      if (!!form.payment_received && String(form.paid_via || '').trim() === 'Pending') {
+        setError("Please select 'Paid Via' when Payment Received is checked.");
+        setSaving(false);
+        return;
+      }
       const effectiveLeadBy =
         form.lead_received_from === "Shop"
           ? selectedShop?.id || form.lead_by || form.role_user_id || ""

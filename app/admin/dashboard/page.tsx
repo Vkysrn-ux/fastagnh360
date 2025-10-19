@@ -43,6 +43,11 @@ export default function AdminDashboardPage() {
       setSession(userSession)
 
       try {
+        // If not Super Admin, redirect away from dashboard
+        if (String(userSession?.displayRole || '').toLowerCase() !== 'super admin') {
+          router.replace('/admin/fastags')
+          return
+        }
         const adminStats = await getScopedStats(userSession.id, "admin")
         setStats(adminStats)
       } catch (error) {

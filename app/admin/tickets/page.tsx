@@ -93,6 +93,8 @@ export default function TicketListPage() {
   const [filtersExpanded, setFiltersExpanded] = useState<boolean>(false);
   // Role
   const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [sessionUserId, setSessionUserId] = useState<number | null>(null);
 
   const fetchTickets = async () => {
     setLoading(true);
@@ -133,7 +135,7 @@ export default function TicketListPage() {
     fetchTickets();
   }, []);
 
-  // Load session to decide if stats should show (Super Admin only)
+  // Load session to decide if stats should show (Super Admin or Admin) and who the user is
   useEffect(() => {
     (async () => {
       try {
@@ -141,8 +143,13 @@ export default function TicketListPage() {
         const data = await res.json();
         const display = String(data?.session?.displayRole || '').toLowerCase();
         setIsSuperAdmin(display === 'super admin');
+        setIsAdmin(display === 'admin');
+        const uid = Number(data?.session?.id || 0);
+        setSessionUserId(Number.isFinite(uid) && uid > 0 ? uid : null);
       } catch {
         setIsSuperAdmin(false);
+        setIsAdmin(false);
+        setSessionUserId(null);
       }
     })();
   }, []);
@@ -167,7 +174,16 @@ export default function TicketListPage() {
       const st = toLower(t.status);
       return st === 'closed' || st === 'completed';
     };
-    const base = (allTickets && allTickets.length > 0) ? allTickets : tickets;
+    const baseAll = (allTickets && allTickets.length > 0) ? allTickets : tickets;
+
+    // For non-super admins, scope stats to only their tickets (assigned_to or created_by)
+    const base = (!isSuperAdmin && isAdmin && sessionUserId)
+      ? (baseAll as any[]).filter((t: any) => {
+          const a = Number(t?.assigned_to || 0);
+          const c = Number(t?.created_by || 0);
+          return a === sessionUserId || c === sessionUserId;
+        })
+      : baseAll;
     const total = base.length;
     const pending = base.filter((t) => toLower(t.status) === 'open').length;
     const closed = base.filter((t) => isClosedLike(t)).length;
@@ -187,7 +203,7 @@ export default function TicketListPage() {
       return set.size;
     })();
     return { total, pending, closed, cancelled, fastagSold, fastagUsedNotClosed, fastagUsedAll, active };
-  }, [tickets, allTickets]);
+  }, [tickets, allTickets, isSuperAdmin, isAdmin, sessionUserId]);
 
   // Build dynamic options from current list for certain filters
   const filterOptions = React.useMemo(() => {
@@ -377,8 +393,11 @@ export default function TicketListPage() {
         />
       </div>
 
-      {/* Quick stats (only for Super Admin) */}
-      {isSuperAdmin && (
+      {/* Quick stats
+          - Super Admin: overall counts (parents + subs when available)
+          - Admin: only their tickets (assigned_to or created_by)
+       */}
+      {(isSuperAdmin || isAdmin) && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-3 mb-4">
           <div className="rounded border p-4 text-center">
             <div className="text-xs text-gray-500">Total</div>
@@ -1324,11 +1343,10 @@ export default function TicketListPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.lead_received_from]);
 
-  // If payment is marked received, default paid_via away from 'Pending'
+  // When payment is marked received, require explicit Paid via selection.
+  // Do not auto-change from 'Pending'; validation handles prompting the user.
   React.useEffect(() => {
-    if (form.payment_received && String((form as any).paid_via || '').trim() === 'Pending') {
-      setForm(f => ({ ...(f as any), paid_via: 'Cash' } as any));
-    }
+    // Intentionally no-op: keep user's current selection.
   }, [form.payment_received]);
 
   React.useEffect(() => {
