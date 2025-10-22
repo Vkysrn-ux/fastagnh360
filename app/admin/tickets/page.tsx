@@ -174,16 +174,9 @@ export default function TicketListPage() {
       const st = toLower(t.status);
       return st === 'closed' || st === 'completed';
     };
+    // Always use the full dataset for global stats; personalize only "My Tickets" below
     const baseAll = (allTickets && allTickets.length > 0) ? allTickets : tickets;
-
-    // For non-super admins, scope stats to only their tickets (assigned_to or created_by)
-    const base = (!isSuperAdmin && isAdmin && sessionUserId)
-      ? (baseAll as any[]).filter((t: any) => {
-          const a = Number(t?.assigned_to || 0);
-          const c = Number(t?.created_by || 0);
-          return a === sessionUserId || c === sessionUserId;
-        })
-      : baseAll;
+    const base = baseAll;
     const total = base.length;
     const pending = base.filter((t) => toLower(t.status) === 'open').length;
     const closed = base.filter((t) => isClosedLike(t)).length;
@@ -202,11 +195,14 @@ export default function TicketListPage() {
       }
       return set.size;
     })();
-    // Additional admin card stats to match desired UI
+    // "My Tickets": open tickets created by OR assigned to the logged-in user
     const myActive = (sessionUserId
-      ? (base as any[]).filter((t: any) => {
+      ? (baseAll as any[]).filter((t: any) => {
           const st = toLower(t.status);
-          return (Number(t.assigned_to || 0) === sessionUserId) && st !== 'closed' && st !== 'completed' && st !== 'cancelled';
+          if (st !== 'open') return false;
+          const a = Number(t?.assigned_to || 0);
+          const c = Number(t?.created_by || 0);
+          return a === sessionUserId || c === sessionUserId;
         }).length
       : 0);
 
@@ -447,8 +443,8 @@ export default function TicketListPage() {
           - Super Admin: overall counts (parents + subs when available)
           - Admin: only their tickets (assigned_to or created_by)
        */}
-      {(isSuperAdmin || isAdmin) && (
-        <div className="flex flex-wrap gap-3 mb-4">
+      {/* Show stats for all roles; "My Tickets" is personalized */}
+      <div className="flex flex-wrap gap-3 mb-4">
           {/* Open + My Tickets */}
           <div className="rounded border p-3 min-w-[190px]">
             <div className="text-sm">Open Tickets: {stats.pending}</div>
@@ -479,7 +475,6 @@ export default function TicketListPage() {
             <div className="text-sm">Delivery/Pickup Pending: {stats.deliveryPickupPending}</div>
           </div>
         </div>
-      )}
 
       {/* Filters */}
       <div className="bg-white border rounded-lg p-4 mb-4">
