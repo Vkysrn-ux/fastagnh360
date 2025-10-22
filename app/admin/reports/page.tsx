@@ -45,6 +45,11 @@ const CARDS: ReportCard[] = [
     href: "/admin/reports/tickets",
     desc: "Ticket report with date/status/paid-via and assigned filters.",
   },
+  {
+    title: "ERP Usage",
+    href: "/admin/reports/usage",
+    desc: "Daily active time per admin (Super Admin only).",
+  },
 ];
 
 export default function ReportsHome() {

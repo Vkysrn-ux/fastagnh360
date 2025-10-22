@@ -202,7 +202,57 @@ export default function TicketListPage() {
       }
       return set.size;
     })();
-    return { total, pending, closed, cancelled, fastagSold, fastagUsedNotClosed, fastagUsedAll, active };
+    // Additional admin card stats to match desired UI
+    const myActive = (sessionUserId
+      ? (base as any[]).filter((t: any) => {
+          const st = toLower(t.status);
+          return (Number(t.assigned_to || 0) === sessionUserId) && st !== 'closed' && st !== 'completed' && st !== 'cancelled';
+        }).length
+      : 0);
+
+    const activationPending = (base as any[]).filter((t: any) => toLower(t.npci_status || '') === 'activation pending').length;
+    const kyvPending = (base as any[]).filter((t: any) => {
+      const s = toLower(t.kyv_status || '');
+      return s === 'kyv pending' || s === 'pending' || s.includes('pending');
+    }).length;
+    const hotlisted = (base as any[]).filter((t: any) => {
+      const s = toLower(t.npci_status || t.status || '');
+      return s.includes('hotlist');
+    }).length;
+    const paymentPending = (base as any[]).filter((t: any) => {
+      const received = t.payment_received === 1 || t.payment_received === true || t.payment_received === '1';
+      const isNil = !!t.payment_nil;
+      return !received && !isNil;
+    }).length;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const dateOnly = (d: any) => {
+      try { return new Date(d).toISOString().slice(0, 10); } catch { return ''; }
+    };
+    const todayCancelled = (base as any[]).filter((t: any) => toLower(t.status || '') === 'cancelled' && dateOnly(t.created_at) === todayStr).length;
+    const deliveryPickupPending = (base as any[]).filter((t: any) => {
+      const done = !!t.delivery_done;
+      const nil = !!t.delivery_nil;
+      return !done && !nil; // treat as pending
+    }).length;
+
+    return {
+      total,
+      pending,
+      closed,
+      cancelled,
+      fastagSold,
+      fastagUsedNotClosed,
+      fastagUsedAll,
+      active,
+      // extra stats
+      myActive,
+      activationPending,
+      kyvPending,
+      hotlisted,
+      paymentPending,
+      todayCancelled,
+      deliveryPickupPending,
+    };
   }, [tickets, allTickets, isSuperAdmin, isAdmin, sessionUserId]);
 
   // Build dynamic options from current list for certain filters
@@ -398,38 +448,35 @@ export default function TicketListPage() {
           - Admin: only their tickets (assigned_to or created_by)
        */}
       {(isSuperAdmin || isAdmin) && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-3 mb-4">
-          <div className="rounded border p-4 text-center">
-            <div className="text-xs text-gray-500">Total</div>
-            <div className="text-xl font-semibold">{stats.total}</div>
+        <div className="flex flex-wrap gap-3 mb-4">
+          {/* Open + My Tickets */}
+          <div className="rounded border p-3 min-w-[190px]">
+            <div className="text-sm">Open Tickets: {stats.pending}</div>
+            <div className="text-sm">My Tickets: {stats.myActive}</div>
           </div>
-          <div className="rounded border p-4 text-center">
-            <div className="text-xs text-gray-500">Pending</div>
-            <div className="text-xl font-semibold">{stats.pending}</div>
+          {/* Activation Pending */}
+          <div className="rounded border p-3 min-w-[190px]">
+            <div className="text-sm">Activation Pending: {stats.activationPending}</div>
           </div>
-          <div className="rounded border p-4 text-center">
-            <div className="text-xs text-gray-500">Closed</div>
-            <div className="text-xl font-semibold">{stats.closed}</div>
+          {/* KYV Pending */}
+          <div className="rounded border p-3 min-w-[190px]">
+            <div className="text-sm">KYV Pending: {stats.kyvPending}</div>
           </div>
-          <div className="rounded border p-4 text-center">
-            <div className="text-xs text-gray-500">Cancelled</div>
-            <div className="text-xl font-semibold">{stats.cancelled}</div>
+          {/* Hotlisted */}
+          <div className="rounded border p-3 min-w-[150px]">
+            <div className="text-sm">Hotlisted: {stats.hotlisted}</div>
           </div>
-          <div className="rounded border p-4 text-center">
-            <div className="text-xs text-gray-500">FASTag Sold</div>
-            <div className="text-xl font-semibold">{stats.fastagSold}</div>
+          {/* Payment Pending */}
+          <div className="rounded border p-3 min-w-[190px]">
+            <div className="text-sm">Payment Pending: {stats.paymentPending}</div>
           </div>
-          <div className="rounded border p-4 text-center">
-            <div className="text-xs text-gray-500">FASTag Used (Not Closed)</div>
-            <div className="text-xl font-semibold">{stats.fastagUsedNotClosed}</div>
+          {/* Today Cancelled */}
+          <div className="rounded border p-3 min-w-[190px]">
+            <div className="text-sm">Today Cancelled: {stats.todayCancelled}</div>
           </div>
-          <div className="rounded border p-4 text-center">
-            <div className="text-xs text-gray-500">FASTags Used (All)</div>
-            <div className="text-xl font-semibold">{stats.fastagUsedAll}</div>
-          </div>
-          <div className="rounded border p-4 text-center">
-            <div className="text-xs text-gray-500">Active</div>
-            <div className="text-xl font-semibold">{stats.active}</div>
+          {/* Delivery/Pickup Pending */}
+          <div className="rounded border p-3 min-w-[230px]">
+            <div className="text-sm">Delivery/Pickup Pending: {stats.deliveryPickupPending}</div>
           </div>
         </div>
       )}

@@ -68,6 +68,9 @@ export default function CreateTicketFullModal({
   const [currentUser, setCurrentUser] = useState<{ id: number; name: string } | null>(null);
   const [assignedUser, setAssignedUser] = useState<{ id: number; name: string } | null>(null);
   const [banks, setBanks] = useState<string[]>([]);
+  // Duplicate warnings
+  const [vrnDup, setVrnDup] = useState<{ id: number; ticket_no?: string } | null>(null);
+  const [phoneDup, setPhoneDup] = useState<{ id: number; ticket_no?: string } | null>(null);
   // Store human-readable vehicle class label; map to API classes for search when needed
   const [fastagClass, setFastagClass] = useState<string>("");
   const [fastagSerialInput, setFastagSerialInput] = useState("");
@@ -221,6 +224,34 @@ export default function CreateTicketFullModal({
     const { name, value } = e.target as any;
     setForm((f) => ({ ...f, [name]: value }));
   }
+  // Duplicate check: VRN and Phone (debounced)
+  useEffect(() => {
+    const vrn = String(form.vehicle_reg_no || '').trim();
+    if (!vrn || vrn.length < 4) { setVrnDup(null); return; }
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/tickets?check=exists&vrn=${encodeURIComponent(vrn)}`, { cache: 'no-store' });
+        const rows = await res.json();
+        const first = Array.isArray(rows) && rows.length ? rows[0] : null;
+        setVrnDup(first ? { id: Number(first.id), ticket_no: first.ticket_no } : null);
+      } catch { setVrnDup(null); }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [form.vehicle_reg_no]);
+
+  useEffect(() => {
+    const raw = String(form.phone || '').trim();
+    if (!raw) { setPhoneDup(null); return; }
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/tickets?check=exists&phone=${encodeURIComponent(raw)}`, { cache: 'no-store' });
+        const rows = await res.json();
+        const first = Array.isArray(rows) && rows.length ? rows[0] : null;
+        setPhoneDup(first ? { id: Number(first.id), ticket_no: first.ticket_no } : null);
+      } catch { setPhoneDup(null); }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [form.phone]);
 
   // Load banks
   useEffect(() => {
@@ -571,10 +602,22 @@ export default function CreateTicketFullModal({
               <div>
                 <label className="block font-semibold mb-1">Vehicle Reg. No (VRN)</label>
                 <input name="vehicle_reg_no" value={form.vehicle_reg_no} onChange={handleChange} className="w-full border p-2 rounded" />
+                {vrnDup && (
+                  <div className="mt-1 text-xs inline-flex items-center gap-1 px-2 py-1 rounded border bg-amber-50 text-amber-800">
+                    <span>⚠️</span>
+                    <span>existing VRN in {vrnDup.ticket_no || `#${vrnDup.id}`}</span>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block font-semibold mb-1">Mobile</label>
                 <input name="phone" value={form.phone} onChange={handleChange} className="w-full border p-2 rounded" />
+                {phoneDup && (
+                  <div className="mt-1 text-xs inline-flex items-center gap-1 px-2 py-1 rounded border bg-amber-50 text-amber-800">
+                    <span>⚠️</span>
+                    <span>existing Mobile in {phoneDup.ticket_no || `#${phoneDup.id}`}</span>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block font-semibold mb-1">Alt Reg Number</label>

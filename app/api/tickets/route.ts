@@ -263,8 +263,29 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const parentId = searchParams.get("parent_id");
   const scope = searchParams.get("scope");
+  const check = searchParams.get("check");
+  const phoneQ = searchParams.get("phone");
+  const vrnQ = searchParams.get("vrn") || searchParams.get("vehicle");
 
   try {
+    // lightweight existence/duplicate lookups for client-side warnings
+    if (check === 'exists' && (phoneQ || vrnQ)) {
+      try {
+        const conds: string[] = [];
+        const vals: any[] = [];
+        if (phoneQ) { conds.push("phone = ?"); vals.push(normalizeIndianMobile(phoneQ)); }
+        if (vrnQ) { conds.push("UPPER(COALESCE(vehicle_reg_no,'')) = UPPER(?)"); vals.push(String(vrnQ)); }
+        if (conds.length === 0) return NextResponse.json([]);
+        const where = conds.join(" AND ");
+        const [rows]: any = await pool.query(
+          `SELECT id, ticket_no, status, created_at FROM ${TICKETS_TABLE} WHERE ${where} ORDER BY created_at DESC LIMIT 5`,
+          vals
+        );
+        return NextResponse.json(Array.isArray(rows) ? rows : []);
+      } catch (e: any) {
+        return NextResponse.json({ error: e.message || 'lookup failed' }, { status: 500 });
+      }
+    }
     // Determine if created_by column exists; use safe selects/joins accordingly
     let hasCreatedByCol = false;
     try { hasCreatedByCol = await hasTableColumn(TICKETS_TABLE, 'created_by'); } catch {}
