@@ -31,6 +31,8 @@ export default function TicketsReportPage() {
   const [status, setStatus] = useState("all");
   const [paidVia, setPaidVia] = useState("all");
   const [assigned, setAssigned] = useState<UserOption | null>(null);
+  const [leadFrom, setLeadFrom] = useState("all");
+  const [subject, setSubject] = useState("all"); // populated from ticket subjects
   const [q, setQ] = useState("");
 
   async function load() {
@@ -46,18 +48,30 @@ export default function TicketsReportPage() {
   useEffect(() => { load(); }, []);
 
   const filtered = useMemo(() => {
-    const fromD = from ? new Date(from) : null;
-    const toD = to ? new Date(to) : null;
+    function parseLocalDateInput(s: string | null | undefined): Date | null {
+      const v = String(s || '').trim();
+      if (!v) return null;
+      const parts = v.split('-');
+      if (parts.length !== 3) return null;
+      const y = Number(parts[0]);
+      const m = Number(parts[1]);
+      const d = Number(parts[2]);
+      if (!Number.isFinite(y) || !Number.isFinite(m) || !Number.isFinite(d)) return null;
+      return new Date(y, m - 1, d, 0, 0, 0, 0); // local start of day
+    }
+    function endOfDayLocal(d: Date | null): Date | null {
+      if (!d) return null;
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+    }
+
+    const fromStart = parseLocalDateInput(from);
+    const toEnd = endOfDayLocal(parseLocalDateInput(to));
     const query = q.trim().toLowerCase();
     return rows.filter((t) => {
-      // date
-      let okDate = true;
-      if (fromD || toD) {
-        const d = t.created_at ? new Date(String(t.created_at)) : null;
-        okDate = !!d;
-        if (okDate && fromD && d! >= fromD) okDate = true; else if (fromD) okDate = okDate && d! >= fromD;
-        if (okDate && toD && d! <= toD) okDate = true; else if (toD) okDate = okDate && d! <= toD;
-      }
+      // date (inclusive range in local time)
+      const created = t.created_at ? new Date(String(t.created_at)) : null;
+      if (fromStart && (!created || created < fromStart)) return false;
+      if (toEnd && (!created || created > toEnd)) return false;
       // status (treat 'completed' as 'closed')
       const rawStatus = String(t.status || '').toLowerCase();
       const normalized = rawStatus === 'completed' ? 'closed' : rawStatus;
@@ -66,12 +80,36 @@ export default function TicketsReportPage() {
       const okPaid = paidVia === 'all' || (String((t as any).paid_via || '').toLowerCase() === paidVia.toLowerCase());
       // assigned
       const okAssigned = !assigned || String(t.assigned_to ?? '') === String(assigned.id);
+      // lead from
+      const okLeadFrom = (leadFrom === 'all') || (String((t as any).lead_received_from || '').toLowerCase() === String(leadFrom).toLowerCase());
+      // subject value (exact match, case-insensitive)
+      const subj = String(subject || 'all').toLowerCase();
+      const rawSubj = String((t as any).subject || '').toLowerCase();
+      const okSubjectVal = (subj === 'all') || (rawSubj === subj);
       // query
       const okQ = query === '' || [t.ticket_no, t.customer_name, t.phone, t.vehicle_reg_no]
         .some(v => String(v || '').toLowerCase().includes(query));
-      return okDate && okStatus && okPaid && okAssigned && okQ;
+      return okStatus && okPaid && okAssigned && okLeadFrom && okSubjectVal && okQ;
     });
-  }, [rows, from, to, status, paidVia, assigned?.id, q]);
+  }, [rows, from, to, status, paidVia, assigned?.id, leadFrom, subject, q]);
+
+  const uniqueLeadFrom = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach((t:any) => {
+      const s = String(t.lead_received_from || '').trim();
+      if (s) set.add(s);
+    });
+    return Array.from(set).sort();
+  }, [rows]);
+
+  const uniqueSubjects = useMemo(() => {
+    const set = new Set<string>();
+    rows.forEach((t: any) => {
+      const s = String(t.subject || '').trim();
+      if (s) set.add(s);
+    });
+    return Array.from(set).sort();
+  }, [rows]);
 
   const totals = useMemo(() => ({
     count: filtered.length,
@@ -90,10 +128,27 @@ export default function TicketsReportPage() {
       </div>
 
       <Card className="mb-4">
-        <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-6 gap-3">
+        <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-8 gap-3">
           <div>
             <label className="block text-xs text-muted-foreground mb-1">From</label>
             <Input type="date" value={from} onChange={(e)=> setFrom(e.target.value)} />
+            <div className="mt-1 flex gap-2">
+              <button
+                className="text-xs px-2 py-1 border rounded hover:bg-gray-50"
+                onClick={() => {
+                  const now = new Date();
+                  const y = now.getFullYear();
+                  const m = (now.getMonth() + 1).toString().padStart(2, '0');
+                  const d2 = now.getDate().toString().padStart(2, '0');
+                  const isoLocal = `${y}-${m}-${d2}`; // local YYYY-MM-DD
+                  setFrom(isoLocal); setTo(isoLocal);
+                }}
+              >Today</button>
+              <button
+                className="text-xs px-2 py-1 border rounded hover:bg-gray-50"
+                onClick={() => { setFrom(''); setTo(''); }}
+              >Clear</button>
+            </div>
           </div>
           <div>
             <label className="block text-xs text-muted-foreground mb-1">To</label>
@@ -126,6 +181,24 @@ export default function TicketsReportPage() {
           <div>
             <label className="block text-xs text-muted-foreground mb-1">Assigned To</label>
             <UsersAutocomplete value={assigned} onSelect={setAssigned} placeholder="Type user" />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1">Lead From</label>
+            <select className="w-full border rounded px-2 py-2" value={leadFrom} onChange={(e)=> setLeadFrom(e.target.value)}>
+              <option value="all">All</option>
+              {uniqueLeadFrom.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1">Subject</label>
+            <select className="w-full border rounded px-2 py-2" value={subject} onChange={(e)=> setSubject(e.target.value)}>
+              <option value="all">All</option>
+              {uniqueSubjects.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="block text-xs text-muted-foreground mb-1">Search</label>

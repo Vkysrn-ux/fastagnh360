@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       pool.query(
         `INSERT INTO fastags
           (supplier_id, fastag_class, bank_name, batch_number, purchase_price, purchase_type, purchase_date, tag_serial, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'in_stock')`,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
         [supplier_id, fastag_class, bank_name, batch_number, purchase_price, payment_type, purchase_date, serial]
       )
     );

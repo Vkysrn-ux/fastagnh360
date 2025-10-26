@@ -167,26 +167,32 @@ export default function SupplierFastagSummaryModal({
                   <TableHead>Assigned</TableHead>
                   <TableHead>In Stock</TableHead>
                   <TableHead>Sold</TableHead>
+                  <TableHead>Prefixes</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {data.grouped.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center">
+                    <TableCell colSpan={7} className="text-center">
                       No data available.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  data.grouped.map((item, idx) => (
-                    <TableRow key={idx}>
-                      <TableCell>{item.bank_name}</TableCell>
-                      <TableCell>{item.fastag_class}</TableCell>
-                      <TableCell>{item.total_count}</TableCell>
-                      <TableCell>{item.assigned_count ?? 0}</TableCell>
-                      <TableCell>{item.in_stock_count ?? 0}</TableCell>
-                      <TableCell>{item.sold_count ?? 0}</TableCell>
-                    </TableRow>
-                  ))
+                  data.grouped.map((item, idx) => {
+                    const prefixes = (data.grouped_by_prefix || []).filter((p: any) => p.bank_name === item.bank_name && p.fastag_class === item.fastag_class);
+                    const prefixText = prefixes.map((p: any) => `${p.prefix} - ${p.in_stock_count ?? p.total_count}`).join(', ');
+                    return (
+                      <TableRow key={idx}>
+                        <TableCell>{item.bank_name}</TableCell>
+                        <TableCell>{item.fastag_class}</TableCell>
+                        <TableCell>{item.total_count}</TableCell>
+                        <TableCell>{item.assigned_count ?? 0}</TableCell>
+                        <TableCell>{item.in_stock_count ?? 0}</TableCell>
+                        <TableCell>{item.sold_count ?? 0}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{prefixText || '-'}</TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>

@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     await pool.query(
   `INSERT INTO fastags
    (tag_serial, supplier_id, purchase_date, purchase_price, remarks, bank_name, fastag_class, batch_number, status)
-   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'in_stock')`,
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
   [
     tag_serial,
     supplier_id || null,

@@ -56,8 +56,8 @@ export default function FastagTransferPage() {
         } else {
           // Load full list if not present, then take remaining
           if (!barcodesMap[key]) {
-            let url = `/api/fastags?status=assigned&exclude_used_in_ticket=1&owner=${encodeURIComponent(fromAgent)}&bank=${encodeURIComponent(row.bank_name)}&class=${encodeURIComponent(row.fastag_class)}&supplier=${encodeURIComponent(String(row.supplier_id||''))}`;
-            if (mappingFilter !== 'all') url += `&mapping=${encodeURIComponent(mappingFilter)}`;
+            // Always load all mapping states; mapping selection applies only on transfer
+            const url = `/api/fastags?status=assigned&exclude_used_in_ticket=1&owner=${encodeURIComponent(fromAgent)}&bank=${encodeURIComponent(row.bank_name)}&class=${encodeURIComponent(row.fastag_class)}&supplier=${encodeURIComponent(String(row.supplier_id||''))}`;
             const data = await fetch(url).then(r => r.json()).catch(() => []);
             const list: Array<{ tag_serial: string }> = Array.isArray(data) ? data : [];
             setBarcodesMap(m => ({ ...m, [key]: list.map(x => x.tag_serial) }));
@@ -86,7 +86,7 @@ export default function FastagTransferPage() {
       if (result?.success) {
         const total = assignments.reduce((s, a) => s + a.serials.length, 0);
         setMessage(`Successfully transferred ${total} FASTag(s).`);
-        const next = await fetch(`/api/agents/${fromAgent}/fastags/available-summary${mappingFilter!=='all' ? `?mapping=${encodeURIComponent(mappingFilter)}` : ''}`).then(r=>r.json()).catch(()=>[]);
+        const next = await fetch(`/api/agents/${fromAgent}/fastags/available-summary`).then(r=>r.json()).catch(()=>[]);
         setSummary(Array.isArray(next) ? next : []);
         setQtyMap({});
         setSelectedMap({});
@@ -118,7 +118,7 @@ export default function FastagTransferPage() {
               setFromAgent(val);
               setQtyMap({});
               if (val) {
-                const rows = await fetch(`/api/agents/${val}/fastags/available-summary${mappingFilter!=='all' ? `?mapping=${encodeURIComponent(mappingFilter)}` : ''}`).then(r=>r.json()).catch(()=>[]);
+                const rows = await fetch(`/api/agents/${val}/fastags/available-summary`).then(r=>r.json()).catch(()=>[]);
                 setSummary(Array.isArray(rows) ? rows : []);
               } else {
                 setSummary([]);
@@ -133,23 +133,23 @@ export default function FastagTransferPage() {
             </Select>
           </div>
           <div>
-            <Label>Bank Mapping</Label>
+            <Label>Bank Mapping (apply on transfer)</Label>
             <Select value={mappingFilter} onValueChange={async (v: any)=> {
+              // Only record selection to apply during transfer; do not filter lists
               setMappingFilter(v);
-              // refresh summary if source selected
               if (fromAgent) {
-                const rows = await fetch(`/api/agents/${fromAgent}/fastags/available-summary${v!=='all' ? `?mapping=${encodeURIComponent(v)}` : ''}`).then(r=>r.json()).catch(()=>[]);
+                const rows = await fetch(`/api/agents/${fromAgent}/fastags/available-summary`).then(r=>r.json()).catch(()=>[]);
                 setSummary(Array.isArray(rows) ? rows : []);
                 setQtyMap({});
                 setSelectedMap({});
                 setBarcodesMap({});
               }
             }}>
-              <SelectTrigger><SelectValue placeholder="Mapping Status" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Mapping to set (optional)" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="pending">Mapping Pending</SelectItem>
-                <SelectItem value="done">Mapping Done</SelectItem>
+                <SelectItem value="all">Do not set mapping</SelectItem>
+                <SelectItem value="pending">Set Mapping Pending</SelectItem>
+                <SelectItem value="done">Set Mapping Done</SelectItem>
               </SelectContent>
             </Select>
           </div>

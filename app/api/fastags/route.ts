@@ -49,9 +49,10 @@ export async function GET(req: NextRequest) {
   const supplierFilter = (searchParams.get("supplier") || searchParams.get("supplier_id") || "").trim();
   const bankLike = (searchParams.get("bank_like") || "").trim();
   const classLike = (searchParams.get("class_like") || "").trim();
-  // Default to only mapping-done FASTags unless explicitly overridden
-  const mappingFilter = (searchParams.get("mapping") || "done").trim().toLowerCase();
-  const excludeUsed = (searchParams.get("exclude_used_in_ticket") || "").trim() === '1';
+  // Do not filter by mapping status unless explicitly requested
+  const mappingFilter = (searchParams.get("mapping") || "").trim().toLowerCase();
+  // Default: exclude any tag used in tickets from inventory listings
+  const excludeUsed = (searchParams.get("exclude_used_in_ticket") || "1").trim() === '1';
   // Optional pagination (no limit by default)
   const limitParamRaw = searchParams.get("limit");
   const offsetParamRaw = searchParams.get("offset");

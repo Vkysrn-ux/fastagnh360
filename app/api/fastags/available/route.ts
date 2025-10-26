@@ -8,11 +8,12 @@ export async function GET(req: NextRequest) {
   const bankRaw = (searchParams.get("bank") || '').trim();
   const fastagClass = searchParams.get("class");
   const assignedTo = searchParams.get("assigned_to");
-  // Default to only mapping-done FASTags unless explicitly overridden
-  const mapping = (searchParams.get("mapping") || 'done').toLowerCase();
+  // Do not filter by mapping status unless explicitly requested
+  const mapping = (searchParams.get("mapping") || '').toLowerCase();
   const supplier = (searchParams.get("supplier") || '').trim();
   const query = (searchParams.get("query") || '').trim();
-  const limit = Math.max(1, Math.min(100, Number(searchParams.get('limit') || 20)));
+  // Allow larger batch retrieval for admin bulk transfer use-cases
+  const limit = Math.max(1, Math.min(5000, Number(searchParams.get('limit') || 20)));
 
   if (!bankRaw || !fastagClass) {
     return NextResponse.json([], { status: 200 });
@@ -111,11 +112,11 @@ export async function GET(req: NextRequest) {
     sql += "AND f.assigned_to_agent_id = ? AND f.status = 'assigned' ORDER BY f.tag_serial ASC";
     params.push(Number(assignedTo));
   } else if (assignedTo === 'admin') {
-    // Admin warehouse only
-    sql += "AND f.assigned_to_agent_id IS NULL AND f.status = 'in_stock' ORDER BY f.tag_serial ASC";
+    // Admin warehouse only; treat NULL status as in_stock
+    sql += "AND f.assigned_to_agent_id IS NULL AND (f.status = 'in_stock' OR f.status IS NULL) ORDER BY f.tag_serial ASC";
   } else {
-    // No owner specified: show both admin stock and assigned agent stock
-    sql += "AND ((f.assigned_to_agent_id IS NULL AND f.status = 'in_stock') OR (f.assigned_to_agent_id IS NOT NULL AND f.status = 'assigned')) ORDER BY f.tag_serial ASC";
+    // No owner specified: include admin stock (status NULL or in_stock) and assigned agent stock
+    sql += "AND ((f.assigned_to_agent_id IS NULL AND (f.status = 'in_stock' OR f.status IS NULL)) OR (f.assigned_to_agent_id IS NOT NULL AND f.status = 'assigned')) ORDER BY f.tag_serial ASC";
   }
   sql += " LIMIT ?";
   params.push(limit);

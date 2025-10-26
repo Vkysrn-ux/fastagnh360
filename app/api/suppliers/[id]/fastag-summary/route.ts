@@ -9,9 +9,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     const [summary] = await pool.query(`
       SELECT
         COUNT(*) AS total_fastags,
-        SUM(status = 'in_stock') AS available_with_admin,
-        SUM(status = 'assigned') AS assigned_to_agent,
-        SUM(status = 'sold') AS sold_total
+        SUM(CASE WHEN status = 'in_stock' OR status IS NULL THEN 1 ELSE 0 END) AS available_with_admin,
+        SUM(CASE WHEN status = 'assigned' THEN 1 ELSE 0 END) AS assigned_to_agent,
+        SUM(CASE WHEN status = 'sold' THEN 1 ELSE 0 END) AS sold_total
       FROM fastags
       WHERE supplier_id = ?
     `, [supplierId]);
@@ -23,7 +23,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         COALESCE(fastag_class,'') AS fastag_class,
         COUNT(*) AS total_count,
         SUM(CASE WHEN status = 'assigned' THEN 1 ELSE 0 END) AS assigned_count,
-        SUM(CASE WHEN status = 'in_stock' THEN 1 ELSE 0 END) AS in_stock_count,
+        SUM(CASE WHEN status = 'in_stock' OR status IS NULL THEN 1 ELSE 0 END) AS in_stock_count,
         SUM(CASE WHEN status = 'sold' THEN 1 ELSE 0 END) AS sold_count
       FROM fastags
       WHERE supplier_id = ?
@@ -31,10 +31,27 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       ORDER BY bank_name, fastag_class
     `, [supplierId]);
 
+    // Breakdown by serial prefix (first two hyphen-separated parts)
+    const [byPrefix] = await pool.query(`
+      SELECT 
+        COALESCE(bank_name,'') AS bank_name,
+        COALESCE(fastag_class,'') AS fastag_class,
+        TRIM(SUBSTRING_INDEX(tag_serial, '-', 2)) AS prefix,
+        COUNT(*) AS total_count,
+        SUM(CASE WHEN status = 'assigned' THEN 1 ELSE 0 END) AS assigned_count,
+        SUM(CASE WHEN status = 'in_stock' OR status IS NULL THEN 1 ELSE 0 END) AS in_stock_count,
+        SUM(CASE WHEN status = 'sold' THEN 1 ELSE 0 END) AS sold_count
+      FROM fastags
+      WHERE supplier_id = ?
+      GROUP BY COALESCE(bank_name,''), COALESCE(fastag_class,''), TRIM(SUBSTRING_INDEX(tag_serial, '-', 2))
+      ORDER BY bank_name, fastag_class, prefix
+    `, [supplierId]);
+
     return new Response(
       JSON.stringify({
         summary: summary[0],
-        grouped, // this is your per-bank/class count!
+        grouped, // bank/class counts
+        grouped_by_prefix: byPrefix // bank/class/prefix counts
       }),
       { status: 200 }
     );
