@@ -10,6 +10,7 @@ import { formatERPDate } from "@/lib/date-format";
 type TicketRow = {
   id: number;
   ticket_no?: string;
+  subject?: string;
   customer_name?: string;
   phone?: string;
   vehicle_reg_no?: string;
@@ -221,6 +222,7 @@ export default function TicketsReportPage() {
             <tr className="bg-gray-50">
               <th className="text-left p-2">Date</th>
               <th className="text-left p-2">Ticket</th>
+              <th className="text-left p-2">Subject</th>
               <th className="text-left p-2">Customer</th>
               <th className="text-left p-2">VRN</th>
               <th className="text-left p-2">Status</th>
@@ -234,6 +236,7 @@ export default function TicketsReportPage() {
               <tr key={t.id} className="border-t">
                 <td className="p-2">{t.created_at ? formatERPDate(t.created_at as any) : '-'}</td>
                 <td className="p-2">{t.ticket_no || t.id}</td>
+                <td className="p-2">{(t as any).subject || '-'}</td>
                 <td className="p-2">{t.customer_name || '-'}</td>
                 <td className="p-2">{t.vehicle_reg_no || '-'}</td>
                 <td className="p-2">{(String(t.status||'').toLowerCase()==='completed') ? 'closed' : (t.status || '-')}</td>
@@ -243,7 +246,7 @@ export default function TicketsReportPage() {
               </tr>
             ))}
             {filtered.length === 0 && !loading && (
-              <tr><td colSpan={8} className="p-4 text-center text-muted-foreground">No results</td></tr>
+              <tr><td colSpan={9} className="p-4 text-center text-muted-foreground">No results</td></tr>
             )}
           </tbody>
         </table>
