@@ -5,6 +5,7 @@ import "./globals.css"
 import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
 import { ThemeProvider } from "@/components/theme-provider"
+import { GoogleAnalytics } from "@/components/google-analytics"
 
 const inter = Inter({
   subsets: ["latin"],
@@ -23,11 +24,14 @@ export const metadata: Metadata = {
     "Register for FASTag for all vehicles, all bank FASTag available, nationwide delivery, recharge services, and blacklist resolution.",
     generator: 'v0.dev',
     manifest: '/manifest.webmanifest',
-    themeColor: '#0b5cc2',
   icons: {
       icon: '/logo.png',
       apple: '/logo.png',
     },
+}
+
+export const viewport = {
+  themeColor: '#0b5cc2',
 }
 
 export default function RootLayout({
@@ -40,6 +44,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={`${inter.variable} ${poppins.variable} font-sans`}>
         <ThemeProvider attribute="class" defaultTheme="royal" enableSystem disableTransitionOnChange>
+          <GoogleAnalytics />
           <div className="flex min-h-screen flex-col">
             {!ERP_ONLY && <Navbar />}
             <main className="flex-1">{children}</main>

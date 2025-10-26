@@ -22,8 +22,7 @@ export function Navbar() {
               NH
             </div>
             <span className="hidden font-poppins text-xl font-bold sm:inline-block">
-              NH360
-              <span className="text-gradient-royal">fastag</span>
+              NH360 Fastag Solutions
             </span>
           </Link>
         </div>

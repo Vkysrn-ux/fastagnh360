@@ -16,7 +16,7 @@ export function HeroSection() {
               FASTag Solutions <span className="text-gradient-royal">For All Vehicles</span>
             </h1>
             <p className="text-xl text-muted-foreground max-w-[600px] mx-auto md:mx-0">
-              Register, recharge, and resolve FASTag issues with doorstep delivery across India.
+              Buy FASTag online @ nh360fastag.com
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
               <Link href="/register">

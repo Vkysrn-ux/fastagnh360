@@ -19,8 +19,7 @@ export function Footer() {
                 NH
               </div>
               <span className="font-poppins text-xl font-bold">
-                NH360
-                <span className="text-gradient-royal">fastag</span>
+                NH360 Fastag Solutions
               </span>
             </div>
             <p className="text-muted-foreground mb-4">
@@ -142,35 +141,39 @@ export function Footer() {
                   <MapPin className="h-3.5 w-3.5" />
                 </div>
                 <span className="text-muted-foreground">
-                  Coimbatore
-                  <br />
-                  <a
-                    href="https://maps.app.goo.gl/unSFYUEtQPazo6RJ9"
-                    className="text-xs text-blue-700 underline"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    View on Google Maps
-                  </a>
+                  Address: 2nd Floor, Isha Towers, 222/4, New Scheme Rd, near KVB Bank, Pappanaickenpalayam, Coimbatore, Tamil Nadu 641037
                 </span>
               </li>
               <li className="flex items-center">
                 <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0 mr-2">
                   <Phone className="h-3.5 w-3.5" />
                 </div>
+                <a href="tel:+918667460935" className="text-muted-foreground hover:text-primary transition-colors">
+                  +91 - 8667460935
+                </a>
+              </li>
+              <li className="flex items-center">
+                <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0 mr-2">
+                  <Phone className="h-3.5 w-3.5" />
+                </div>
                 <a href="tel:+918667460635" className="text-muted-foreground hover:text-primary transition-colors">
-                  +91 86674 60635
+                  +91 - 8667460635
                 </a>
               </li>
               <li className="flex items-center">
                 <div className="h-6 w-6 rounded-full bg-secondary/10 flex items-center justify-center text-secondary shrink-0 mr-2">
                   <Mail className="h-3.5 w-3.5" />
                 </div>
-                <a
-                  href="mailto:info@nh360fastag.com"
-                  className="text-muted-foreground hover:text-secondary transition-colors"
-                >
+                <a href="mailto:info@nh360fastag.com" className="text-muted-foreground hover:text-secondary transition-colors">
                   info@nh360fastag.com
+                </a>
+              </li>
+              <li className="flex items-center">
+                <div className="h-6 w-6 rounded-full bg-secondary/10 flex items-center justify-center text-secondary shrink-0 mr-2">
+                  <Mail className="h-3.5 w-3.5" />
+                </div>
+                <a href="mailto:support@nh360fastagsolutions.com" className="text-muted-foreground hover:text-secondary transition-colors">
+                  support@nh360fastagsolutions.com
                 </a>
               </li>
             </ul>
@@ -178,7 +181,7 @@ export function Footer() {
         </div>
         <div className="mt-12 border-t pt-6">
           <p className="text-center text-sm text-muted-foreground">
-            &copy; {new Date().getFullYear()} NH360fastag.com. All rights reserved.
+            &copy; {new Date().getFullYear()} NH360 Fastag Solutions. All rights reserved.
           </p>
         </div>
       </div>
