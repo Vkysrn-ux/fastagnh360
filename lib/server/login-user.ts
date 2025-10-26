@@ -112,11 +112,16 @@ export async function loginUserServer(email: string, password: string) {
       // ignore if column doesn't exist
     }
 
+    // Persist login for 3 days so PWAs don't lose session on close
+    const threeDaysInSeconds = 60 * 60 * 24 * 3
+    const threeDaysFromNow = new Date(Date.now() + threeDaysInSeconds * 1000)
+
     await cookieStore.set('user-session', JSON.stringify(sessionData), {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      maxAge: threeDaysInSeconds,
+      expires: threeDaysFromNow,
       path: '/'
     });
 
