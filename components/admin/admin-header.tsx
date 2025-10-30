@@ -57,19 +57,21 @@ export function AdminHeader() {
   // - Super Admin: all menus
   // - Admin: only Fastags, Agents, Suppliers, Tickets (+Dashboard retained for navigation)
   const commonItems = [
-    { href: "/admin/fastags", label: "FASTags", icon: <CreditCard className="mr-2 h-4 w-4" /> },
-    { href: "/admin/agents", label: "Agents", icon: <UserCircle className="mr-2 h-4 w-4" /> },
-    { href: "/admin/suppliers", label: "Suppliers", icon: <Users className="mr-2 h-4 w-4" /> },
-    { href: "/admin/tickets", label: "Tickets", icon : <Ticket className="mr-2 h-4 w-4" /> },
+    { href: "/admin/fastags", label: "FASTags", icon: <CreditCard className="h-4 w-4 xl:mr-2" /> },
+    { href: "/admin/agents", label: "Agents", icon: <UserCircle className="h-4 w-4 xl:mr-2" /> },
+    { href: "/admin/suppliers", label: "Suppliers", icon: <Users className="h-4 w-4 xl:mr-2" /> },
+    { href: "/admin/orders", label: "Orders", icon: <Package className="h-4 w-4 xl:mr-2" /> },
+    { href: "/admin/tickets", label: "Tickets", icon : <Ticket className="h-4 w-4 xl:mr-2" /> },
+    { href: "/admin/ecom-updates", label: "Ecom Updates", icon: <BarChart3 className="h-4 w-4 xl:mr-2" /> },
   ] as const;
 
   const superExtra = [
-    { href: "/admin/users", label: "Users", icon: <UserCog className="mr-2 h-4 w-4" /> },
-    { href: "/admin/reports", label: "Reports", icon: <BarChart3 className="mr-2 h-4 w-4" /> },
+    { href: "/admin/users", label: "Users", icon: <UserCog className="h-4 w-4 xl:mr-2" /> },
+    { href: "/admin/reports", label: "Reports", icon: <BarChart3 className="h-4 w-4 xl:mr-2" /> },
     // Future: settings/commissions can be added back here
   ] as const;
 
-  const dashboardItem = { href: "/admin/dashboard", label: "Dashboard", icon: <BarChart3 className="mr-2 h-4 w-4" /> } as const;
+  const dashboardItem = { href: "/admin/dashboard", label: "Dashboard", icon: <BarChart3 className="h-4 w-4 xl:mr-2" /> } as const;
   const navItems = isSuperAdmin ? [dashboardItem, ...commonItems, ...superExtra] : [...commonItems]
 
   const logoHref = isSuperAdmin ? "/admin/dashboard" : "/admin/fastags";
@@ -88,25 +90,25 @@ export function AdminHeader() {
           </Link>
         </div>
 
-        {/* Desktop Navigation */}
-        <nav className="hidden md:flex md:gap-6 lg:gap-10">
+        {/* Desktop Navigation: single row, no scrollbar; labels appear on wider screens */}
+        <nav className="hidden md:flex items-center gap-3 lg:gap-5 xl:gap-8 flex-nowrap flex-1 min-w-0 mx-4 overflow-hidden">
           {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center font-medium transition-colors hover:text-primary ${
+              className={`flex items-center font-medium transition-colors hover:text-primary whitespace-nowrap ${
                 pathname === item.href ? "text-primary" : ""
               }`}
             >
               {item.icon}
-              {item.label}
+              <span className="hidden xl:inline">{item.label}</span>
             </Link>
           ))}
         </nav>
 
-        <div className="hidden md:flex md:items-center md:gap-4">
+        <div className="hidden md:flex md:items-center md:gap-3 shrink-0">
           {userName && (
-            <div className="text-sm text-muted-foreground">
+            <div className="hidden xl:block text-sm text-muted-foreground">
               {userName}
             </div>
           )}
@@ -117,8 +119,8 @@ export function AdminHeader() {
             className="border-2 border-primary/20 hover:border-primary/40"
             onClick={handleLogout}
           >
-            <LogOut className="mr-2 h-4 w-4" />
-            Logout
+            <LogOut className="h-4 w-4 xl:mr-2" />
+            <span className="hidden xl:inline">Logout</span>
           </Button>
         </div>
 
