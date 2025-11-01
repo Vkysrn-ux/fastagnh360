@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getBanksCached } from "@/lib/client/cache";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -24,14 +25,12 @@ export default function AddFastagItemPage() {
 
   useEffect(() => {
     const loadDropdowns = async () => {
-      const [supplierRes, bankRes] = await Promise.all([
-        fetch("/api/suppliers/all"),
-        fetch("/api/banks")
+      const [supplierRes, bankList] = await Promise.all([
+        fetch("/api/suppliers/all").then(r=>r.json()),
+        getBanksCached(),
       ]);
-      const supplierData = await supplierRes.json();
-      const bankData = await bankRes.json();
-      setSuppliers(supplierData);
-      setBanks(bankData);
+      setSuppliers(supplierRes);
+      setBanks(bankList);
     };
     loadDropdowns();
   }, []);

@@ -25,8 +25,8 @@ export default function UserFastagsPage() {
     (async () => {
       try {
         // Load user session
-        const sres = await fetch('/api/auth/session', { cache: 'no-store' });
-        const sdata = await sres.json();
+        const { getAuthSessionCached } = await import('@/lib/client/cache');
+        const sdata = await getAuthSessionCached();
         const s = sdata?.session;
         if (!s || s.userType !== 'user' || !s.id) { setSession(null); setLoading(false); return; }
         setSession({ id: s.id, name: s.name });

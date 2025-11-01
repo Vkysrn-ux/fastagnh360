@@ -15,7 +15,7 @@ type PendingReason =
 
 export async function GET(req: NextRequest) {
   try {
-    const session = getUserSession();
+    const session = await getUserSession();
     if (!session || session.displayRole !== 'Super Admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }

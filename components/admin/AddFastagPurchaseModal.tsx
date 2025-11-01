@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getBanksCached } from "@/lib/client/cache";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,11 +42,9 @@ function AddFastagPurchaseModal({ open, onClose, supplier, onSaved }) {
   const [startSerial, setStartSerial] = useState("");
   const [endSerial, setEndSerial] = useState("");
 
-  // Fetch banks
+  // Fetch banks (client cached)
   useEffect(() => {
-    fetch("/api/banks")
-      .then(res => res.json())
-      .then(data => setBanks(data));
+    getBanksCached().then(setBanks).catch(() => setBanks([]));
   }, []);
 
   // Auto-generate batch number

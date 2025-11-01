@@ -30,6 +30,8 @@ export default function UsersAutocomplete({
 
   useEffect(() => {
     const term = input.trim();
+    const ctrl = new AbortController();
+    let t: any;
     if (term.length >= minChars) {
       const q = new URLSearchParams();
       if (Array.isArray(roles) && roles.length > 0) {
@@ -54,23 +56,26 @@ export default function UsersAutocomplete({
         }
       }
       q.set("name", term);
-      fetch(`/api/users?${q.toString()}`)
-        .then((r) => r.json())
-        .then((rows) => {
-          setList(Array.isArray(rows) ? rows : []);
-          setOpen(focused);
-          setHighlight(-1);
-        })
-        .catch(() => {
-          setList([]);
-          setOpen(false);
-          setHighlight(-1);
-        });
+      t = setTimeout(() => {
+        fetch(`/api/users?${q.toString()}`, { signal: ctrl.signal })
+          .then((r) => r.json())
+          .then((rows) => {
+            setList(Array.isArray(rows) ? rows : []);
+            setOpen(focused);
+            setHighlight(-1);
+          })
+          .catch(() => {
+            setList([]);
+            setOpen(false);
+            setHighlight(-1);
+          });
+      }, 200);
     } else {
       setList([]);
       setOpen(false);
       setHighlight(-1);
     }
+    return () => { try { ctrl.abort(); } catch {} if (t) clearTimeout(t); };
   }, [input, role, roles && roles.join(','), minChars, focused]);
 
   useEffect(() => {

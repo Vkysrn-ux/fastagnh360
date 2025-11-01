@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { getBanksCached } from "@/lib/client/cache";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -26,12 +27,10 @@ export default function BulkFastagUploadForm() {
   useEffect(() => {
   const loadData = async () => {
     try {
-      const [supplierRes, bankRes] = await Promise.all([
-        fetch("/api/suppliers/all"),
-        fetch("/api/banks")
+      const [supplierData, bankData] = await Promise.all([
+        fetch("/api/suppliers/all").then(r=>r.json()),
+        getBanksCached(),
       ]);
-      const supplierData = await supplierRes.json();
-      const bankData = await bankRes.json();
 
       setSuppliers(Array.isArray(supplierData) ? supplierData : []);
       setBanks(Array.isArray(bankData) ? bankData : []);

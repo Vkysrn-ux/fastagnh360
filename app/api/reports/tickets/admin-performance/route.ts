@@ -20,7 +20,7 @@ type AdminTicketPerformance = {
 export async function GET(req: NextRequest) {
   try {
     // AuthZ: only Super Admin should access
-    const session = getUserSession();
+    const session = await getUserSession();
     const displayRole = session?.displayRole as string | undefined;
     if (!session || displayRole !== "Super Admin") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -89,4 +89,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: e?.message || "Failed to load admin performance" }, { status: 500 });
   }
 }
-

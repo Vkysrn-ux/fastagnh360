@@ -19,8 +19,8 @@ export function AdminHeader() {
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const res = await fetch('/api/auth/session', { cache: 'no-store' });
-        const data = await res.json();
+        const { getAuthSessionCached } = await import('@/lib/client/cache');
+        const data = await getAuthSessionCached();
         const session = data?.session;
         const isAdmin = !!session && session.userType === 'admin';
         setIsAuthenticated(isAdmin);

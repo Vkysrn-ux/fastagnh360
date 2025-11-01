@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { getBanksCached } from "@/lib/client/cache";
 
 const ROLES = [
   { label: "Regional Manager (ASM)", value: "asm" },
@@ -63,18 +64,13 @@ export default function RegisterAgentModal({ onSuccess }: RegisterAgentModalProp
 
   // Fetch agents, suppliers, banks on load
   useEffect(() => {
-    fetch("/api/agents/all")
-      .then(res => res.json())
-      .then(data => setAgents(data));
-
-    fetch("/api/suppliers/all")
-      .then(res => res.json())
-      .then(data => setSuppliers(data));
-
-    fetch("/api/banks")
-      .then(res => res.json())
-      .then(data => setBanks(data));
+    fetch("/api/agents/all").then(res => res.json()).then(setAgents);
+    fetch("/api/suppliers/all").then(res => res.json()).then(setSuppliers);
+    getBanksCached().then((list) => setBanks(list.map((n) => ({ id: 0, name: n }))));
   }, []);
+
+  // Memoize bank options for stable identity
+  const bankOptions = useMemo(() => banks, [banks]);
 
   // Field change handler
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -307,8 +303,8 @@ export default function RegisterAgentModal({ onSuccess }: RegisterAgentModalProp
                   className="border rounded px-3 py-2"
                 >
                   <option value="">Select Bank</option>
-                  {banks.map((bank) => (
-                    <option key={bank.id} value={bank.name}>{bank.name}</option>
+                  {bankOptions.map((bank) => (
+                    <option key={bank.name} value={bank.name}>{bank.name}</option>
                   ))}
                 </select>
               {/* Reference ID */}

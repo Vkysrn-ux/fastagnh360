@@ -9,12 +9,16 @@ export async function GET(req: NextRequest) {
   try {
     const now = Date.now();
     if (banksCache && banksCache.expires > now) {
-      return NextResponse.json(banksCache.data);
+      return NextResponse.json(banksCache.data, {
+        headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=86400' },
+      });
     }
     const [rows] = await pool.query("SELECT name FROM banks ORDER BY name");
     const bankNames = (rows as any[]).map((row) => row.name);
     banksCache = { data: bankNames, expires: now + BANKS_TTL_MS };
-    return NextResponse.json(bankNames);
+    return NextResponse.json(bankNames, {
+      headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=86400' },
+    });
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }

@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
       params.push(Number(id))
       const cacheKey = `users:id:${Number(id)}`
       const cached = getCache(cacheKey)
-      if (cached) return NextResponse.json(cached)
+      if (cached) return NextResponse.json(cached, { headers: { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' } })
       const [rows]: any = await queryWithRetry(sql + ' LIMIT 1', params, 1)
       const result = Array.isArray(rows) ? rows : []
       // If notes missing or empty, omit it from response
@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
         }
       }
       setCache(cacheKey, result, 30_000)
-      return NextResponse.json(result)
+      return NextResponse.json(result, { headers: { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=300' } })
     }
 
     if (rolesParam) {
@@ -113,7 +113,7 @@ export async function GET(req: NextRequest) {
 
     const cacheKey = `users:list:${rolesParam || role || ''}:${name || ''}`
     const cachedList = getCache(cacheKey)
-    if (cachedList) return NextResponse.json(cachedList)
+    if (cachedList) return NextResponse.json(cachedList, { headers: { 'Cache-Control': 'public, max-age=15, stale-while-revalidate=120' } })
     const [rows]: any = await queryWithRetry(sql, params, 1)
     const cleaned = (Array.isArray(rows) ? rows : []).map((r: any) => {
       if (hasNotes && ('notes' in r)) {
@@ -125,7 +125,7 @@ export async function GET(req: NextRequest) {
       return r
     })
     setCache(cacheKey, cleaned, 15_000)
-    return NextResponse.json(cleaned)
+    return NextResponse.json(cleaned, { headers: { 'Cache-Control': 'public, max-age=15, stale-while-revalidate=120' } })
   } catch (error: any) {
     console.error("Error fetching users:", error)
     return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 })

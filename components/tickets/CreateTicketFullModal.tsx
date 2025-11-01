@@ -148,21 +148,22 @@ export default function CreateTicketFullModal({
     setError(null);
   }, [open, initialForm]);
 
-  // load session for Self id/name
+  // load session for Self id/name (cached)
   useEffect(() => {
-    fetch('/api/auth/session', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(data => {
-        const s = data?.session;
-        if (s?.id) {
-          const me = { id: Number(s.id), name: s.name || 'Me' };
-          setCurrentUser(me);
-          // default Assigned To = current user
-          setAssignedUser(me as any);
-          setForm((f) => ({ ...f, assigned_to: String(me.id) }));
-        }
-      })
-      .catch(() => {});
+    import('@/lib/client/cache').then(({ getAuthSessionCached }) =>
+      getAuthSessionCached()
+        .then((data: any) => {
+          const s = (data && (data.session || data)) as any;
+          if (s?.id) {
+            const me = { id: Number(s.id), name: s.name || 'Me' };
+            setCurrentUser(me);
+            // default Assigned To = current user
+            setAssignedUser(me as any);
+            setForm((f) => ({ ...f, assigned_to: String(me.id) }));
+          }
+        })
+        .catch(() => {})
+    );
   }, []);
 
   // keep role user id in sync with selected shop
@@ -179,31 +180,34 @@ export default function CreateTicketFullModal({
     }
   }, [selectedShop?.id, selectedShop?.name, pickupSameAsLead]);
 
-  // Shop notes display
+  // Shop notes display (client-cached)
   useEffect(() => {
     if (!selectedShop?.id) { setShopNotes(""); return; }
-    fetch(`/api/users?id=${selectedShop.id}`).then(r=>r.json()).then((row)=>{
-      const arr = Array.isArray(row) ? row : (row ? [row] : []);
-      setShopNotes(arr[0]?.notes || "");
-    }).catch(()=> setShopNotes(""));
+    import("@/lib/client/cache").then(({ getUserByIdCached }) =>
+      getUserByIdCached(Number(selectedShop.id))
+        .then((u) => setShopNotes(u?.notes || ""))
+        .catch(() => setShopNotes(""))
+    );
   }, [selectedShop?.id]);
 
-  // When Assigned user changes, fetch notes
+  // When Assigned user changes, fetch notes (client-cached)
   useEffect(() => {
     if (!assignedUser?.id) { setSelectedUserNotes(""); return; }
-    fetch(`/api/users?id=${assignedUser.id}`).then(r=>r.json()).then((row)=>{
-      const arr = Array.isArray(row) ? row : (row ? [row] : []);
-      setSelectedUserNotes(arr[0]?.notes || "");
-    }).catch(()=> setSelectedUserNotes(""));
+    import("@/lib/client/cache").then(({ getUserByIdCached }) =>
+      getUserByIdCached(Number(assignedUser.id))
+        .then((u) => setSelectedUserNotes(u?.notes || ""))
+        .catch(() => setSelectedUserNotes(""))
+    );
   }, [assignedUser?.id]);
 
-  // When pickup point changes, fetch notes (if it's a user-based pickup)
+  // When pickup point changes, fetch notes (client-cached)
   useEffect(() => {
     if (!selectedPickup?.id) { setPickupNotes(""); return; }
-    fetch(`/api/users?id=${selectedPickup.id}`).then(r=>r.json()).then((row)=>{
-      const arr = Array.isArray(row) ? row : (row ? [row] : []);
-      setPickupNotes(arr[0]?.notes || "");
-    }).catch(()=> setPickupNotes(""));
+    import("@/lib/client/cache").then(({ getUserByIdCached }) =>
+      getUserByIdCached(Number(selectedPickup.id))
+        .then((u) => setPickupNotes(u?.notes || ""))
+        .catch(() => setPickupNotes(""))
+    );
   }, [selectedPickup?.id]);
 
   // auto-calc net value
@@ -224,42 +228,42 @@ export default function CreateTicketFullModal({
     const { name, value } = e.target as any;
     setForm((f) => ({ ...f, [name]: value }));
   }
-  // Duplicate check: VRN and Phone (debounced)
+  // Duplicate check: VRN and Phone (debounced + cached)
   useEffect(() => {
     const vrn = String(form.vehicle_reg_no || '').trim();
     if (!vrn || vrn.length < 4) { setVrnDup(null); return; }
+    const ctrl = new AbortController();
     const t = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/tickets?check=exists&vrn=${encodeURIComponent(vrn)}`, { cache: 'no-store' });
-        const rows = await res.json();
+        const { checkTicketExistsCached } = await import('@/lib/client/cache');
+        const rows = await checkTicketExistsCached('vrn', vrn, { signal: ctrl.signal });
         const first = Array.isArray(rows) && rows.length ? rows[0] : null;
         setVrnDup(first ? { id: Number(first.id), ticket_no: first.ticket_no } : null);
       } catch { setVrnDup(null); }
-    }, 400);
-    return () => clearTimeout(t);
+    }, 300);
+    return () => { ctrl.abort(); clearTimeout(t); };
   }, [form.vehicle_reg_no]);
 
   useEffect(() => {
     const raw = String(form.phone || '').trim();
     if (!raw) { setPhoneDup(null); return; }
+    const ctrl = new AbortController();
     const t = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/tickets?check=exists&phone=${encodeURIComponent(raw)}`, { cache: 'no-store' });
-        const rows = await res.json();
+        const { checkTicketExistsCached } = await import('@/lib/client/cache');
+        const rows = await checkTicketExistsCached('phone', raw, { signal: ctrl.signal });
         const first = Array.isArray(rows) && rows.length ? rows[0] : null;
         setPhoneDup(first ? { id: Number(first.id), ticket_no: first.ticket_no } : null);
       } catch { setPhoneDup(null); }
-    }, 400);
-    return () => clearTimeout(t);
+    }, 300);
+    return () => { ctrl.abort(); clearTimeout(t); };
   }, [form.phone]);
 
-  // Load banks
+  // Load banks (client-cached)
   useEffect(() => {
-    // Keep any dynamic banks if API provides, but UI will show predefined list per requirements
-    fetch('/api/banks')
-      .then(r => r.json())
-      .then((d) => setBanks(Array.isArray(d) ? d as string[] : []))
-      .catch(() => setBanks([]));
+    import("@/lib/client/cache").then(({ getBanksCached }) =>
+      getBanksCached().then((d) => setBanks(Array.isArray(d) ? d : [])).catch(() => setBanks([]))
+    );
   }, []);
 
   // FASTag barcode search

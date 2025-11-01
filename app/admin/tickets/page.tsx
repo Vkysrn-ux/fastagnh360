@@ -135,16 +135,17 @@ export default function TicketListPage() {
     fetchTickets();
   }, []);
 
-  // Load session to decide if stats should show (Super Admin or Admin) and who the user is
+  // Load session (cached) to decide if stats should show and who the user is
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/auth/session', { cache: 'no-store' });
-        const data = await res.json();
-        const display = String(data?.session?.displayRole || '').toLowerCase();
+        const { getAuthSessionCached } = await import('@/lib/client/cache');
+        const data: any = await getAuthSessionCached();
+        const session = (data && (data.session || data)) as any;
+        const display = String(session?.displayRole || '').toLowerCase();
         setIsSuperAdmin(display === 'super admin');
         setIsAdmin(display === 'admin');
-        const uid = Number(data?.session?.id || 0);
+        const uid = Number(session?.id || 0);
         setSessionUserId(Number.isFinite(uid) && uid > 0 ? uid : null);
       } catch {
         setIsSuperAdmin(false);
@@ -1334,38 +1335,35 @@ export default function TicketListPage() {
   }
 
   React.useEffect(() => {
-    // Load session for "Self" name/id
-    fetch('/api/auth/session', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(data => {
-        const s = data?.session;
-        if (s?.id) setCurrentUser({ id: Number(s.id), name: s.name || 'Me' });
-      })
-      .catch(() => {});
+    // Load session for "Self" name/id (cached)
+    import('@/lib/client/cache').then(({ getAuthSessionCached }) =>
+      getAuthSessionCached()
+        .then((data: any) => {
+          const s = (data && (data.session || data)) as any;
+          if (s?.id) setCurrentUser({ id: Number(s.id), name: s.name || 'Me' });
+        })
+        .catch(() => {})
+    );
   }, []);
 
   // Fetch notes when Assigned user changes
   React.useEffect(() => {
     if (!assignedUser?.id) { setSelectedUserNotes(""); return; }
-    fetch(`/api/users?id=${assignedUser.id}`)
-      .then(r => r.json())
-      .then((row) => {
-        const arr = Array.isArray(row) ? row : (row ? [row] : []);
-        setSelectedUserNotes(arr[0]?.notes || "");
-      })
-      .catch(() => setSelectedUserNotes(""));
+    import('@/lib/client/cache').then(({ getUserByIdCached }) =>
+      getUserByIdCached(Number(assignedUser.id))
+        .then((u) => setSelectedUserNotes(u?.notes || ""))
+        .catch(() => setSelectedUserNotes(""))
+    );
   }, [assignedUser?.id]);
 
   // Fetch notes when Lead user changes
   React.useEffect(() => {
     if (!leadUser?.id) { setLeadNotes(""); return; }
-    fetch(`/api/users?id=${leadUser.id}`)
-      .then(r => r.json())
-      .then((row) => {
-        const arr = Array.isArray(row) ? row : (row ? [row] : []);
-        setLeadNotes(arr[0]?.notes || "");
-      })
-      .catch(() => setLeadNotes(""));
+    import('@/lib/client/cache').then(({ getUserByIdCached }) =>
+      getUserByIdCached(Number(leadUser.id))
+        .then((u) => setLeadNotes(u?.notes || ""))
+        .catch(() => setLeadNotes(""))
+    );
   }, [leadUser?.id]);
 
   // Fallback: If ticket has only lead_received_from name (no id), try fetching by name to show notes

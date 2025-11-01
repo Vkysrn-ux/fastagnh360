@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { getBanksCached } from "@/lib/client/cache";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import UsersAutocomplete, { type UserOption } from "@/components/UsersAutocomplete";
@@ -48,7 +49,7 @@ export default function InventoryFlowReport() {
   useEffect(() => { fetchData(); }, []);
 
   useEffect(() => {
-    fetch('/api/banks').then(r=>r.json()).then(d => setBankOptions(Array.isArray(d)?d:[])).catch(()=>setBankOptions([]));
+    getBanksCached().then(setBankOptions).catch(() => setBankOptions([]));
     fetch('/api/fastags/classes').then(r=>r.json()).then(d => setClassOptions(Array.isArray(d)?d:[])).catch(()=>setClassOptions([]));
     fetch('/api/suppliers/all').then(r=>r.json()).then(d => setSupplierOptions(Array.isArray(d)?d:[])).catch(()=>setSupplierOptions([]));
   }, []);

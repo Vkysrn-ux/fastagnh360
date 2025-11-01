@@ -32,17 +32,18 @@ export default function UsersPage() {
   const [canManageUsers, setCanManageUsers] = useState(false);
 
   useEffect(() => {
-    // Gate this page to Super Admin only
-    fetch('/api/auth/session', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(data => {
-        const sess = data?.session;
-        const display = String(sess?.displayRole || '').toLowerCase();
-        const ok = !!sess && sess.userType === 'admin' && display === 'super admin';
-        setCanManageUsers(ok);
-        if (!ok) router.replace('/admin/tickets');
-      })
-      .catch(() => router.replace('/admin/tickets'));
+    // Gate this page to Super Admin only (cached session)
+    import('@/lib/client/cache').then(({ getAuthSessionCached }) =>
+      getAuthSessionCached()
+        .then((data: any) => {
+          const sess = (data && (data.session || data)) as any;
+          const display = String(sess?.displayRole || '').toLowerCase();
+          const ok = !!sess && sess.userType === 'admin' && display === 'super admin';
+          setCanManageUsers(ok);
+          if (!ok) router.replace('/admin/tickets');
+        })
+        .catch(() => router.replace('/admin/tickets'))
+    );
   }, [router]);
 
   const fetchUsers = useCallback(async () => {

@@ -70,18 +70,19 @@ export default function NewTicketPage() {
 
   // load session for Self button and default name
   useEffect(() => {
-    fetch('/api/auth/session', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(data => {
-        const s = data?.session;
-        if (s?.id) {
-          const me = { id: Number(s.id), name: s.name || 'Me' };
-          setCurrentUser(me);
-          setAssignedUser(me as any);
-          setForm((f) => ({ ...f, assigned_to: String(me.id) }));
-        }
-      })
-      .catch(() => {});
+    import('@/lib/client/cache').then(({ getAuthSessionCached }) =>
+      getAuthSessionCached()
+        .then((data: any) => {
+          const s = (data && (data.session || data)) as any;
+          if (s?.id) {
+            const me = { id: Number(s.id), name: s.name || 'Me' };
+            setCurrentUser(me);
+            setAssignedUser(me as any);
+            setForm((f) => ({ ...f, assigned_to: String(me.id) }));
+          }
+        })
+        .catch(() => {})
+    );
   }, []);
 
   // auto-calc net value

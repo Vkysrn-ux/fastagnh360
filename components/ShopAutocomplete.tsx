@@ -21,16 +21,22 @@ const ShopAutocomplete: React.FC<ShopAutocompleteProps> = ({ value, onSelect }) 
 
   // Fetch shop suggestions on input
   useEffect(() => {
+    const ctrl = new AbortController();
+    let t: any;
     if (input.length >= 2) {
-      fetch(`/api/users?role=shop&name=${encodeURIComponent(input)}`)
-        .then(res => res.json())
-        .then(data => setSuggestions(data || []));
+      t = setTimeout(() => {
+        fetch(`/api/users?role=shop&name=${encodeURIComponent(input)}`, { signal: ctrl.signal })
+          .then(res => res.json())
+          .then(data => setSuggestions(Array.isArray(data) ? data : []))
+          .catch(() => setSuggestions([]));
+      }, 200);
       setShowDropdown(true);
     } else {
       setSuggestions([]);
       setShowDropdown(false);
       setHighlight(-1);
     }
+    return () => { try { ctrl.abort(); } catch {} if (t) clearTimeout(t); };
   }, [input]);
 
   // Close dropdown on outside click
