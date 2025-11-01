@@ -300,10 +300,10 @@ export default function OrdersPage() {
                   <TableHead>Request Number</TableHead>
                   <TableHead>Agent/TL Name</TableHead>
                   <TableHead>Order Details</TableHead>
-                  <TableHead>Fulfilled/Packed?</TableHead>
-                  <TableHead>Dispatch Via?</TableHead>
+                  <TableHead>Fulfilled/Packed</TableHead>
+                  <TableHead>Dispatch Via</TableHead>
                   <TableHead>Tracking ID</TableHead>
-                  <TableHead>Status?</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Packed By</TableHead>
                   <TableHead>Created By</TableHead>
                   <TableHead>Actions</TableHead>
