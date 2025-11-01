@@ -317,20 +317,36 @@ export async function POST(
       return NextResponse.json({ error: "Paid via cannot be 'Pending' when Payment Received is checked." }, { status: 400 });
     }
 
-    // Duplicate guard: do not allow creating a ticket with same phone + VRN
+    // Sub-ticket constraints:
+    // 1) Must match parent phone or vehicle (at least one)
+    try {
+      const parentPhoneNorm = normalizeIndianMobile(parent.phone) ?? '';
+      const parentVrnNorm = (parent.vehicle_reg_no ?? '').toString().trim().toUpperCase();
+      const effPhoneNorm = normalizeIndianMobile(phone) ?? '';
+      const effVrnNorm = (vehicle_reg_no ?? '').toString().trim().toUpperCase();
+      const sharesPhoneOrVrn = (parentPhoneNorm && effPhoneNorm && parentPhoneNorm === effPhoneNorm) || (!!parentVrnNorm && !!effVrnNorm && parentVrnNorm === effVrnNorm);
+      if (!sharesPhoneOrVrn) {
+        await conn.rollback();
+        return NextResponse.json({ error: 'Sub-ticket must match parent phone or vehicle number.' }, { status: 400 });
+      }
+    } catch {}
+
+    // 2) Duplicate guard for sub-ticket: block only if same phone + VRN + Subject exists
     try {
       const [dups]: any = await conn.query(
         `SELECT id, ticket_no, status, customer_name, created_at
            FROM ${TICKETS_TABLE}
-          WHERE phone = ? AND UPPER(COALESCE(vehicle_reg_no,'')) = UPPER(?)
+          WHERE phone = ?
+            AND UPPER(COALESCE(vehicle_reg_no,'')) = UPPER(?)
+            AND UPPER(COALESCE(subject,'')) = UPPER(?)
           ORDER BY created_at DESC
           LIMIT 10`,
-        [phone, vehicle_reg_no]
+        [phone, vehicle_reg_no, subject]
       );
       if (Array.isArray(dups) && dups.length) {
         await conn.rollback();
         return NextResponse.json({
-          error: 'Duplicate ticket exists for this phone and vehicle number',
+          error: 'Duplicate sub-ticket exists for same phone, vehicle and subject',
           duplicates: dups,
         }, { status: 409 });
       }

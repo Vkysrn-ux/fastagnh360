@@ -591,6 +591,25 @@ export async function POST(req: NextRequest) {
       return Array.isArray(rows) ? rows : [];
     }
 
+    // helper: duplicate guard by phone + vehicle + subject (case-insensitive subject)
+    async function findDuplicatesWithSubject(phoneRaw: any, vrnRaw: any, subjectRaw: any) {
+      const p = normalizeIndianMobile(phoneRaw);
+      const vrn = (vrnRaw ?? '').toString().trim();
+      const subj = (subjectRaw ?? '').toString().trim();
+      if (!p || !vrn || !subj) return [] as any[];
+      const [rows]: any = await conn.query(
+        `SELECT id, ticket_no, status, customer_name, created_at
+           FROM ${TICKETS_TABLE}
+          WHERE phone = ?
+            AND UPPER(COALESCE(vehicle_reg_no,'')) = UPPER(?)
+            AND UPPER(COALESCE(subject,'')) = UPPER(?)
+          ORDER BY created_at DESC
+          LIMIT 10`,
+        [p, vrn, subj]
+      );
+      return Array.isArray(rows) ? rows : [];
+    }
+
     // --- CASE A: create only a sub-ticket (no new parent) ---
     if (parent_ticket_id) {
       const childTicketNo = await generateTicketNo(conn);
@@ -633,13 +652,30 @@ export async function POST(req: NextRequest) {
       const effectiveCustomer = (typeof customer_name !== "undefined" ? customer_name : null) ?? parent.customer_name ?? null;
       const effectiveComments = (typeof comments !== "undefined" ? comments : null) ?? null;
 
-      // Duplicate guard: prevent creating a sub-ticket with same phone+VRN
-      const dupSub = await findDuplicates(effectivePhone, effectiveVehicle);
-      if (dupSub.length) {
+      // Sub-ticket business rules:
+      // - Must relate to the same customer context: same phone OR same vehicle as parent
+      // - Allow sub-ticket even if a ticket exists for same phone+VRN, but only if subject differs
+      const parentPhoneNorm = normalizeIndianMobile(parent.phone) ?? '';
+      const parentVrnNorm = (parent.vehicle_reg_no ?? '').toString().trim().toUpperCase();
+      const effPhoneNorm = normalizeIndianMobile(effectivePhone) ?? '';
+      const effVrnNorm = (effectiveVehicle ?? '').toString().trim().toUpperCase();
+
+      const sharesPhoneOrVrn = (parentPhoneNorm && effPhoneNorm && parentPhoneNorm === effPhoneNorm) ||
+                               (!!parentVrnNorm && !!effVrnNorm && parentVrnNorm === effVrnNorm);
+      if (!sharesPhoneOrVrn) {
         await conn.rollback();
         return NextResponse.json({
-          error: 'Duplicate ticket exists for this phone and vehicle number',
-          duplicates: dupSub,
+          error: 'Sub-ticket must match parent phone or vehicle number.'
+        }, { status: 400 });
+      }
+
+      // Duplicate guard for sub-ticket: block only when same phone+VRN+Subject exists
+      const dupSameSubject = await findDuplicatesWithSubject(effectivePhone, effectiveVehicle, subject);
+      if (dupSameSubject.length) {
+        await conn.rollback();
+        return NextResponse.json({
+          error: 'Duplicate sub-ticket exists for same phone, vehicle and subject',
+          duplicates: dupSameSubject,
         }, { status: 409 });
       }
 
