@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -150,24 +150,39 @@ export default function OrdersPage() {
     return { totalQty, pending, deliveryPending }
   }, [dispatches])
 
-  // Initial data fetch once
-  useState(() => { fetchDispatches(); fetchSupplierOrders(); return null })
+  // Initial data fetch once on client
+  useEffect(() => {
+    fetchDispatches();
+    fetchSupplierOrders();
+  }, [])
 
   async function fetchDispatches() {
-    const params = new URLSearchParams();
-    if (q) params.set("q", q);
-    if (status !== "All") params.set("status", status);
-    if (from) params.set("from", from);
-    if (to) params.set("to", to);
-    const res = await fetch(`/api/orders?${params.toString()}`, { cache: "no-store" });
-    const data = await res.json();
-    setDispatches(Array.isArray(data) ? data : []);
+    try {
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (status !== "All") params.set("status", status);
+      if (from) params.set("from", from);
+      if (to) params.set("to", to);
+      const query = params.toString();
+      const url = query ? `/api/orders?${query}` : `/api/orders`;
+      const res = await fetch(url, { cache: "no-store" });
+      const data = await res.json();
+      setDispatches(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error(e);
+      setDispatches([]);
+    }
   }
 
   async function fetchSupplierOrders() {
-    const res = await fetch(`/api/supplier-orders`, { cache: "no-store" });
-    const data = await res.json();
-    setSupOrders(Array.isArray(data) ? data : []);
+    try {
+      const res = await fetch(`/api/supplier-orders`, { cache: "no-store" });
+      const data = await res.json();
+      setSupOrders(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error(e);
+      setSupOrders([]);
+    }
   }
 
   function startCreate() {

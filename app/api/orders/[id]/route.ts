@@ -34,10 +34,13 @@ async function ensureTables() {
   `);
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+// In Next.js, dynamic route params may be a Promise in route handlers.
+// Await params before accessing its properties to avoid runtime error.
+export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     await ensureTables();
-    const id = Number(params.id);
+    const { id: idParam } = await ctx.params;
+    const id = Number(idParam);
     const body = await req.json();
     const o = body || {};
     await pool.query(
@@ -63,10 +66,26 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       await pool.query(`INSERT INTO dispatch_order_items (order_id, bank, class_type, qty) VALUES (?,?,?,?)`, [id, it.bank, it.classType, Number(it.qty || 0)]);
     }
     const [updatedRows]: any = await pool.query(`SELECT * FROM dispatch_orders WHERE id = ?`, [id]);
-    const updated = Array.isArray(updatedRows) && updatedRows[0] ? updatedRows[0] : null;
-    return NextResponse.json({ ...updated, items });
+    const u = Array.isArray(updatedRows) && updatedRows[0] ? updatedRows[0] : null;
+    const updated = u
+      ? {
+          id: u.id,
+          requestNumber: u.request_number,
+          requesterType: u.requester_type,
+          requesterName: u.requester_name,
+          packedState: u.packed_state,
+          dispatchVia: u.dispatch_via,
+          trackingId: u.tracking_id,
+          status: u.status,
+          packedBy: u.packed_by,
+          createdBy: u.created_by,
+          requestedAt: u.requested_at ? new Date(u.requested_at).toISOString() : null,
+          eta: u.eta ? new Date(u.eta).toISOString() : null,
+          items,
+        }
+      : null;
+    return NextResponse.json(updated);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
-

@@ -59,10 +59,27 @@ export async function GET(req: NextRequest) {
       const [rows] = await pool.query<any[]>(`SELECT * FROM dispatch_order_items WHERE order_id IN (${ids.map(()=>"?").join(",")}) ORDER BY id ASC`, ids);
       items = Array.isArray(rows) ? rows : [];
     }
-    const withItems = (orders as any[]).map((o) => ({
-      ...o,
-      items: items.filter((it) => it.order_id === o.id).map((it) => ({ bank: it.bank, classType: it.class_type, qty: it.qty }))
-    }));
+    // Map DB snake_case columns to API camelCase expected by UI
+    const withItems = (orders as any[]).map((o) => {
+      const mapped = {
+        id: o.id,
+        requestNumber: o.request_number,
+        requesterType: o.requester_type,
+        requesterName: o.requester_name,
+        packedState: o.packed_state,
+        dispatchVia: o.dispatch_via,
+        trackingId: o.tracking_id,
+        status: o.status,
+        packedBy: o.packed_by,
+        createdBy: o.created_by,
+        requestedAt: o.requested_at ? new Date(o.requested_at).toISOString() : null,
+        eta: o.eta ? new Date(o.eta).toISOString() : null,
+      } as any;
+      mapped.items = items
+        .filter((it) => it.order_id === o.id)
+        .map((it) => ({ bank: it.bank, classType: it.class_type, qty: it.qty }));
+      return mapped;
+    });
     return NextResponse.json(withItems);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
@@ -100,10 +117,26 @@ export async function POST(req: NextRequest) {
       );
     }
     const [createdRows]: any = await pool.query(`SELECT * FROM dispatch_orders WHERE id = ?`, [orderId]);
-    const created = Array.isArray(createdRows) && createdRows[0] ? createdRows[0] : null;
-    return NextResponse.json({ ...created, items }, { status: 201 });
+    const c = Array.isArray(createdRows) && createdRows[0] ? createdRows[0] : null;
+    const created = c
+      ? {
+          id: c.id,
+          requestNumber: c.request_number,
+          requesterType: c.requester_type,
+          requesterName: c.requester_name,
+          packedState: c.packed_state,
+          dispatchVia: c.dispatch_via,
+          trackingId: c.tracking_id,
+          status: c.status,
+          packedBy: c.packed_by,
+          createdBy: c.created_by,
+          requestedAt: c.requested_at ? new Date(c.requested_at).toISOString() : null,
+          eta: c.eta ? new Date(c.eta).toISOString() : null,
+          items,
+        }
+      : null;
+    return NextResponse.json(created, { status: 201 });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
-
