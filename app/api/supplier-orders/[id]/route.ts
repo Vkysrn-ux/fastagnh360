@@ -17,10 +17,11 @@ async function ensureTable() {
   `);
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   try {
     await ensureTable();
-    const id = Number(params.id);
+    const { id: idParam } = await ctx.params;
+    const id = Number(idParam);
     const body = await req.json();
     const o = body || {};
     await pool.query(
@@ -36,9 +37,20 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       ],
     );
     const [rows]: any = await pool.query(`SELECT * FROM supplier_orders WHERE id = ?`, [id]);
-    return NextResponse.json(rows[0] || null);
+    const r = rows && rows[0];
+    const updated = r
+      ? {
+          id: r.id,
+          supplierName: r.supplier_name,
+          classType: r.class_type,
+          qtyOrdered: r.qty_ordered,
+          dateOrdered: r.date_ordered ? new Date(r.date_ordered).toISOString() : null,
+          dateReceived: r.date_received ? new Date(r.date_received).toISOString() : null,
+          qtyDelivered: r.qty_delivered,
+        }
+      : null;
+    return NextResponse.json(updated);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
-

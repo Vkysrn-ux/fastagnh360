@@ -20,8 +20,17 @@ async function ensureTable() {
 export async function GET(req: NextRequest) {
   try {
     await ensureTable();
-    const [rows] = await pool.query(`SELECT * FROM supplier_orders ORDER BY date_ordered DESC`);
-    return NextResponse.json(Array.isArray(rows) ? rows : []);
+    const [rows] = await pool.query<any[]>(`SELECT * FROM supplier_orders ORDER BY date_ordered DESC`);
+    const list = (Array.isArray(rows) ? rows : []).map((r: any) => ({
+      id: r.id,
+      supplierName: r.supplier_name,
+      classType: r.class_type,
+      qtyOrdered: r.qty_ordered,
+      dateOrdered: r.date_ordered ? new Date(r.date_ordered).toISOString() : null,
+      dateReceived: r.date_received ? new Date(r.date_received).toISOString() : null,
+      qtyDelivered: r.qty_delivered,
+    }));
+    return NextResponse.json(list);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
@@ -46,9 +55,20 @@ export async function POST(req: NextRequest) {
     );
     const id = res.insertId;
     const [rows]: any = await pool.query(`SELECT * FROM supplier_orders WHERE id = ?`, [id]);
-    return NextResponse.json(rows[0] || null, { status: 201 });
+    const r = rows && rows[0];
+    const created = r
+      ? {
+          id: r.id,
+          supplierName: r.supplier_name,
+          classType: r.class_type,
+          qtyOrdered: r.qty_ordered,
+          dateOrdered: r.date_ordered ? new Date(r.date_ordered).toISOString() : null,
+          dateReceived: r.date_received ? new Date(r.date_received).toISOString() : null,
+          qtyDelivered: r.qty_delivered,
+        }
+      : null;
+    return NextResponse.json(created, { status: 201 });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
-
