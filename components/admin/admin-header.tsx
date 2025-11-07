@@ -54,25 +54,25 @@ export function AdminHeader() {
   // }
 
   // Build menus based on role rules:
-  // - Super Admin: all menus
+  // - Super Admin: all menus (ensure "Reports" appears before long-tail items)
   // - Admin: only Fastags, Agents, Suppliers, Tickets (+Dashboard retained for navigation)
-  const commonItems = [
-    { href: "/admin/fastags", label: "FASTags", icon: <CreditCard className="h-4 w-4 xl:mr-2" /> },
-    { href: "/admin/agents", label: "Agents", icon: <UserCircle className="h-4 w-4 xl:mr-2" /> },
-    { href: "/admin/suppliers", label: "Suppliers", icon: <Users className="h-4 w-4 xl:mr-2" /> },
-    { href: "/admin/orders", label: "Orders", icon: <Package className="h-4 w-4 xl:mr-2" /> },
-    { href: "/admin/tickets", label: "Tickets", icon : <Ticket className="h-4 w-4 xl:mr-2" /> },
-    { href: "/admin/ecom-updates", label: "Ecom Updates", icon: <BarChart3 className="h-4 w-4 xl:mr-2" /> },
-  ] as const;
+  const fastagsItem   = { href: "/admin/fastags", label: "FASTags", icon: <CreditCard className="h-4 w-4 xl:mr-2" /> } as const;
+  const agentsItem    = { href: "/admin/agents", label: "Agents", icon: <UserCircle className="h-4 w-4 xl:mr-2" /> } as const;
+  const suppliersItem = { href: "/admin/suppliers", label: "Suppliers", icon: <Users className="h-4 w-4 xl:mr-2" /> } as const;
+  const ordersItem    = { href: "/admin/orders", label: "Orders", icon: <Package className="h-4 w-4 xl:mr-2" /> } as const;
+  const ticketsItem   = { href: "/admin/tickets", label: "Tickets", icon: <Ticket className="h-4 w-4 xl:mr-2" /> } as const;
+  const ecomItem      = { href: "/admin/ecom-updates", label: "Ecom Updates", icon: <BarChart3 className="h-4 w-4 xl:mr-2" /> } as const;
 
-  const superExtra = [
-    { href: "/admin/users", label: "Users", icon: <UserCog className="h-4 w-4 xl:mr-2" /> },
-    { href: "/admin/reports", label: "Reports", icon: <BarChart3 className="h-4 w-4 xl:mr-2" /> },
-    // Future: settings/commissions can be added back here
-  ] as const;
+  const usersItem     = { href: "/admin/users", label: "Users", icon: <UserCog className="h-4 w-4 xl:mr-2" /> } as const;
+  const reportsItem   = { href: "/admin/reports", label: "Reports", icon: <BarChart3 className="h-4 w-4 xl:mr-2" /> } as const;
 
+  const commonItems = [fastagsItem, agentsItem, suppliersItem, ordersItem, ticketsItem, ecomItem] as const;
   const dashboardItem = { href: "/admin/dashboard", label: "Dashboard", icon: <BarChart3 className="h-4 w-4 xl:mr-2" /> } as const;
-  const navItems = isSuperAdmin ? [dashboardItem, ...commonItems, ...superExtra] : [...commonItems]
+
+  // Order for Super Admin keeps Reports visible without scrolling
+  const navItems = isSuperAdmin
+    ? [dashboardItem, fastagsItem, agentsItem, suppliersItem, ordersItem, ticketsItem, reportsItem, ecomItem, usersItem]
+    : [...commonItems]
 
   const logoHref = isSuperAdmin ? "/admin/dashboard" : "/admin/fastags";
 
@@ -90,13 +90,13 @@ export function AdminHeader() {
           </Link>
         </div>
 
-        {/* Desktop Navigation: single row, no scrollbar; labels appear on wider screens */}
-        <nav className="hidden md:flex items-center gap-3 lg:gap-5 xl:gap-8 flex-nowrap flex-1 min-w-0 mx-4 overflow-hidden">
+        {/* Desktop Navigation: tighter gaps, no scrolling */}
+        <nav className="hidden md:flex items-center gap-3 lg:gap-4 xl:gap-6 flex-nowrap flex-1 min-w-0 mx-4 overflow-hidden">
           {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center font-medium transition-colors hover:text-primary whitespace-nowrap ${
+              className={`flex items-center font-medium text-sm transition-colors hover:text-primary whitespace-nowrap ${
                 pathname === item.href ? "text-primary" : ""
               }`}
             >
