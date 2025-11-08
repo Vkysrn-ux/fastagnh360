@@ -26,8 +26,12 @@ export async function POST(req: Request) {
     const raw = cookieStore.get("user-session")?.value;
     if (!raw) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
+    // Cookie value may be URI-encoded. Try to decode, then parse JSON.
+    let parsedRaw = raw;
+    try { parsedRaw = decodeURIComponent(raw); } catch {}
+
     let session: any;
-    try { session = JSON.parse(raw); } catch {
+    try { session = JSON.parse(parsedRaw); } catch {
       return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
     }
 
@@ -44,9 +48,9 @@ export async function POST(req: Request) {
 
     await ensureTable();
 
-    // Update last activity on users table (best-effort)
+    // Update last activity on users table (best-effort). Also bump updated_at
     try {
-      await pool.query("UPDATE users SET last_activity = NOW() WHERE id = ?", [userId]);
+      await pool.query("UPDATE users SET last_activity = NOW(), updated_at = NOW() WHERE id = ?", [userId]);
     } catch {}
 
     // Fetch latest open session
@@ -105,4 +109,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false });
   }
 }
-

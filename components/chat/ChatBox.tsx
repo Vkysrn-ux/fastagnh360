@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
+import { getAuthSessionCached } from "@/lib/client/cache";
 
 type OnlineUser = { id: number; name: string; displayRole?: string };
 type ChatMessage = {
@@ -14,6 +15,7 @@ type ChatMessage = {
 };
 
 export default function ChatBox({ ticketId, visible = true }: { ticketId?: string | number; visible?: boolean }) {
+  const DEBUG = (typeof process !== 'undefined' && process.env && (process.env.NEXT_PUBLIC_CHAT_DEBUG === '1' || process.env.NEXT_PUBLIC_CHAT_DEBUG === 'true')) || false;
   const [open, setOpen] = useState(false);
   const [online, setOnline] = useState<OnlineUser[]>([]);
   const [self, setSelf] = useState<{ id: number; name: string } | null>(null);
@@ -29,13 +31,25 @@ export default function ChatBox({ ticketId, visible = true }: { ticketId?: strin
 
   useEffect(() => {
     // Initialize Socket.IO server
-    fetch("/api/socket").catch(() => {});
+    fetch("/api/socket").then(() => {
+      if (DEBUG) console.log("[chat] initialized /api/socket");
+    }).catch((e) => { if (DEBUG) console.warn("[chat] /api/socket init failed", e); });
 
     const s = io(undefined, { path: "/api/socket-io", transports: ["websocket", "polling"] });
     socketRef.current = s;
 
-    s.on("self", (me: { id: number; name: string }) => setSelf(me));
-    s.on("online_users", (users: OnlineUser[]) => setOnline(users));
+    s.on("connect", () => { if (DEBUG) console.log("[chat] socket connected", s.id); });
+    s.on("disconnect", (reason) => { if (DEBUG) console.log("[chat] socket disconnected", reason); });
+
+    s.on("self", (me: { id: number; name: string }) => {
+      if (DEBUG) console.log("[chat] self:", me);
+      setSelf(me)
+    });
+    s.on("online_users", (users: OnlineUser[]) => {
+      if (DEBUG) console.log("[chat] online_users:", users);
+      // Use server broadcast as a fast path; heartbeat polling will reconcile
+      setOnline(users || []);
+    });
     s.on("chat:message", (msg: ChatMessage) => {
       setConvo((prev) => {
         const key = msg.fromUserId === self?.id ? msg.toUserId : msg.fromUserId;
@@ -44,11 +58,48 @@ export default function ChatBox({ ticketId, visible = true }: { ticketId?: strin
         return { ...prev, [key]: list };
       });
       if (!open) setOpen(true);
+      if (DEBUG) console.log("[chat] msg:", msg);
     });
+
+    if (DEBUG) {
+      // @ts-ignore - expose for quick inspection
+      (window as any).__chat = s;
+    }
 
     return () => {
       s.disconnect();
     };
+  }, []);
+
+  // Poll available users by heartbeat (last activity)
+  useEffect(() => {
+    // Also fetch auth session as a fallback to identify self
+    (async () => {
+      try {
+        const data = await getAuthSessionCached();
+        const sess = data?.session;
+        const sid = Number(sess?.id || 0);
+        if (sid && !self) {
+          setSelf({ id: sid, name: String(sess?.name || sess?.email || `User #${sid}`) });
+        }
+      } catch {}
+    })();
+
+    let timer: any;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/chat/available", { cache: "no-store" });
+        if (!res.ok) return;
+        const data: OnlineUser[] = await res.json();
+        if (!alive) return;
+        // Source of truth for availability is heartbeat API
+        setOnline(data);
+      } catch {}
+    };
+    load();
+    timer = setInterval(load, 30000);
+    return () => { alive = false; if (timer) clearInterval(timer); };
   }, []);
 
   useEffect(() => {
@@ -87,20 +138,25 @@ export default function ChatBox({ ticketId, visible = true }: { ticketId?: strin
                     {online.length === 0 && (
                       <div className="p-2 text-xs text-gray-500">No users online</div>
                     )}
-                    {online
-                      .filter((u) => (self ? u.id !== self.id : true))
-                      .map((u) => (
+                    {online.map((u) => {
+                      const isSelf = self && u.id === self.id;
+                      const label = isSelf ? `${u.name} (You)` : u.name;
+                      const disabled = !!isSelf;
+                      return (
                         <button
                           key={u.id}
-                          onClick={() => setActiveUserId(u.id)}
+                          onClick={() => { if (!disabled) setActiveUserId(u.id); }}
+                          disabled={disabled}
                           className={`flex w-full items-center gap-2 p-2 text-left text-sm hover:bg-gray-100 ${
                             activeUserId === u.id ? "bg-gray-100" : ""
-                          }`}
+                          } ${disabled ? "opacity-60 cursor-default hover:bg-transparent" : ""}`}
+                          aria-disabled={disabled}
                         >
                           <span className="inline-block h-2 w-2 rounded-full bg-green-500"></span>
-                          <span className="truncate">{u.name}</span>
+                          <span className="truncate">{label}</span>
                         </button>
-                      ))}
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -164,4 +220,3 @@ export default function ChatBox({ ticketId, visible = true }: { ticketId?: strin
     </div>
   );
 }
-

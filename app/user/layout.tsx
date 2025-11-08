@@ -1,6 +1,7 @@
 import type React from "react"
 import type { Metadata } from "next"
 import { UserHeader } from "@/components/user/user-header"
+import Heartbeat from "@/components/Heartbeat"
 
 export const metadata: Metadata = {
   title: "NH360fastag - User Portal",
@@ -11,6 +12,8 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
   return (
     <div className="flex min-h-screen flex-col">
       <UserHeader />
+      {/* Track user presence */}
+      <Heartbeat />
       <div className="flex-1">{children}</div>
     </div>
   )

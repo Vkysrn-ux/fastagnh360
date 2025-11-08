@@ -18,8 +18,16 @@ type NextApiResponseWithSocket = NextApiResponse & {
   }
 }
 
-// In-memory presence: userId -> { sockets, user }
-const userSockets = new Map<number, { sockets: Set<string>; user: SessionUser }>()
+// In-memory presence map. In dev with HMR, module scope can be reloaded;
+// attach to the HTTP server instance to keep presence consistent.
+const CHAT_DEBUG = (process.env.CHAT_DEBUG === '1' || process.env.CHAT_DEBUG === 'true' || process.env.NEXT_PUBLIC_CHAT_DEBUG === '1' || process.env.NEXT_PUBLIC_CHAT_DEBUG === 'true')
+function getPresenceStore(server: any) {
+  if (!server.__chatPresence) {
+    server.__chatPresence = new Map<number, { sockets: Set<string>; user: SessionUser }>()
+    if (CHAT_DEBUG) console.log('[chat][server] init presence store')
+  }
+  return server.__chatPresence as Map<number, { sockets: Set<string>; user: SessionUser }>
+}
 
 function parseSessionCookie(rawCookieHeader: string | undefined): SessionUser | null {
   try {
@@ -49,17 +57,19 @@ function parseSessionFromReq(req: NextApiRequest): SessionUser | null {
   return parseSessionCookie(req.headers.cookie)
 }
 
-function broadcastOnline(io: IOServer) {
-  const online = Array.from(userSockets.values()).map(({ user }) => ({
+function broadcastOnline(io: IOServer, presence: Map<number, { sockets: Set<string>; user: SessionUser }>) {
+  const online = Array.from(presence.values()).map(({ user }) => ({
     id: user.id,
     name: user.name || `User #${user.id}`,
     displayRole: user.displayRole || 'User',
   }))
   io.emit('online_users', online)
+  if (CHAT_DEBUG) console.log('[chat][server] broadcast online:', online.map(u => u.id))
 }
 
 export default function handler(req: NextApiRequest, res: NextApiResponseWithSocket) {
   if (!res.socket.server.io) {
+    const presence = getPresenceStore(res.socket.server)
     const io = new IOServer(res.socket.server, {
       path: '/api/socket-io',
       addTrailingSlash: false,
@@ -71,32 +81,35 @@ export default function handler(req: NextApiRequest, res: NextApiResponseWithSoc
       const session = parseSessionCookie((socket.request as any)?.headers?.cookie || '')
 
       if (!session) {
+        if (CHAT_DEBUG) console.warn('[chat][server] connect rejected: no session cookie')
         socket.disconnect(true)
         return
       }
 
       const uid = session.id
-      const entry = userSockets.get(uid) || { sockets: new Set<string>(), user: session }
+      if (CHAT_DEBUG) console.log('[chat][server] connect', { uid, socketId: socket.id })
+      const entry = presence.get(uid) || { sockets: new Set<string>(), user: session }
       entry.user = session // refresh any name/role changes
       entry.sockets.add(socket.id)
-      userSockets.set(uid, entry)
+      presence.set(uid, entry)
 
       // Let the client know their own session (optional)
       socket.emit('self', { id: uid, name: session.name || `User #${uid}` })
 
       // Notify everyone of presence change
-      broadcastOnline(io)
+      broadcastOnline(io, presence)
 
       socket.on('disconnect', () => {
-        const current = userSockets.get(uid)
+        if (CHAT_DEBUG) console.log('[chat][server] disconnect', { uid, socketId: socket.id })
+        const current = presence.get(uid)
         if (!current) return
         current.sockets.delete(socket.id)
         if (current.sockets.size === 0) {
-          userSockets.delete(uid)
+          presence.delete(uid)
         } else {
-          userSockets.set(uid, current)
+          presence.set(uid, current)
         }
-        broadcastOnline(io)
+        broadcastOnline(io, presence)
       })
 
       // Direct message event
@@ -119,11 +132,13 @@ export default function handler(req: NextApiRequest, res: NextApiResponseWithSoc
           socket.emit('chat:message', msg)
 
           // Deliver to recipient if online
-          const dest = userSockets.get(toUserId)
+          const dest = presence.get(toUserId)
           if (dest && dest.sockets.size) {
             for (const sid of dest.sockets) {
               io.to(sid).emit('chat:message', msg)
             }
+          } else {
+            if (CHAT_DEBUG) console.log('[chat][server] recipient offline', { toUserId })
           }
         } catch (_e) {
           // ignore

@@ -1,6 +1,7 @@
 import type React from "react"
 import type { Metadata } from "next"
 import { AgentHeader } from "@/components/agent/agent-header"
+import Heartbeat from "@/components/Heartbeat"
 
 export const metadata: Metadata = {
   title: "NH360fastag - Agent Portal",
@@ -11,6 +12,8 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
   return (
     <div className="flex min-h-screen flex-col">
       <AgentHeader />
+      {/* Track agent presence */}
+      <Heartbeat />
       <div className="flex-1">{children}</div>
     </div>
   )
