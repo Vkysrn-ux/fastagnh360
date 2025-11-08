@@ -3,6 +3,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { Server as IOServer, Socket } from 'socket.io'
 import type { Server as HTTPServer } from 'http'
 import cookie from 'cookie'
+import { pool } from '@/lib/db'
 
 type SessionUser = {
   id: number
@@ -77,8 +78,14 @@ export default function handler(req: NextApiRequest, res: NextApiResponseWithSoc
     })
 
     io.on('connection', (socket: Socket) => {
-      // Identify user from cookie on the WebSocket upgrade request
-      const session = parseSessionCookie((socket.request as any)?.headers?.cookie || '')
+      // Identify user from cookie on the WebSocket upgrade request, or fallback to handshake auth
+      let session = parseSessionCookie((socket.request as any)?.headers?.cookie || '')
+      if (!session) {
+        const auth: any = (socket.handshake as any)?.auth || {}
+        const id = Number(auth?.id || auth?.uid || 0)
+        const name = auth?.name ? String(auth.name) : undefined
+        if (id) session = { id, name }
+      }
 
       if (!session) {
         if (CHAT_DEBUG) console.warn('[chat][server] connect rejected: no session cookie')
@@ -113,7 +120,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponseWithSoc
       })
 
       // Direct message event
-      socket.on('chat:message', (payload: { toUserId: number; text: string; ticketId?: number | string }) => {
+      socket.on('chat:message', async (payload: { toUserId: number; text: string; ticketId?: number | string }) => {
         try {
           const text = String(payload?.text || '').trim()
           const toUserId = Number(payload?.toUserId || 0)
@@ -126,6 +133,36 @@ export default function handler(req: NextApiRequest, res: NextApiResponseWithSoc
             text,
             ticketId: payload?.ticketId || null,
             ts: Date.now(),
+          }
+
+          if (CHAT_DEBUG) console.log('[chat][server] message', { from: uid, to: toUserId, text: text.slice(0, 60) })
+
+          // Persist to database so both users can see history later
+          try {
+            await pool.query(`
+              CREATE TABLE IF NOT EXISTS chat_messages (
+                id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                from_user_id INT UNSIGNED NOT NULL,
+                to_user_id INT UNSIGNED NOT NULL,
+                ticket_id BIGINT UNSIGNED NULL,
+                text TEXT NOT NULL,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                read_at DATETIME NULL,
+                cleared_by_sender TINYINT(1) NOT NULL DEFAULT 0,
+                cleared_by_recipient TINYINT(1) NOT NULL DEFAULT 0,
+                PRIMARY KEY (id),
+                KEY idx_users (from_user_id, to_user_id, created_at),
+                KEY idx_to (to_user_id, created_at),
+                KEY idx_ticket (ticket_id)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            `)
+            const ticketIdVal = (msg.ticketId == null || msg.ticketId === '') ? null : Number(msg.ticketId)
+            await pool.query(
+              'INSERT INTO chat_messages (from_user_id, to_user_id, ticket_id, text) VALUES (?, ?, ?, ?)',
+              [uid, toUserId, ticketIdVal, text]
+            )
+          } catch (dbErr) {
+            if (CHAT_DEBUG) console.warn('[chat][server] failed to persist message', dbErr)
           }
 
           // Echo back to sender

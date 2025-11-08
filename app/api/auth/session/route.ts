@@ -7,7 +7,8 @@ export async function GET() {
     const raw = cookieStore.get("user-session")?.value;
     if (!raw) return NextResponse.json({ session: null });
     try {
-      const parsed = JSON.parse(raw);
+      const decoded = (() => { try { return decodeURIComponent(raw) } catch { return raw } })();
+      const parsed = JSON.parse(decoded);
       return NextResponse.json({ session: parsed });
     } catch {
       return NextResponse.json({ session: null });

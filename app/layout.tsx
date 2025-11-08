@@ -6,6 +6,7 @@ import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
 import { ThemeProvider } from "@/components/theme-provider"
 import { GoogleAnalytics } from "@/components/google-analytics"
+import { Toaster as SonnerToaster } from "@/components/ui/sonner"
 
 const inter = Inter({
   subsets: ["latin"],
@@ -45,6 +46,7 @@ export default function RootLayout({
       <body className={`${inter.variable} ${poppins.variable} font-sans`}>
         <ThemeProvider attribute="class" defaultTheme="royal" enableSystem disableTransitionOnChange>
           <GoogleAnalytics />
+          <SonnerToaster richColors position="top-right" />
           <div className="flex min-h-screen flex-col">
             {!ERP_ONLY && <Navbar />}
             <main className="flex-1">{children}</main>

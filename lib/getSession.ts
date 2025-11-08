@@ -6,7 +6,10 @@ export async function getUserSession() {
   const session = cookieStore.get('user-session')?.value
   if (!session) return null
   try {
-    return JSON.parse(session) // { userId, userType }
+    // Some environments URI-encode cookie values; attempt decode first
+    let raw = session
+    try { raw = decodeURIComponent(session) } catch {}
+    return JSON.parse(raw) // { id, name, email, displayRole, userType }
   } catch {
     return null
   }
