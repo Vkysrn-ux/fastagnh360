@@ -32,6 +32,37 @@ async function ensureTables() {
         ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `);
+  // Ensure unique request_number index
+  async function addUniqueIndexWithDedup() {
+    try {
+      const [rows]: any = await pool.query(
+        `SELECT 1 FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'dispatch_orders' AND index_name = 'uniq_request_number' LIMIT 1`
+      );
+      const exists = Array.isArray(rows) && rows.length > 0;
+      if (!exists) {
+        await pool.query(`ALTER TABLE dispatch_orders ADD UNIQUE KEY uniq_request_number (request_number)`);
+      }
+    } catch (e: any) {
+      const msg = String(e?.message || "");
+      if (e?.code === 'ER_DUP_ENTRY' || msg.includes('Duplicate entry')) {
+        const [dups]: any = await pool.query(`
+          SELECT request_number, MIN(id) keep_id
+          FROM dispatch_orders
+          GROUP BY request_number
+          HAVING COUNT(*) > 1
+        `);
+        const list = Array.isArray(dups) ? dups : [];
+        for (const d of list) {
+          await pool.query(
+            `DELETE o FROM dispatch_orders o WHERE o.request_number = ? AND o.id <> ?`,
+            [d.request_number, d.keep_id]
+          );
+        }
+        try { await pool.query(`ALTER TABLE dispatch_orders ADD UNIQUE KEY uniq_request_number (request_number)`); } catch {}
+      }
+    }
+  }
+  await addUniqueIndexWithDedup();
 }
 
 // In Next.js, dynamic route params may be a Promise in route handlers.

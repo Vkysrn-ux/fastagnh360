@@ -71,8 +71,15 @@ export default function TicketListPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [assignedFilter, setAssignedFilter] = useState<UserOption | null>(null);
-  const [fromDate, setFromDate] = useState<string>("");
-  const [toDate, setToDate] = useState<string>("");
+  const ymd = (d: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+  const startOfMonth = (d = new Date()) => new Date(d.getFullYear(), d.getMonth(), 1);
+  const endOfMonth = (d = new Date()) => new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
+  const addMonths = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth() + n, 1);
+  const [fromDate, setFromDate] = useState<string>(() => ymd(startOfMonth()));
+  const [toDate, setToDate] = useState<string>(() => ymd(endOfMonth()));
   const [paidViaFilter, setPaidViaFilter] = useState<string>("all");
   const [paymentReceivedFilter, setPaymentReceivedFilter] = useState<string>("all");
   // More filters
@@ -275,8 +282,8 @@ export default function TicketListPage() {
 
   const filteredTickets = React.useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const from = fromDate ? new Date(fromDate) : null;
-    const to = toDate ? new Date(toDate) : null;
+    const from = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
+    const to = toDate ? new Date(`${toDate}T23:59:59.999`) : null;
     return tickets.filter((t) => {
       // search match
       const inSearch =
@@ -493,8 +500,8 @@ export default function TicketListPage() {
                 setSearchQuery("");
                 setFilterStatus("all");
                 setAssignedFilter(null);
-                setFromDate("");
-                setToDate("");
+                setFromDate(ymd(startOfMonth()));
+                setToDate(ymd(endOfMonth()));
                 setPaidViaFilter("all");
                 setPaymentReceivedFilter("all");
                 setLeadFromFilter("all");
@@ -982,6 +989,52 @@ export default function TicketListPage() {
         </div>
       </div>
 
+      
+      {/* Range shortcuts */}
+      <div className="mt-3 flex items-center justify-center gap-2">
+        {(() => {
+          const curStart = ymd(startOfMonth());
+          const curEnd = ymd(endOfMonth());
+          const isThisMonth = fromDate === curStart && toDate === curEnd;
+          if (isThisMonth) {
+            return (
+              <>
+                <button
+                  className="text-sm px-3 py-1 border rounded bg-gray-50 hover:bg-gray-100"
+                  onClick={() => {
+                    const prev = addMonths(new Date(), -1);
+                    setFromDate(ymd(startOfMonth(prev)));
+                    setToDate(ymd(endOfMonth()));
+                  }}
+                >
+                  Load Previous Month
+                </button>
+                <button
+                  className="text-sm px-3 py-1 border rounded bg-gray-50 hover:bg-gray-100"
+                  onClick={() => {
+                    const start3 = addMonths(new Date(), -2);
+                    setFromDate(ymd(startOfMonth(start3)));
+                    setToDate(ymd(endOfMonth()));
+                  }}
+                >
+                  Show Last 3 Months
+                </button>
+              </>
+            );
+          }
+          return (
+            <button
+              className="text-sm px-3 py-1 border rounded bg-gray-50 hover:bg-gray-100"
+              onClick={() => {
+                setFromDate(curStart);
+                setToDate(curEnd);
+              }}
+            >
+              Back to This Month
+            </button>
+          );
+        })()}
+      </div>
       
     </div>
     {editTicket && (

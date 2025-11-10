@@ -47,63 +47,7 @@ type SupplierOrder = {
   qtyDelivered?: number
 }
 
-// Demo dataset. Replace with API integration when backend is ready.
-const SEED_DISPATCHES: DispatchOrder[] = [
-  {
-    id: "1",
-    requestNumber: "REQ-24001",
-    requesterType: "Agent",
-    requesterName: "Ankit Kumar",
-    items: [
-      { bank: "IDFC", classType: "VC4", qty: 100 },
-      { bank: "IDFC", classType: "VC5", qty: 30 },
-      { bank: "IDFC", classType: "VC6", qty: 20 },
-      { bank: "IDFC", classType: "VC7", qty: 20 },
-    ],
-    packedState: "Pending to Pack",
-    dispatchVia: "DTDC",
-    trackingId: "P20545454",
-    status: "SHIPPED",
-    packedBy: "user/employees",
-    createdBy: "user/employees",
-    requestedAt: new Date().toISOString(),
-  },
-  {
-    id: "2",
-    requestNumber: "REQ-24002",
-    requesterType: "Agent",
-    requesterName: "SBI TL",
-    items: [
-      { bank: "SBI", classType: "VC4", qty: 200 },
-      { bank: "SBI", classType: "VC12", qty: 50 },
-    ],
-    packedState: "Packed & Ready",
-    dispatchVia: "Self delivery",
-    status: "PENDING",
-    packedBy: "user/employees",
-    createdBy: "user/employees",
-    requestedAt: new Date().toISOString(),
-  },
-]
-
-const SEED_SUPPLIER_ORDERS: SupplierOrder[] = [
-  {
-    id: "SO-1001",
-    supplierName: "Supplier A",
-    classType: "VC4",
-    qtyOrdered: 500,
-    dateOrdered: new Date(Date.now() - 1000 * 60 * 60 * 24 * 12).toISOString(),
-    dateReceived: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5).toISOString(),
-    qtyDelivered: 500,
-  },
-  {
-    id: "SO-1002",
-    supplierName: "Supplier B",
-    classType: "VC12",
-    qtyOrdered: 300,
-    dateOrdered: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
-  },
-]
+// No static seed data; always use API
 
 function statusBadge(status: OrderStatus) {
   const map: Record<OrderStatus, string> = {
@@ -124,13 +68,17 @@ export default function OrdersPage() {
   const [from, setFrom] = useState<string>("")
   const [to, setTo] = useState<string>("")
 
-  // Local state for create/edit flows
-  const [dispatches, setDispatches] = useState<DispatchOrder[]>(SEED_DISPATCHES)
-  const [supOrders, setSupOrders] = useState<SupplierOrder[]>(SEED_SUPPLIER_ORDERS)
+  // Local state for create/edit flows (start empty; API fills)
+  const [dispatches, setDispatches] = useState<DispatchOrder[]>([])
+  const [supOrders, setSupOrders] = useState<SupplierOrder[]>([])
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [editing, setEditing] = useState<DispatchOrder | null>(null)
   const [isSupplierOpen, setIsSupplierOpen] = useState(false)
   const [editingSupplier, setEditingSupplier] = useState<SupplierOrder | null>(null)
+  const [currentUserName, setCurrentUserName] = useState<string>("")
+  // Prevent accidental double-submits and show progress
+  const [savingOrder, setSavingOrder] = useState(false)
+  const [savingSupplier, setSavingSupplier] = useState(false)
 
   const filtered = useMemo(() => {
     return dispatches.filter((o) => {
@@ -154,6 +102,19 @@ export default function OrdersPage() {
   useEffect(() => {
     fetchDispatches();
     fetchSupplierOrders();
+  }, [])
+
+  // Fetch current session (for Created By / Packed By defaults)
+  useEffect(() => {
+    let cancelled = false;
+    import('@/lib/client/cache').then(({ getAuthSessionCached }) =>
+      getAuthSessionCached()
+        .then((d: any) => {
+          if (!cancelled) setCurrentUserName(String(d?.session?.name || d?.session?.username || "").trim())
+        })
+        .catch(() => {})
+    );
+    return () => { cancelled = true };
   }, [])
 
   async function fetchDispatches() {
@@ -193,11 +154,13 @@ export default function OrdersPage() {
       requesterName: "",
       items: [{ bank: "IDFC", classType: "VC4", qty: 10 }],
       packedState: "Pending to Pack",
-      dispatchVia: "DTDC",
+      dispatchVia: "ST Courier",
       status: "PENDING",
       packedBy: "",
-      createdBy: "",
+      createdBy: currentUserName || "",
       requestedAt: new Date().toISOString(),
+      // Default required date (Shipping Date) to today
+      eta: new Date().toISOString(),
     }
     setEditing(newOrder)
     setIsEditOpen(true)
@@ -209,18 +172,37 @@ export default function OrdersPage() {
   }
 
   async function saveDispatch(order: DispatchOrder) {
-    const isExisting = dispatches.some((d) => String(d.id) === String(order.id) && typeof d.id === "number");
-    if (isExisting) {
-      const id = String(order.id);
-      await fetch(`/api/orders/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(order) });
-    } else {
-      const res = await fetch(`/api/orders`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(order) });
-      const created = await res.json();
-      // Replace temp one if present
+    if (savingOrder) return;
+    setSavingOrder(true);
+    try {
+      // Decide create vs update solely by persisted numeric id
+      const isExisting = typeof order.id === 'number';
+      if (isExisting) {
+        const id = String(order.id);
+        const res = await fetch(`/api/orders/${id}`,
+          { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(order) });
+        if (!res.ok) {
+          const msg = await res.text().catch(() => "");
+          throw new Error(msg || `Failed to update order #${id}`);
+        }
+      } else {
+        const res = await fetch(`/api/orders`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(order) });
+        if (!res.ok) {
+          const msg = await res.text().catch(() => "");
+          throw new Error(msg || 'Failed to create order');
+        }
+        // const created = await res.json(); // currently unused
+      }
+      await fetchDispatches();
+      setIsEditOpen(false);
+      setEditing(null);
+    } catch (e: any) {
+      console.error(e);
+      alert(String(e?.message || e) || 'Failed to save order');
+    } finally {
+      setSavingOrder(false);
     }
-    await fetchDispatches();
-    setIsEditOpen(false);
-    setEditing(null);
   }
 
   function startCreateSupplier() {
@@ -241,15 +223,26 @@ export default function OrdersPage() {
   }
 
   async function saveSupplier(s: SupplierOrder) {
-    const isExisting = supOrders.some((x) => String(x.id) === String(s.id) && typeof x.id === "number");
-    if (isExisting) {
-      await fetch(`/api/supplier-orders/${s.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) });
-    } else {
-      await fetch(`/api/supplier-orders`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) });
+    if (savingSupplier) return;
+    setSavingSupplier(true);
+    try {
+      const isExisting = typeof s.id === 'number';
+      if (isExisting) {
+        const res = await fetch(`/api/supplier-orders/${s.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) });
+        if (!res.ok) throw new Error(await res.text().catch(() => 'Failed to update supplier order'));
+      } else {
+        const res = await fetch(`/api/supplier-orders`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) });
+        if (!res.ok) throw new Error(await res.text().catch(() => 'Failed to create supplier order'));
+      }
+      await fetchSupplierOrders();
+      setIsSupplierOpen(false);
+      setEditingSupplier(null);
+    } catch (e: any) {
+      console.error(e);
+      alert(String(e?.message || e) || 'Failed to save supplier order');
+    } finally {
+      setSavingSupplier(false);
     }
-    await fetchSupplierOrders();
-    setIsSupplierOpen(false);
-    setEditingSupplier(null);
   }
 
   return (
@@ -423,7 +416,7 @@ export default function OrdersPage() {
                   </SelectContent>
                 </Select>
                 <Input value={editing.requesterName} onChange={(e)=> setEditing({ ...editing, requesterName: e.target.value })} placeholder="Requester Name" />
-                <Input type="date" value={editing.requestedAt.substring(0,10)} onChange={(e)=> setEditing({ ...editing, requestedAt: new Date(e.target.value).toISOString() })} />
+                {/* Created Date is auto-set on creation; input removed per requirement */}
               </div>
 
               <div>
@@ -450,7 +443,13 @@ export default function OrdersPage() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <Select value={editing.packedState} onValueChange={(v: any)=> setEditing({ ...editing, packedState: v })}>
+                <Select value={editing.packedState} onValueChange={(v: any)=> {
+                  const next: DispatchOrder = { ...editing, packedState: v } as DispatchOrder
+                  if (v === 'Packed & Ready' && !next.packedBy && currentUserName) {
+                    next.packedBy = currentUserName
+                  }
+                  setEditing(next)
+                }}>
                   <SelectTrigger><SelectValue placeholder="Packed State" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Pending to Pack">Pending to Pack</SelectItem>
@@ -470,7 +469,15 @@ export default function OrdersPage() {
                   </SelectContent>
                 </Select>
                 <Input value={editing.trackingId || ""} onChange={(e)=> setEditing({ ...editing, trackingId: e.target.value })} placeholder="Tracking ID" />
-                <Select value={editing.status} onValueChange={(v: any)=> setEditing({ ...editing, status: v })}>
+                <Select value={editing.status} onValueChange={(v: any)=> {
+                  const next: DispatchOrder = { ...editing, status: v } as DispatchOrder
+                  if (v === 'PACKED') {
+                    if (!next.packedBy && currentUserName) next.packedBy = currentUserName
+                    // Set Shipping Date when marked PACKED
+                    if (!next.eta) next.eta = new Date().toISOString()
+                  }
+                  setEditing(next)
+                }}>
                   <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="PENDING">PENDING</SelectItem>
@@ -485,14 +492,21 @@ export default function OrdersPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <Input value={editing.packedBy || ""} onChange={(e)=> setEditing({ ...editing, packedBy: e.target.value })} placeholder="Packed By" />
-                <Input value={editing.createdBy || ""} onChange={(e)=> setEditing({ ...editing, createdBy: e.target.value })} placeholder="Created By" />
-                <Input type="date" value={editing.eta ? editing.eta.substring(0,10) : ""} onChange={(e)=> setEditing({ ...editing, eta: e.target.value ? new Date(e.target.value).toISOString() : undefined })} placeholder="ETA" />
+                <Input value={editing.createdBy || currentUserName || ""} onChange={(e)=> setEditing({ ...editing, createdBy: e.target.value })} placeholder="Created By" />
+                {/* Order Date, defaults to today, editable */}
+                <Input
+                  type="date"
+                  required
+                  value={(editing.requestedAt || new Date().toISOString()).substring(0,10)}
+                  onChange={(e)=> setEditing({ ...editing, requestedAt: new Date(e.target.value).toISOString() })}
+                  placeholder="Order Date"
+                />
               </div>
             </div>
           )}
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={()=> { setIsEditOpen(false); setEditing(null) }}>Cancel</Button>
-            {editing && <Button onClick={()=> saveDispatch(editing)}>Save</Button>}
+            <Button variant="outline" onClick={()=> { setIsEditOpen(false); setEditing(null) }} disabled={savingOrder}>Cancel</Button>
+            {editing && <Button onClick={()=> saveDispatch(editing)} disabled={savingOrder}>{savingOrder ? 'Saving…' : 'Save'}</Button>}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -518,8 +532,8 @@ export default function OrdersPage() {
             </div>
           )}
           <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={()=> { setIsSupplierOpen(false); setEditingSupplier(null) }}>Cancel</Button>
-            {editingSupplier && <Button onClick={()=> saveSupplier(editingSupplier)}>Save</Button>}
+            <Button variant="outline" onClick={()=> { setIsSupplierOpen(false); setEditingSupplier(null) }} disabled={savingSupplier}>Cancel</Button>
+            {editingSupplier && <Button onClick={()=> saveSupplier(editingSupplier)} disabled={savingSupplier}>{savingSupplier ? 'Saving…' : 'Save'}</Button>}
           </DialogFooter>
         </DialogContent>
       </Dialog>
