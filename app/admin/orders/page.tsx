@@ -146,10 +146,20 @@ export default function OrdersPage() {
     }
   }
 
-  function startCreate() {
+  async function startCreate() {
+    // Fetch next request number so the field is prefilled in the dialog
+    let nextReq = "";
+    try {
+      const res = await fetch(`/api/orders/next-id`, { cache: "no-store" });
+      if (res.ok) {
+        const d = await res.json();
+        nextReq = String(d?.requestNumber || "");
+      }
+    } catch {}
+
     const newOrder: DispatchOrder = {
       id: `d-${Date.now()}`,
-      requestNumber: `REQ-${String(Math.floor(Math.random() * 90000) + 10000)}`,
+      requestNumber: nextReq,
       requesterType: "Agent",
       requesterName: "",
       items: [{ bank: "IDFC", classType: "VC4", qty: 10 }],
@@ -406,7 +416,7 @@ export default function OrdersPage() {
           {editing && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <Input value={editing.requestNumber} onChange={(e)=> setEditing({ ...editing, requestNumber: e.target.value })} placeholder="Request Number" />
+                <Input value={editing.requestNumber} onChange={(e)=> setEditing({ ...editing, requestNumber: e.target.value })} placeholder="Auto (ORDYYYYMMDD-XX)" />
                 <Select value={editing.requesterType} onValueChange={(v: RequesterType)=> setEditing({ ...editing, requesterType: v })}>
                   <SelectTrigger><SelectValue placeholder="Requester Type" /></SelectTrigger>
                   <SelectContent>

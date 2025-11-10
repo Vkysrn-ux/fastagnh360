@@ -129,53 +129,83 @@ export async function POST(req: NextRequest) {
     try {
       await conn.beginTransaction();
 
-      // Try fast path: insert; rely on unique index to avoid duplicates
-      let orderId: number | null = null;
-      let isDuplicate = false;
-      try {
-        const [res]: any = await conn.query(
-          `INSERT INTO dispatch_orders (request_number, requester_type, requester_name, packed_state, dispatch_via, tracking_id, status, packed_by, created_by, requested_at, eta)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-          [
-            o.requestNumber,
-            o.requesterType,
-            o.requesterName,
-            o.packedState,
-            o.dispatchVia,
-            o.trackingId || null,
-            o.status,
-            o.packedBy || null,
-            o.createdBy || null,
-            o.requestedAt ? new Date(o.requestedAt) : new Date(),
-            o.eta ? new Date(o.eta) : null,
-          ],
+      // Helper to format date as YYYYMMDD
+      function yyyymmdd(d: Date) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}${m}${day}`;
+      }
+
+      // Generate next request number in format ORDYYYYMMDD-XX
+      async function generateNextRequestNumber(): Promise<string> {
+        const today = new Date();
+        const base = `ORD${yyyymmdd(today)}-`;
+        // Find the current max numeric suffix for today
+        const [rows]: any = await conn.query(
+          `SELECT MAX(CAST(SUBSTRING_INDEX(request_number, '-', -1) AS UNSIGNED)) AS max_seq
+             FROM dispatch_orders
+            WHERE request_number LIKE ?`,
+          [`${base}%`]
         );
-        orderId = Number((res as any).insertId);
-      } catch (e: any) {
-        // If duplicate request_number, fetch existing order and treat as idempotent
-        if (e?.code === 'ER_DUP_ENTRY') {
-          isDuplicate = true;
-          const [rows]: any = await conn.query(`SELECT id FROM dispatch_orders WHERE request_number = ? LIMIT 1`, [o.requestNumber]);
-          const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
-          if (row) {
-            orderId = Number(row.id);
-          } else {
-            throw e;
+        const maxSeq = Array.isArray(rows) && rows[0] && rows[0].max_seq != null ? Number(rows[0].max_seq) : 0;
+        const next = isNaN(maxSeq) ? 1 : maxSeq + 1;
+        return `${base}${String(next).padStart(2, '0')}`;
+      }
+
+      // Decide request number: prefer server-generated format
+      let requestNumber: string | null = null;
+      const provided = typeof o.requestNumber === 'string' ? o.requestNumber.trim() : '';
+      if (provided && /^ORD\d{8}-\d{2,}$/.test(provided)) {
+        requestNumber = provided;
+      } else {
+        requestNumber = await generateNextRequestNumber();
+      }
+
+      // Insert with retry on duplicate request_number to avoid race conditions
+      let orderId: number | null = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          const [res]: any = await conn.query(
+            `INSERT INTO dispatch_orders (request_number, requester_type, requester_name, packed_state, dispatch_via, tracking_id, status, packed_by, created_by, requested_at, eta)
+             VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+            [
+              requestNumber,
+              o.requesterType,
+              o.requesterName,
+              o.packedState,
+              o.dispatchVia,
+              o.trackingId || null,
+              o.status,
+              o.packedBy || null,
+              o.createdBy || null,
+              o.requestedAt ? new Date(o.requestedAt) : new Date(),
+              o.eta ? new Date(o.eta) : null,
+            ],
+          );
+          orderId = Number((res as any).insertId);
+          break;
+        } catch (e: any) {
+          if (e?.code === 'ER_DUP_ENTRY') {
+            // Recompute next number and retry
+            requestNumber = await generateNextRequestNumber();
+            continue;
           }
-        } else {
           throw e;
         }
       }
 
-      // Only insert items if we actually just created a fresh order (not duplicate path)
-      if (orderId && !isDuplicate) {
-        const items: any[] = Array.isArray(o.items) ? o.items : [];
-        for (const it of items) {
-          await conn.query(
-            `INSERT INTO dispatch_order_items (order_id, bank, class_type, qty) VALUES (?,?,?,?)`,
-            [orderId, it.bank, it.classType, Number(it.qty || 0)],
-          );
-        }
+      if (!orderId) {
+        throw new Error('Failed to create order after retries');
+      }
+
+      // Insert items for the created order
+      const inputItems: any[] = Array.isArray(o.items) ? o.items : [];
+      for (const it of inputItems) {
+        await conn.query(
+          `INSERT INTO dispatch_order_items (order_id, bank, class_type, qty) VALUES (?,?,?,?)`,
+          [orderId, it.bank, it.classType, Number(it.qty || 0)],
+        );
       }
 
       await conn.commit();
@@ -201,16 +231,12 @@ export async function POST(req: NextRequest) {
             items,
           }
         : null;
-      // 201 if a new row; 200 if duplicate (idempotent)
-      const status = isDuplicate ? 200 : 201;
-      return NextResponse.json(created, { status });
+      // Always 201 for a newly created row
+      return NextResponse.json(created, { status: 201 });
     } finally {
       try { await conn.release(); } catch {}
     }
   } catch (e: any) {
-    if (e?.code === 'ER_DUP_ENTRY') {
-      return NextResponse.json({ error: 'Duplicate request number' }, { status: 409 });
-    }
     return NextResponse.json({ error: e?.message || 'Internal Error' }, { status: 500 });
   }
 }
