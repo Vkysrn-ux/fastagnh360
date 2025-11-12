@@ -86,6 +86,18 @@ export function middleware(req: NextRequest) {
     try {
       const data = JSON.parse(session) // expects: { userType: 'admin' | 'agent' | ... }
       const allowedPrefix = `/${data.userType}`
+
+      // Special restriction: employees can only access /employee/tickets routes
+      if (data.userType === 'employee') {
+        const isTicketsRoute = url.pathname === '/employee/tickets' || url.pathname.startsWith('/employee/tickets/')
+        const isLoginRoute = url.pathname === '/employee/login'
+        if (!isTicketsRoute && !isLoginRoute) {
+          const to = url.clone()
+          to.pathname = '/employee/tickets'
+          return NextResponse.redirect(to)
+        }
+      }
+
       if (url.pathname.startsWith(allowedPrefix)) {
         // If user hits the role root (e.g., /admin), send them to tickets by default
         if (url.pathname === allowedPrefix || url.pathname === `${allowedPrefix}/`) {
