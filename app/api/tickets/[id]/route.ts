@@ -1,6 +1,7 @@
 // app/api/tickets/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { getUserSession } from "@/lib/getSession";
 import { logTicketAction } from "@/lib/ticket-logs";
 import { hasTableColumn } from "@/lib/db-helpers";
 
@@ -11,12 +12,26 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
   const id = Number(params.id);
   if (!id) return NextResponse.json({ error: "Invalid id" }, { status: 400 });
 
+  // Scope for employees: only their assigned or created tickets
+  const session = await getUserSession().catch(() => null) as any;
+  const isEmployee = !!session && String(session.userType) === 'employee';
+  const employeeId = isEmployee ? Number(session?.id || 0) : 0;
+  let hasCreatedBy = false;
+  try { hasCreatedBy = await hasTableColumn(TICKETS_TABLE, 'created_by'); } catch {}
+
+  const restrict = () => {
+    if (!isEmployee || !Number.isFinite(employeeId) || employeeId <= 0) return { sql: '', params: [] as any[] };
+    if (hasCreatedBy) return { sql: ' AND (t.assigned_to = ? OR t.created_by = ?)', params: [employeeId, employeeId] };
+    return { sql: ' AND (t.assigned_to = ?)', params: [employeeId] };
+  };
+  const r = restrict();
+
   const [rows] = await pool.query(
     `SELECT t.*, COALESCE(u.name,'') AS assigned_to_name
        FROM tickets_nh t
        LEFT JOIN users u ON t.assigned_to = u.id
-      WHERE t.id = ?`,
-    [id]
+      WHERE t.id = ?${r.sql}`,
+    [id, ...r.params]
   );
   // @ts-ignore
   const row = rows?.[0];

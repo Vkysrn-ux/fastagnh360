@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 
 type OrderStatus = "PENDING" | "PACKED" | "SHIPPED" | "DELIVERED" | "CANCELLED" | "LOST"
-type RequesterType = "Agent" | "User" | "Toll Agent"
+type RequesterType = "Agent" | "User" | "Toll Agent" | "Customer" | "Shop"
 
 type OrderItem = { bank: string; classType: string; qty: number }
 
@@ -423,6 +423,8 @@ export default function OrdersPage() {
                     <SelectItem value="Agent">Agent</SelectItem>
                     <SelectItem value="User">User</SelectItem>
                     <SelectItem value="Toll Agent">Toll Agent</SelectItem>
+                    <SelectItem value="Customer">Customer</SelectItem>
+                    <SelectItem value="Shop">Shop</SelectItem>
                   </SelectContent>
                 </Select>
                 <Input value={editing.requesterName} onChange={(e)=> setEditing({ ...editing, requesterName: e.target.value })} placeholder="Requester Name" />
@@ -550,3 +552,4 @@ export default function OrdersPage() {
     </div>
   )
 }
+

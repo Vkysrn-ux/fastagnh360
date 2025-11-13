@@ -3,7 +3,7 @@ import { useState } from "react";
 
 const ROLES = [
   { label: "Super Admin", value: "admin" },
-  { label: "Accountant / HR", value: "employee" },
+  { label: "Employee", value: "employee" },
   { label: "Manager", value: "manager" },
   { label: "Team Lead", value: "team-leader" },
   { label: "Agent", value: "agent" },

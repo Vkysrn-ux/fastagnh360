@@ -291,10 +291,23 @@ export async function GET(req: NextRequest) {
     try { hasCreatedByCol = await hasTableColumn(TICKETS_TABLE, 'created_by'); } catch {}
     const createdBySelect = hasCreatedByCol ? ", COALESCE(cu.name, '') AS created_by_name" : ", '' AS created_by_name";
     const createdByJoin = hasCreatedByCol ? " LEFT JOIN users cu ON t.created_by = cu.id" : "";
+
+    // Session-based scoping: employees see only their created or assigned tickets
+    const session = await getUserSession().catch(() => null) as any;
+    const isEmployee = !!session && String(session.userType) === 'employee';
+    const employeeId = isEmployee ? Number(session?.id || 0) : 0;
+    const restrictWhere = (alias = 't') => {
+      if (!isEmployee || !Number.isFinite(employeeId) || employeeId <= 0) return { sql: '', params: [] as any[] };
+      if (hasCreatedByCol) {
+        return { sql: ` AND (${alias}.assigned_to = ? OR ${alias}.created_by = ?)`, params: [employeeId, employeeId] };
+      }
+      return { sql: ` AND (${alias}.assigned_to = ?)`, params: [employeeId] };
+    };
     if (parentId) {
       // Children of one parent
       // Return the same rich columns as root list so UI can show identical columns
       try {
+        const r = restrictWhere('t');
         const [rows] = await pool.query(
           `
           SELECT
@@ -313,13 +326,14 @@ export async function GET(req: NextRequest) {
           LEFT JOIN users u ON t.assigned_to = u.id${createdByJoin}
           LEFT JOIN fastags f ON f.tag_serial = t.fastag_serial
           LEFT JOIN users blu ON blu.id = f.bank_login_user_id
-          WHERE t.parent_ticket_id = ?
+          WHERE t.parent_ticket_id = ?${r.sql}
           ORDER BY t.created_at DESC
           `,
-          [parentId]
+          [parentId, ...r.params]
         );
         return NextResponse.json(rows || []);
       } catch {
+        const r = restrictWhere('t');
         const [rows] = await pool.query(
           `
           SELECT
@@ -327,10 +341,10 @@ export async function GET(req: NextRequest) {
             COALESCE(u.name, '') AS assigned_to_name${createdBySelect}
           FROM tickets_nh t
           LEFT JOIN users u ON t.assigned_to = u.id${createdByJoin}
-          WHERE t.parent_ticket_id = ?
+          WHERE t.parent_ticket_id = ?${r.sql}
           ORDER BY t.created_at DESC
           `,
-          [parentId]
+          [parentId, ...r.params]
         );
         return NextResponse.json(rows || []);
       }
@@ -338,6 +352,7 @@ export async function GET(req: NextRequest) {
 
     if (scope === "all") {
       try {
+        const r = restrictWhere('t');
         const [rows] = await pool.query(`
           SELECT
             t.*,
@@ -359,11 +374,12 @@ export async function GET(req: NextRequest) {
           LEFT JOIN users u ON t.assigned_to = u.id${createdByJoin}
           LEFT JOIN fastags f ON f.tag_serial = t.fastag_serial
           LEFT JOIN users blu ON blu.id = f.bank_login_user_id
-          WHERE COALESCE(t.status, '') <> 'draft'
+          WHERE COALESCE(t.status, '') <> 'draft'${r.sql}
           ORDER BY t.created_at DESC
-        `);
+        `, r.params);
         return NextResponse.json(rows || []);
       } catch {
+        const r = restrictWhere('t');
         const [rows] = await pool.query(`
           SELECT
             t.*,
@@ -374,15 +390,16 @@ export async function GET(req: NextRequest) {
             END AS shop_name
           FROM tickets_nh t
           LEFT JOIN users u ON t.assigned_to = u.id${createdByJoin}
-          WHERE COALESCE(t.status, '') <> 'draft'
+          WHERE COALESCE(t.status, '') <> 'draft'${r.sql}
           ORDER BY t.created_at DESC
-        `);
+        `, r.params);
         return NextResponse.json(rows || []);
       }
     }
 
     // ROOTS ONLY (keep subs out of the main list)
     try {
+      const r = restrictWhere('t');
       const [rows] = await pool.query(`
         SELECT
           t.*,
@@ -412,11 +429,12 @@ export async function GET(req: NextRequest) {
           GROUP BY parent_ticket_id
         ) s ON s.parent_ticket_id = t.id
         WHERE t.parent_ticket_id IS NULL
-          AND COALESCE(t.status, '') <> 'draft'
+          AND COALESCE(t.status, '') <> 'draft'${r.sql}
         ORDER BY t.created_at DESC
-      `);
+      `, r.params);
       return NextResponse.json(rows || []);
     } catch {
+      const r = restrictWhere('t');
       const [rows] = await pool.query(`
         SELECT
           t.*,
@@ -435,9 +453,9 @@ export async function GET(req: NextRequest) {
           GROUP BY parent_ticket_id
         ) s ON s.parent_ticket_id = t.id
         WHERE t.parent_ticket_id IS NULL
-          AND COALESCE(t.status, '') <> 'draft'
+          AND COALESCE(t.status, '') <> 'draft'${r.sql}
         ORDER BY t.created_at DESC
-      `);
+      `, r.params);
       return NextResponse.json(rows || []);
     }
   } catch (e: any) {

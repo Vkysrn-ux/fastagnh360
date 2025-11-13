@@ -1957,8 +1957,8 @@ export default function TicketListPage() {
                 <label className="block text-sm font-medium mb-1">Assigned To</label>
                 <div className="flex gap-2">
                   <div className="flex-1">
-                    <UsersAutocomplete
-                      roles={["admin","administrator","super","super-admin","super_admin","super admin","superadmin"]}
+                    <UsersAutocomplete 
+                      roles={["admin","administrator","super","super-admin","super_admin","super admin","superadmin","employee"]}
                       value={assignedUser}
                       onSelect={(u) => {
                         setAssignedUser(u);
