@@ -6,6 +6,7 @@ import { getAuthSessionCached } from "@/lib/client/cache";
 import { toast } from "sonner";
 
 type OnlineUser = { id: number; name: string; displayRole?: string };
+type RecentUser = OnlineUser & { lastActiveTs?: number; lastAt?: string };
 type ChatMessage = {
   fromUserId: number;
   fromName: string;
@@ -19,7 +20,7 @@ export default function ChatBox({ ticketId, visible = true }: { ticketId?: strin
   const DEBUG = (typeof process !== 'undefined' && process.env && (process.env.NEXT_PUBLIC_CHAT_DEBUG === '1' || process.env.NEXT_PUBLIC_CHAT_DEBUG === 'true')) || false;
   const [open, setOpen] = useState(false);
   const [online, setOnline] = useState<OnlineUser[]>([]);
-  const [recents, setRecents] = useState<OnlineUser[]>([]);
+  const [recents, setRecents] = useState<RecentUser[]>([]);
   const [self, setSelf] = useState<{ id: number; name: string } | null>(null);
   const [activeUserId, setActiveUserId] = useState<number | null>(null);
   const [input, setInput] = useState("");
@@ -107,6 +108,24 @@ export default function ChatBox({ ticketId, visible = true }: { ticketId?: strin
         try { osc.stop(); osc.disconnect(); gain.disconnect(); } catch {}
       }, 150);
     } catch {}
+  };
+
+  const formatAgo = (ts: number): string => {
+    try {
+      const now = Date.now();
+      const diffMs = Math.max(0, now - ts);
+      const sec = Math.floor(diffMs / 1000);
+      const min = Math.floor(sec / 60);
+      const hr = Math.floor(min / 60);
+      const day = Math.floor(hr / 24);
+      if (day >= 2) return `${day}days ago`;
+      if (day === 1) return `1day ago`;
+      if (hr >= 2) return `${hr}hrs ago`;
+      if (hr === 1) return `1hr ago`;
+      if (min >= 2) return `${min}mins ago`;
+      if (min === 1) return `1min ago`;
+      return `just now`;
+    } catch { return ""; }
   };
   
   useEffect(() => {
@@ -280,7 +299,17 @@ export default function ChatBox({ ticketId, visible = true }: { ticketId?: strin
         const res = await fetch("/api/chat/recents", { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
-        if (alive) setRecents(Array.isArray(data) ? data : []);
+        if (alive) {
+          const mapped: RecentUser[] = Array.isArray(data)
+            ? data.map((r: any) => ({
+                id: Number(r.id),
+                name: String(r.name || `User #${r.id}`),
+                lastAt: r.lastAt,
+                lastActiveTs: r.lastActive ? new Date(r.lastActive).getTime() : (r.lastAt ? new Date(r.lastAt).getTime() : undefined),
+              }))
+            : [];
+          setRecents(mapped);
+        }
       } catch {}
     };
     load();
@@ -377,8 +406,10 @@ export default function ChatBox({ ticketId, visible = true }: { ticketId?: strin
                     {recents.length === 0 && (
                       <div className="p-2 text-xs text-gray-500">No recent chats</div>
                     )}
-                    {recents.map((u) => {
+                    {(() => { const onlineSet = new Set(online.map((o) => o.id)); return recents.map((u) => {
                       const disabled = self ? u.id === self.id : false;
+                      const isOnline = onlineSet.has(u.id);
+                      const suffix = !isOnline && u.lastActiveTs ? ` (Active ${formatAgo(u.lastActiveTs)})` : "";
                       return (
                         <button
                           key={`r-${u.id}`}
@@ -390,10 +421,10 @@ export default function ChatBox({ ticketId, visible = true }: { ticketId?: strin
                           aria-disabled={disabled}
                         >
                           <span className="inline-block h-2 w-2 rounded-full bg-gray-400"></span>
-                          <span className="truncate">{u.name}</span>
+                          <span className="truncate">{u.name}{suffix}</span>
                         </button>
                       );
-                    })}
+                    })})()}
                   </div>
                   <div className="p-2 font-semibold text-sm border-y">Online</div>
                   <div className="overflow-y-auto max-h-[12rem]">

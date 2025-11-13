@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getUserSession } from "@/lib/getSession";
+import { hasTableColumn } from "@/lib/db-helpers";
 
 async function ensureTable() {
   await pool.query(`
@@ -41,12 +42,61 @@ export async function GET() {
       ORDER BY last_at DESC
       LIMIT 200`;
     const [rows]: any = await pool.query(sql, [me, me, me]);
-    const items = (rows || []).map((r: any) => ({
+    const baseItems = (rows || []).map((r: any) => ({
       id: Number(r.id),
       name: r.name || `User #${r.id}`,
-      lastAt: new Date(r.last_at).toISOString(),
+      lastAt: r.last_at ? new Date(r.last_at).toISOString() : null,
     }));
-    return NextResponse.json(items);
+
+    // Enrich with last activity if available (users.last_activity / updated_at / last_login or user_sessions)
+    const peerIds = baseItems.map((i: any) => i.id);
+    if (peerIds.length) {
+      try {
+        const hasLastLogin = await hasTableColumn("users", "last_login");
+        const hasUpdatedAt = await hasTableColumn("users", "updated_at");
+        const hasLastActivity = await hasTableColumn("users", "last_activity");
+
+        const cols = ["id"] as string[];
+        if (hasLastActivity) cols.push("last_activity");
+        if (hasUpdatedAt) cols.push("updated_at");
+        if (hasLastLogin) cols.push("last_login");
+
+        // Guard: if none of the columns exist, skip users table fetch
+        let usersMap: Record<number, any> = {};
+        if (cols.length > 1) {
+          const [urows]: any = await pool.query(`SELECT ${cols.join(", ")} FROM users WHERE id IN (?)`, [peerIds]);
+          for (const r of (urows || [])) usersMap[Number(r.id)] = r;
+        }
+
+        // Also pull last_seen_at from user_sessions
+        const [srows]: any = await pool.query(
+          `SELECT user_id, MAX(last_seen_at) AS last_seen_at FROM user_sessions WHERE user_id IN (?) GROUP BY user_id`,
+          [peerIds]
+        );
+        const sessMap: Record<number, string> = {};
+        for (const r of (srows || [])) {
+          if (r && r.user_id) sessMap[Number(r.user_id)] = r.last_seen_at ? new Date(r.last_seen_at).toISOString() : null;
+        }
+
+        const items = baseItems.map((it: any) => {
+          const u = usersMap[it.id] || {};
+          const cands: number[] = [];
+          if (u.last_activity) cands.push(new Date(u.last_activity).getTime());
+          if (u.updated_at) cands.push(new Date(u.updated_at).getTime());
+          if (u.last_login) cands.push(new Date(u.last_login).getTime());
+          if (sessMap[it.id]) cands.push(new Date(sessMap[it.id]).getTime());
+          const lastActive = cands.length ? new Date(Math.max(...cands)).toISOString() : null;
+          return { ...it, lastActive };
+        });
+
+        return NextResponse.json(items);
+      } catch {
+        // On any enrichment error, fall back to base list
+        return NextResponse.json(baseItems);
+      }
+    }
+
+    return NextResponse.json(baseItems);
   } catch (e) {
     console.error("chat/recents GET error", e);
     return NextResponse.json([]);
