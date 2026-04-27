@@ -5,6 +5,9 @@ import { parseIndianMobile } from "@/lib/validators"
 import { v2 as cloudinary } from "cloudinary"
 import { debugLog } from "./_log"
 
+// Ignore messages received before this server started
+const SERVER_START_SEC = Math.floor(Date.now() / 1000)
+
 // ---------------------------------------------------------------------------
 // Schema migration
 // ---------------------------------------------------------------------------
@@ -96,15 +99,23 @@ function extractPhoneFromText(text: string): string | null {
   return m ? m[1] : null
 }
 
+const INDIAN_STATE_CODES = new Set([
+  "AP","AR","AS","BR","CG","CH","DD","DL","DN","GA","GJ","HP","HR",
+  "JH","JK","KA","KL","LA","LD","MH","ML","MN","MP","MZ","NL","OD",
+  "PB","PY","RJ","SK","TN","TR","TS","UK","UP","WB","AN","HR","HP",
+])
+
 function extractVehicle(text: string): string | null {
   const s = (text || "").toUpperCase()
   const patterns = [
-    /\b([A-Z]{2}\s*\d{1,2}\s*[A-Z]{1,3}\s*\d{3,4})\b/,
-    /\b([A-Z]{2}\s*\d{3,4}\s*[A-Z]{1,2})\b/,
+    /\b([A-Z]{2})\s*(\d{1,2})\s*([A-Z]{1,3})\s*(\d{3,4})\b/,
+    /\b([A-Z]{2})\s*(\d{3,4})\s*([A-Z]{1,2})\b/,
   ]
   for (const re of patterns) {
     const m = s.match(re)
-    if (m) return m[1].replace(/\s+/g, " ").trim()
+    if (m && INDIAN_STATE_CODES.has(m[1])) {
+      return m[0].replace(/\s+/g, "").trim()
+    }
   }
   return null
 }
@@ -255,6 +266,37 @@ async function closeTicket(ticketId: number) {
 }
 
 // ---------------------------------------------------------------------------
+// Status update commands
+// ---------------------------------------------------------------------------
+function detectUpdateCommand(text: string): string | null {
+  const t = text.toLowerCase()
+  if (/payment\s*(done|received|paid|ok|complete)/.test(t))     return "payment_done"
+  if (/payment\s*(nil|free|no\s*pay|waive|zero)/.test(t))       return "payment_nil"
+  if (/deliver(y|ed)\s*(done|complete|ok)|delivered/.test(t))   return "delivery_done"
+  if (/deliver(y)?\s*(nil|no\s*del|waive)/.test(t))             return "delivery_nil"
+  if (/(kyc|kyv)\s*(done|complete|verified|ok)/.test(t))        return "kyc_done"
+  if (/activated|activation\s*done|tag\s*(ok|done|activated)/.test(t)) return "activated"
+  if (/docs?\s*(done|ok|received)|documents?\s*(done|ok|received|uploaded)/.test(t)) return "docs_done"
+  if (/^(done|completed?|finish(ed)?|closed?|ok\s*done)\b/.test(t.trim())) return "completed"
+  return null
+}
+
+async function applyTicketUpdate(ticketId: number, command: string, vehicle: string) {
+  const updates: Record<string, string> = {
+    payment_done:   `SET payment_received = 1, updated_at = NOW()`,
+    payment_nil:    `SET payment_nil = 1, payment_received = 1, updated_at = NOW()`,
+    delivery_done:  `SET delivery_done = 1, status = 'completed', updated_at = NOW()`,
+    delivery_nil:   `SET delivery_nil = 1, delivery_done = 1, updated_at = NOW()`,
+    kyc_done:       `SET kyv_status = 'KYV done', updated_at = NOW()`,
+    activated:      `SET npci_status = 'Activated', kyv_status = 'KYV done', updated_at = NOW()`,
+    docs_done:      `SET kyv_status = 'Documents Received', updated_at = NOW()`,
+    completed:      `SET status = 'completed', updated_at = NOW()`,
+  }
+  const sql = updates[command]
+  if (sql) await pool.query(`UPDATE tickets_nh ${sql} WHERE id = ?`, [ticketId])
+}
+
+// ---------------------------------------------------------------------------
 // Shared message processor (used by both messages.upsert and chats.update paths)
 // ---------------------------------------------------------------------------
 const seenMsgIds = new Set<string>()
@@ -276,13 +318,13 @@ async function processTextMessage(params: {
 
   const senderPhone10 = normalizePhone(senderJid)
   const isMember      = senderPhone10 ? await isTeamMember(senderPhone10) : false
+  const vehicle       = extractVehicle(text)
 
-  if (isMember) {
+  // Team bare "done" with no vehicle — close the active chat ticket
+  if (isMember && !vehicle) {
     const lower = text.toLowerCase().trim()
     if (/^(done|completed?|finish(ed)?|closed?|ok\s*done|activated)/.test(lower)) {
-      const vrn  = extractVehicle(text)
-      let ticket = vrn ? await findOpenTicketByVehicle(vrn) : null
-      if (!ticket) ticket = await findOpenTicketByChatId(chatId)
+      const ticket = await findOpenTicketByChatId(chatId)
       if (ticket) {
         await closeTicket(ticket.id)
         if (autoReply) await evoSend(chatId, `✅ Ticket *${ticket.ticket_no}* marked Completed.`)
@@ -292,7 +334,18 @@ async function processTextMessage(params: {
     return { action: "team_no_action" }
   }
 
-  const vehicle     = extractVehicle(text)
+  // STATUS UPDATE: vehicle number + update command (anyone in group)
+  if (vehicle) {
+    const updateCmd = detectUpdateCommand(text)
+    if (updateCmd) {
+      const ticket = await findOpenTicketByVehicle(vehicle)
+      if (ticket) {
+        await applyTicketUpdate(ticket.id, updateCmd, vehicle)
+        if (autoReply) await evoSend(chatId, `✅ Ticket *${ticket.ticket_no}* updated: ${updateCmd.replace("_", " ")}.`)
+        return { action: "status_updated", ticketId: ticket.id, command: updateCmd }
+      }
+    }
+  }
   const phone       = senderPhone10 ?? extractPhoneFromText(text)
   const serviceType = detectServiceType(text)
   const groupName   = isGroup ? await getGroupName(chatId) : ""
@@ -373,7 +426,10 @@ async function fetchAndProcessGroupMessages(groupJid: string, autoReply: boolean
     for (const msgData of records) {
       const key       = msgData?.key ?? {}
       const msgId     = String(key?.id || "")
-      const senderJid = String(key?.participant || msgData?.participant || groupJid)
+      const ts        = Number(msgData?.messageTimestamp || 0)
+      // Only process messages received after this server started
+      if (ts && ts < SERVER_START_SEC) continue
+      const senderJid = String(key?.participantAlt || key?.participant || msgData?.participant || groupJid)
       const msg       = msgData?.message ?? {}
       const text      = (
         msg?.conversation || msg?.extendedTextMessage?.text ||
