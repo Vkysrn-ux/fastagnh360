@@ -17,6 +17,10 @@ export function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
+  // Forward pathname so server layouts can conditionally render chrome
+  const reqHeaders = new Headers(req.headers)
+  reqHeaders.set('x-pathname', url.pathname)
+
   // ERP-only mode: block public site and route root to ERP login/dashboard
   if (ERP_ONLY) {
     const allowedRoots = ['/login', '/admin', '/agent', '/employee', '/user', '/api']
@@ -34,6 +38,11 @@ export function middleware(req: NextRequest) {
       url.pathname = '/login'
       return NextResponse.redirect(url)
     }
+  }
+
+  // WhatsApp webhook is public — no session required
+  if (url.pathname.startsWith('/api/whatsapp')) {
+    return NextResponse.next({ request: { headers: reqHeaders } })
   }
 
   // If hitting API without a session -> 401 JSON
@@ -105,7 +114,7 @@ export function middleware(req: NextRequest) {
           to.pathname = `${allowedPrefix}/tickets`
           return NextResponse.redirect(to)
         }
-        return NextResponse.next()
+        return NextResponse.next({ request: { headers: reqHeaders } })
       } else {
         url.pathname = `${allowedPrefix}/tickets`
         return NextResponse.redirect(url)

@@ -1,190 +1,86 @@
-import Link from "next/link";
-import { Facebook, Instagram, Twitter, Mail, Phone, MapPin } from "lucide-react";
-
-
-export default function PrivacyPolicyPage() {
-  return <PrivacyPolicy />;
-}
-
+import Link from "next/link"
 
 export function Footer() {
   return (
-    <footer className="bg-gradient-to-b from-background to-blue-50/50 dark:from-background dark:to-blue-950/20 border-t">
-      <div className="container py-12 md:py-16">
-        <div className="grid grid-cols-1 gap-8 md:grid-cols-2 lg:grid-cols-4">
-          {/* Brand/About */}
-          <div>
-            <div className="flex items-center gap-2 mb-4">
-              <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center text-white font-bold">
-                NH
-              </div>
-              <span className="font-poppins text-xl font-bold">
-                NH360 Fastag Solutions
-              </span>
-            </div>
-            <p className="text-muted-foreground mb-4">
-              Your trusted partner for all FASTag services across India. We provide registration, recharge, and
-              blacklist resolution services.
+    <footer className="bg-slate-50 border-t border-slate-200 py-16">
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-16">
+          {/* Brand */}
+          <div className="space-y-4">
+            <div className="text-xl font-bold text-blue-900 font-manrope">NH360 FASTAG</div>
+            <p className="text-slate-500 text-sm leading-relaxed max-w-xs font-manrope">
+              Kinetic Anchor Management's premier solution for streamlined highway experiences across India.
             </p>
-            <div className="flex space-x-4">
-              <a
-                href="https://facebook.com"
-                className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary hover:text-white transition-colors"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <Facebook className="h-5 w-5" />
-                <span className="sr-only">Facebook</span>
-              </a>
-              <a
-                href="https://instagram.com"
-                className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary hover:text-white transition-colors"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <Instagram className="h-5 w-5" />
-                <span className="sr-only">Instagram</span>
-              </a>
-              <a
-                href="https://twitter.com"
-                className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-primary hover:bg-primary hover:text-white transition-colors"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <Twitter className="h-5 w-5" />
-                <span className="sr-only">Twitter</span>
-              </a>
-            </div>
           </div>
-          {/* Quick Links */}
-          <div>
-            <h3 className="font-poppins text-lg font-semibold mb-4 text-gradient-royal">Quick Links</h3>
+
+          {/* Company */}
+          <div className="space-y-4">
+            <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider font-manrope">Company</h4>
             <ul className="space-y-2">
               <li>
-                <Link href="/" className="text-muted-foreground hover:text-primary transition-colors">
-                  Home
-                </Link>
-              </li>
-              <li>
-                <Link href="/about" className="text-muted-foreground hover:text-primary transition-colors">
+                <Link href="/about" className="text-slate-500 text-sm hover:text-blue-600 hover:underline decoration-blue-500 underline-offset-4 transition-all font-manrope">
                   About Us
                 </Link>
               </li>
               <li>
-                <Link href="/services" className="text-muted-foreground hover:text-primary transition-colors">
-                  Services
+                <Link href="#" className="text-slate-500 text-sm hover:text-blue-600 hover:underline decoration-blue-500 underline-offset-4 transition-all font-manrope">
+                  Careers
                 </Link>
               </li>
               <li>
-                <Link href="/contact" className="text-muted-foreground hover:text-primary transition-colors">
-                  Contact Us
-                </Link>
-              </li>
-              <li>
-                <Link href="/faq" className="text-muted-foreground hover:text-primary transition-colors">
-                  FAQs
-                </Link>
-              </li>
-              <li>
-                <Link href="/privacy-policy" className="text-muted-foreground hover:text-primary transition-colors">
-                  Privacy Policy <span className="text-xs text-gray-400">(Coming Soon)</span>
+                <Link href="#" className="text-slate-500 text-sm hover:text-blue-600 hover:underline decoration-blue-500 underline-offset-4 transition-all font-manrope">
+                  Partner Portal
                 </Link>
               </li>
             </ul>
           </div>
-          {/* Services */}
-          <div>
-            <h3 className="font-poppins text-lg font-semibold mb-4 text-gradient-royal-light">Services</h3>
+
+          {/* Legal */}
+          <div className="space-y-4">
+            <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider font-manrope">Legal</h4>
             <ul className="space-y-2">
               <li>
-                <Link
-                  href="/services/new-fastag"
-                  className="text-muted-foreground hover:text-secondary transition-colors"
-                >
-                  New FASTag Registration
+                <Link href="/privacy-policy" className="text-slate-500 text-sm hover:text-blue-600 hover:underline decoration-blue-500 underline-offset-4 transition-all font-manrope">
+                  Privacy Policy
                 </Link>
               </li>
               <li>
-                <Link
-                  href="/services/recharge"
-                  className="text-muted-foreground hover:text-secondary transition-colors"
-                >
-                  FASTag Recharge
+                <Link href="#" className="text-slate-500 text-sm hover:text-blue-600 hover:underline decoration-blue-500 underline-offset-4 transition-all font-manrope">
+                  Terms of Service
                 </Link>
               </li>
               <li>
-                <Link
-                  href="/services/blacklist"
-                  className="text-muted-foreground hover:text-secondary transition-colors"
-                >
-                  Blacklist Resolution
-                </Link>
-              </li>
-              <li>
-                <Link href="/services/banks" className="text-muted-foreground hover:text-secondary transition-colors">
-                  Bank Options
-                </Link>
-              </li>
-              <li>
-                <Link href="/track-order" className="text-muted-foreground hover:text-secondary transition-colors">
-                  Track Your Order
+                <Link href="#" className="text-slate-500 text-sm hover:text-blue-600 hover:underline decoration-blue-500 underline-offset-4 transition-all font-manrope">
+                  Compliance
                 </Link>
               </li>
             </ul>
           </div>
-          {/* Contact */}
-          <div>
-            <h3 className="font-poppins text-lg font-semibold mb-4 text-gradient-royal-light">Contact Us</h3>
-            <ul className="space-y-3">
-              <li className="flex items-start">
-                <div className="h-6 w-6 rounded-full bg-accent/10 flex items-center justify-center text-accent shrink-0 mt-0.5 mr-2">
-                  <MapPin className="h-3.5 w-3.5" />
-                </div>
-                <span className="text-muted-foreground">
-                  Address: 2nd Floor, Isha Towers, 222/4, New Scheme Rd, near KVB Bank, Pappanaickenpalayam, Coimbatore, Tamil Nadu 641037
-                </span>
+
+          {/* Support */}
+          <div className="space-y-4">
+            <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wider font-manrope">Support</h4>
+            <ul className="space-y-2">
+              <li>
+                <Link href="/contact" className="text-blue-700 text-sm font-semibold hover:underline underline-offset-4 font-manrope">
+                  Contact Support
+                </Link>
               </li>
-              <li className="flex items-center">
-                <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0 mr-2">
-                  <Phone className="h-3.5 w-3.5" />
-                </div>
-                <a href="tel:+918667460935" className="text-muted-foreground hover:text-primary transition-colors">
-                  +91 - 8667460935
-                </a>
-              </li>
-              <li className="flex items-center">
-                <div className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0 mr-2">
-                  <Phone className="h-3.5 w-3.5" />
-                </div>
-                <a href="tel:+918667460635" className="text-muted-foreground hover:text-primary transition-colors">
-                  +91 - 8667460635
-                </a>
-              </li>
-              <li className="flex items-center">
-                <div className="h-6 w-6 rounded-full bg-secondary/10 flex items-center justify-center text-secondary shrink-0 mr-2">
-                  <Mail className="h-3.5 w-3.5" />
-                </div>
-                <a href="mailto:info@nh360fastag.com" className="text-muted-foreground hover:text-secondary transition-colors">
-                  info@nh360fastag.com
-                </a>
-              </li>
-              <li className="flex items-center">
-                <div className="h-6 w-6 rounded-full bg-secondary/10 flex items-center justify-center text-secondary shrink-0 mr-2">
-                  <Mail className="h-3.5 w-3.5" />
-                </div>
-                <a href="mailto:support@nh360fastagsolutions.com" className="text-muted-foreground hover:text-secondary transition-colors">
-                  support@nh360fastagsolutions.com
-                </a>
+              <li>
+                <Link href="/faq" className="text-slate-500 text-sm hover:text-blue-600 hover:underline decoration-blue-500 underline-offset-4 transition-all font-manrope">
+                  FAQ Center
+                </Link>
               </li>
             </ul>
           </div>
         </div>
-        <div className="mt-12 border-t pt-6">
-          <p className="text-center text-sm text-muted-foreground">
-            &copy; {new Date().getFullYear()} NH360 Fastag Solutions. All rights reserved.
-          </p>
+
+        {/* Copyright */}
+        <div className="pt-8 border-t border-slate-200 text-center md:text-left flex flex-col md:flex-row justify-between items-center text-slate-400 text-xs gap-4 font-manrope">
+          <p>© {new Date().getFullYear()} NH360 FASTAG Solutions. Kinetic Anchor Management.</p>
+          <p>Kinetic Anchor movement.</p>
         </div>
       </div>
     </footer>
-  );
+  )
 }

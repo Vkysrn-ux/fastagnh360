@@ -19,7 +19,15 @@ const config = {
       },
     },
     extend: {
+      fontFamily: {
+        manrope: ['var(--font-manrope)', 'sans-serif'],
+      },
       colors: {
+        brand: {
+          blue: '#0052CC',
+          darkBlue: '#0F3A9F',
+          lightBlue: '#E6F0FF',
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
