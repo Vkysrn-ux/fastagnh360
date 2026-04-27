@@ -298,7 +298,7 @@ async function processTextMessage(params: {
   const groupName   = isGroup ? await getGroupName(chatId) : ""
   const leadFrom    = isGroup ? `Whatsapp - ${groupName || chatId.replace("@g.us", "")}` : "Whatsapp"
 
-  if (!vehicle && !hasServiceIntent(text)) return { action: "no_intent" }
+  if (!vehicle || !hasServiceIntent(text)) return { action: "no_intent" }
 
   // For DMs only: deduplicate by chatId (same person chatting again)
   if (!isGroup) {
