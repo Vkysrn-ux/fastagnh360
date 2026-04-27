@@ -300,17 +300,20 @@ async function processTextMessage(params: {
 
   if (!vehicle && !hasServiceIntent(text)) return { action: "no_intent" }
 
-  const existing = await findOpenTicketByChatId(chatId)
-  if (existing) {
-    if (vehicle) {
-      await pool.query(
-        `UPDATE tickets_nh SET vehicle_reg_no = ?, updated_at = NOW()
-         WHERE id = ? AND (vehicle_reg_no IS NULL OR vehicle_reg_no = '')`,
-        [vehicle, existing.id]
-      )
+  // For DMs only: deduplicate by chatId (same person chatting again)
+  if (!isGroup) {
+    const existing = await findOpenTicketByChatId(chatId)
+    if (existing) {
+      if (vehicle) {
+        await pool.query(
+          `UPDATE tickets_nh SET vehicle_reg_no = ?, updated_at = NOW()
+           WHERE id = ? AND (vehicle_reg_no IS NULL OR vehicle_reg_no = '')`,
+          [vehicle, existing.id]
+        )
+      }
+      if (autoReply) await evoSend(chatId, `Your ticket *${existing.ticket_no}* is already open.`)
+      return { action: "updated", ticketId: existing.id }
     }
-    if (autoReply) await evoSend(chatId, `Your ticket *${existing.ticket_no}* is already open.`)
-    return { action: "updated", ticketId: existing.id }
   }
 
   if (vehicle) {
@@ -358,8 +361,12 @@ async function fetchAndProcessGroupMessages(groupJid: string, autoReply: boolean
       headers: { "Content-Type": "application/json", apikey },
       body: JSON.stringify({ where: { key: { remoteJid: groupJid, fromMe: false } }, limit: 10 }),
     })
+    const rawText = await res.text()
+    debugLog.unshift({ ts: new Date().toISOString(), body: { _fetchGroup: groupJid, status: res.status, raw: rawText.slice(0, 500) } })
+    if (debugLog.length > 20) debugLog.pop()
     if (!res.ok) return
-    const json = await res.json()
+    let json: any
+    try { json = JSON.parse(rawText) } catch { return }
     const records: any[] = Array.isArray(json) ? json
       : (json?.messages?.records ?? json?.records ?? [])
 
@@ -399,7 +406,7 @@ export async function POST(req: NextRequest) {
     const event      = String(body?.event || "").toLowerCase()
     const autoReply  = String(process.env.WA_AUTOREPLY || "").toLowerCase() === "true"
 
-    // ── chats.update: Evolution API LID-group workaround ──────────────────
+    // ── LID-group workaround: chats.update OR contacts.update for a group JID ─
     if (event === "chats.update" || event === "chats_update") {
       const chats = Array.isArray(body?.data) ? body.data : [body?.data].filter(Boolean)
       for (const chat of chats) {
@@ -409,6 +416,17 @@ export async function POST(req: NextRequest) {
         }
       }
       return NextResponse.json({ ok: true, note: "chats.update processed" })
+    }
+
+    if (event === "contacts.update" || event === "contacts_update") {
+      const contacts = Array.isArray(body?.data) ? body.data : [body?.data].filter(Boolean)
+      for (const c of contacts) {
+        const jid = String(c?.remoteJid || "")
+        if (jid.endsWith("@g.us")) {
+          await fetchAndProcessGroupMessages(jid, autoReply)
+        }
+      }
+      return NextResponse.json({ ok: true, note: "contacts.update processed" })
     }
 
     // ── messages.upsert: normal path ──────────────────────────────────────
@@ -428,9 +446,11 @@ export async function POST(req: NextRequest) {
     // Skip own messages only in DMs (in groups, allow so connected number can test)
     if (fromMe && !isGroup) return NextResponse.json({ ok: true, note: "own DM" })
 
-    // In groups, fromMe sender is the connected number itself
+    // In groups, prefer participantAlt (real phone JID) over LID participant
     const senderJid = isGroup
-      ? (fromMe ? String(body?.sender || remoteJid) : String(key?.participant || data?.participant || remoteJid))
+      ? (fromMe
+          ? String(body?.sender || remoteJid)
+          : String(key?.participantAlt || key?.participant || data?.participant || remoteJid))
       : remoteJid
     const chatId    = remoteJid
     const msgId     = String(key?.id || "")
