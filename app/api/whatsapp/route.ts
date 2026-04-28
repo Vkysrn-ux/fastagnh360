@@ -2,8 +2,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { pool } from "@/lib/db"
 import { parseIndianMobile } from "@/lib/validators"
-import { v2 as cloudinary } from "cloudinary"
 import { debugLog } from "./_log"
+import Anthropic from "@anthropic-ai/sdk"
 
 // Ignore messages received before this server started
 const SERVER_START_SEC = Math.floor(Date.now() / 1000)
@@ -38,46 +38,38 @@ async function evoSend(to: string, text: string) {
   } catch {}
 }
 
-// ---------------------------------------------------------------------------
-// Evolution API — download media → upload to Cloudinary
-// ---------------------------------------------------------------------------
-function configureCloudinary() {
-  cloudinary.config({
-    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-    api_key:    process.env.CLOUDINARY_API_KEY,
-    api_secret: process.env.CLOUDINARY_API_SECRET,
-  })
-}
 
-async function downloadAndUploadMedia(messageObj: any): Promise<string | null> {
+
+// ---------------------------------------------------------------------------
+// Claude Vision — extract PAN number from image
+// ---------------------------------------------------------------------------
+async function extractPanFromImage(base64: string, mime: string): Promise<string | null> {
   try {
-    configureCloudinary()
-    const base   = process.env.EVO_API_URL
-    const inst   = process.env.EVO_INSTANCE
-    const apikey = process.env.EVO_API_KEY
-    if (!base || !inst || !apikey) return null
-
-    // Ask Evolution API to return base64 of the media
-    const res = await fetch(`${base}/chat/getBase64FromMediaMessage/${inst}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", apikey },
-      body: JSON.stringify({ message: messageObj, convertToMp4: false }),
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) return null
+    const client = new Anthropic({ apiKey })
+    const resp = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 64,
+      messages: [{
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: mime as any, data: base64 },
+          },
+          {
+            type: "text",
+            text: "Look at this image. If it contains a PAN card, extract and return ONLY the PAN number (format: 5 uppercase letters + 4 digits + 1 uppercase letter, e.g. ABCDE1234F). If no PAN card or PAN number found, reply with the single word: NONE",
+          },
+        ],
+      }],
     })
-    if (!res.ok) return null
-    const json = await res.json()
-    const b64: string = json?.base64 || json?.data?.base64 || ""
-    if (!b64) return null
-
-    const mime = json?.mimetype || "image/jpeg"
-    const isPdf = mime.includes("pdf")
-    const dataUri = `data:${mime};base64,${b64}`
-
-    const result = await cloudinary.uploader.upload(dataUri, {
-      folder: "nh360-fastag/whatsapp",
-      resource_type: isPdf ? "raw" : "image",
-    })
-    return result?.secure_url ?? null
-  } catch {
+    const raw = (resp.content[0] as any)?.text?.trim() ?? ""
+    const match = raw.match(/[A-Z]{5}[0-9]{4}[A-Z]/)
+    return match ? match[0] : null
+  } catch (e) {
+    console.error("[panOCR]", e)
     return null
   }
 }
@@ -140,24 +132,6 @@ function detectServiceType(text: string): string {
   return "New Fastag"
 }
 
-function detectDocumentField(caption: string): string {
-  const c = caption.toLowerCase()
-  if (/rc\s*back|registration\s*back/.test(c))              return "rc_back_url"
-  if (/rc|registration/.test(c))                            return "rc_front_url"
-  if (/pan/.test(c))                                        return "pan_url"
-  if (/aadhaar\s*back|aadhar\s*back/.test(c))               return "aadhaar_back_url"
-  if (/aadhaar|aadhar|adhar|uid/.test(c))                   return "aadhaar_front_url"
-  if (/sticker|paste/.test(c))                              return "sticker_pasted_url"
-  if (/side|back\s*view/.test(c))                           return "vehicle_side_url"
-  if (/vehicle|car|truck|bus|bike|photo|pic|front/.test(c)) return "vehicle_front_url"
-  return ""
-}
-
-const DOC_SLOTS = [
-  "vehicle_front_url", "rc_front_url", "rc_back_url",
-  "aadhaar_front_url", "aadhaar_back_url", "pan_url",
-  "vehicle_side_url",  "sticker_pasted_url",
-]
 
 // ---------------------------------------------------------------------------
 // Evolution API — fetch group name
@@ -222,11 +196,9 @@ async function findOpenTicketByVehicle(vrn: string) {
 
 async function createTicket(params: {
   chatId: string; senderPhone: string | null; vehicle: string | null
-  serviceType: string; details: string | null
-  mediaField: string | null; mediaUrl: string | null
-  leadFrom: string
+  serviceType: string; details: string | null; leadFrom: string
 }) {
-  const { chatId, senderPhone, vehicle, serviceType, details, mediaField, mediaUrl, leadFrom } = params
+  const { chatId, senderPhone, vehicle, serviceType, details, leadFrom } = params
   const cols = [
     "vehicle_reg_no", "subject", "details", "phone",
     "lead_received_from", "status", "kyv_status", "npci_status",
@@ -237,7 +209,6 @@ async function createTicket(params: {
     senderPhone, leadFrom, "open", "KYV pending", "Activation Pending",
     chatId, senderPhone,
   ]
-  if (mediaField && mediaUrl) { cols.push(mediaField); vals.push(mediaUrl) }
 
   const [result]: any = await pool.query(
     `INSERT INTO tickets_nh (${cols.join(",")}, created_at, updated_at)
@@ -250,13 +221,6 @@ async function createTicket(params: {
   return { id, ticket_no }
 }
 
-async function attachMedia(ticketId: number, field: string, url: string) {
-  await pool.query(
-    `UPDATE tickets_nh SET ${field} = ?, updated_at = NOW()
-     WHERE id = ? AND (${field} IS NULL OR ${field} = '')`,
-    [url, ticketId]
-  )
-}
 
 async function closeTicket(ticketId: number) {
   await pool.query(
@@ -395,7 +359,7 @@ async function processTextMessage(params: {
   const ticket = await createTicket({
     chatId, senderPhone: phone, vehicle, serviceType,
     details: text.slice(0, 500) || null,
-    mediaField: null, mediaUrl: null, leadFrom,
+    leadFrom,
   })
   if (autoReply) {
     const label = serviceType === "New Fastag" ? "FASTag Activation" : serviceType
@@ -529,25 +493,34 @@ export async function POST(req: NextRequest) {
       msg?.videoMessage?.caption || ""
     ).toString()
 
-    // Media: attach to existing ticket only
+    // Media: only process images for PAN OCR, ignore everything else
     if (isMedia) {
-      const existing = await findOpenTicketByChatId(chatId)
-      if (existing) {
-        const savedUrl = await downloadAndUploadMedia(msg)
-        if (savedUrl) {
-          let docField = detectDocumentField(text)
-          if (!docField) {
-            const [rows]: any = await pool.query(
-              `SELECT ${DOC_SLOTS.join(",")} FROM tickets_nh WHERE id = ? LIMIT 1`, [existing.id])
-            if (rows?.[0]) { for (const s of DOC_SLOTS) { if (!rows[0][s]) { docField = s; break } } }
-            if (!docField) docField = DOC_SLOTS[0]
+      if (msgType === "imageMessage" && process.env.ANTHROPIC_API_KEY) {
+        const imgMsg = msg?.imageMessage ?? {}
+        const mime   = String(imgMsg?.mimetype || "image/jpeg")
+        const base   = process.env.EVO_API_URL
+        const inst   = process.env.EVO_INSTANCE
+        const apikey = process.env.EVO_API_KEY
+        if (base && inst && apikey) {
+          const b64Res = await fetch(`${base}/chat/getBase64FromMediaMessage/${inst}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", apikey },
+            body: JSON.stringify({ message: { imageMessage: imgMsg }, convertToMp4: false }),
+          }).catch(() => null)
+          if (b64Res?.ok) {
+            const b64Json = await b64Res.json()
+            const b64 = b64Json?.base64 || b64Json?.data?.base64 || ""
+            if (b64) {
+              const pan = await extractPanFromImage(b64, mime)
+              if (pan) {
+                await evoSend(chatId, `🪪 PAN Number: *${pan}*`)
+                return NextResponse.json({ ok: true, action: "pan_extracted", pan })
+              }
+            }
           }
-          await attachMedia(existing.id, docField, savedUrl)
-          if (autoReply) await evoSend(chatId, `📎 Document added to *${existing.ticket_no}*.`)
         }
-        return NextResponse.json({ ok: true, action: "media_attached" })
       }
-      return NextResponse.json({ ok: true, note: "media without open ticket, skipped" })
+      return NextResponse.json({ ok: true, note: "media skipped" })
     }
 
     const result = await processTextMessage({ chatId, senderJid, text, isGroup, msgId, autoReply })
