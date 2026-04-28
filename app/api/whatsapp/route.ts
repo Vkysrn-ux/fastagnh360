@@ -23,11 +23,12 @@ async function ensureWaColumns() {
 // ---------------------------------------------------------------------------
 // Evolution API — send text message
 // ---------------------------------------------------------------------------
-async function evoSend(to: string, text: string) {
+async function evoSend(to: string, text: string, force = false) {
   try {
-    if (String(process.env.WA_AUTOREPLY || "").toLowerCase() !== "true") return
-    const base   = process.env.EVO_API_URL   // e.g. https://evo.talonmind.com
-    const inst   = process.env.EVO_INSTANCE  // e.g. NH360
+    const autoReply = String(process.env.WA_AUTOREPLY || "").toLowerCase() === "true"
+    if (!force && !autoReply) return
+    const base   = process.env.EVO_API_URL
+    const inst   = process.env.EVO_INSTANCE
     const apikey = process.env.EVO_API_KEY
     if (!base || !inst || !apikey) return
     await fetch(`${base}/message/sendText/${inst}`, {
@@ -245,7 +246,7 @@ function detectUpdateCommand(text: string): string | null {
   return null
 }
 
-async function applyTicketUpdate(ticketId: number, command: string, vehicle: string) {
+async function applyTicketUpdate(ticketId: number, command: string) {
   const updates: Record<string, string> = {
     payment_done:   `SET payment_received = 1, updated_at = NOW()`,
     payment_nil:    `SET payment_nil = 1, payment_received = 1, updated_at = NOW()`,
@@ -268,9 +269,8 @@ const seenMsgIds = new Set<string>()
 async function processTextMessage(params: {
   chatId: string; senderJid: string; text: string
   isGroup: boolean; msgId?: string; autoReply: boolean
-  msgObj?: any
 }): Promise<{ action: string; ticket_no?: string; ticketId?: number }> {
-  const { chatId, senderJid, text, isGroup, msgId, autoReply, msgObj } = params
+  const { chatId, senderJid, text, isGroup, msgId, autoReply } = params
 
   if (msgId) {
     if (seenMsgIds.has(msgId)) return { action: "already_processed" }
@@ -304,9 +304,9 @@ async function processTextMessage(params: {
     if (updateCmd) {
       const ticket = await findOpenTicketByVehicle(vehicle)
       if (ticket) {
-        await applyTicketUpdate(ticket.id, updateCmd, vehicle)
+        await applyTicketUpdate(ticket.id, updateCmd)
         if (autoReply) await evoSend(chatId, `✅ Ticket *${ticket.ticket_no}* updated: ${updateCmd.replace("_", " ")}.`)
-        return { action: "status_updated", ticketId: ticket.id, command: updateCmd }
+        return { action: "status_updated", ticketId: ticket.id }
       }
     }
   }
@@ -414,7 +414,7 @@ async function fetchAndProcessGroupMessages(groupJid: string, autoReply: boolean
 // ---------------------------------------------------------------------------
 // Main POST handler
 // ---------------------------------------------------------------------------
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   return NextResponse.json({ ok: true })
 }
 
@@ -513,7 +513,7 @@ export async function POST(req: NextRequest) {
             if (b64) {
               const pan = await extractPanFromImage(b64, mime)
               if (pan) {
-                await evoSend(chatId, `🪪 PAN Number: *${pan}*`)
+                await evoSend(chatId, `🪪 PAN Number: *${pan}*`, true)
                 return NextResponse.json({ ok: true, action: "pan_extracted", pan })
               }
             }
