@@ -346,7 +346,11 @@ async function processTextMessage(params: {
       }
     }
   }
-  const phone       = senderPhone10 ?? extractPhoneFromText(text)
+  // Group: customer phone must come from message text (sender is reseller)
+  // DM: use sender phone as fallback if no phone in message
+  const phone = isGroup
+    ? extractPhoneFromText(text)
+    : (extractPhoneFromText(text) ?? senderPhone10)
   const serviceType = detectServiceType(text)
   const groupName   = isGroup ? await getGroupName(chatId) : ""
   const leadFrom    = isGroup ? `Whatsapp - ${groupName || chatId.replace("@g.us", "")}` : "Whatsapp"
