@@ -2,7 +2,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { pool } from "@/lib/db"
 import { parseIndianMobile } from "@/lib/validators"
-import { debugLog } from "./_log"
+import { debugLog, fetchLog } from "./_log"
 import Anthropic from "@anthropic-ai/sdk"
 
 const SERVER_START_SEC = Math.floor(Date.now() / 1000)
@@ -466,8 +466,8 @@ async function fetchAndProcessGroupMessages(groupJid: string, autoReply: boolean
       body: JSON.stringify({ where: { key: { remoteJid: groupJid, fromMe: false } }, limit: 10 }),
     })
     const rawText = await res.text()
-    debugLog.unshift({ ts: new Date().toISOString(), body: { _fetchGroup: groupJid, status: res.status, raw: rawText.slice(0, 500) } })
-    if (debugLog.length > 20) debugLog.pop()
+    fetchLog.unshift({ ts: new Date().toISOString(), body: { _fetchGroup: groupJid, status: res.status, raw: rawText.slice(0, 300) } })
+    if (fetchLog.length > 30) fetchLog.pop()
     if (!res.ok) return
     let json: any
     try { json = JSON.parse(rawText) } catch { return }
@@ -542,13 +542,15 @@ export async function POST(req: NextRequest) {
     const remoteJid = String(key?.remoteJid || "")
     const isGroup   = remoteJid.includes("@g.us")
 
-    if (fromMe && !isGroup) return NextResponse.json({ ok: true, note: "own DM" })
+    // Process all messages including fromMe — team sends ticket format from the business number
 
     const senderJid = isGroup
       ? (fromMe
           ? String(body?.sender || remoteJid)
           : String(key?.participantAlt || key?.participant || data?.participant || remoteJid))
-      : remoteJid
+      : (fromMe
+          ? String(body?.sender || remoteJid)   // fromMe DM: sender = business number
+          : remoteJid)                           // incoming DM: sender = customer number
     const chatId = remoteJid
     const msgId  = String(key?.id || "")
 
@@ -597,6 +599,9 @@ export async function POST(req: NextRequest) {
     ).toString()
 
     const result = await processTextMessage({ chatId, senderJid, text, isGroup, msgId, autoReply })
+    // Log the outcome alongside the message text so you can debug parse failures
+    debugLog.unshift({ ts: new Date().toISOString(), body: { _result: result, text, chatId, senderJid } })
+    if (debugLog.length > 20) debugLog.pop()
     return NextResponse.json({ ok: true, ...result })
   } catch (e: any) {
     console.error("[whatsapp webhook]", e)

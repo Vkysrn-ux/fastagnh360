@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { debugLog } from "../_log"
+import { debugLog, fetchLog } from "../_log"
 
 export async function POST(req: NextRequest) {
   const contentType = req.headers.get("content-type") || ""
@@ -15,6 +15,8 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true })
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  if (searchParams.get("type") === "fetch") return NextResponse.json(fetchLog)
   return NextResponse.json(debugLog)
 }
