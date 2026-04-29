@@ -56,8 +56,8 @@ async function ensureWaColumns() {
       PRIMARY KEY (msg_id)
     )
   `).catch(() => {})
-  await pool.query(`ALTER TABLE tickets_nh MODIFY COLUMN created_by  VARCHAR(64) NULL`).catch((e: any) => console.error("created_by:",  e?.message))
-  await pool.query(`ALTER TABLE tickets_nh MODIFY COLUMN assigned_to VARCHAR(64) NULL`).catch((e: any) => console.error("assigned_to:", e?.message))
+  await pool.query(`ALTER TABLE tickets_nh MODIFY COLUMN created_by  INT NULL`).catch((e: any) => console.error("created_by:",  e?.message))
+  await pool.query(`ALTER TABLE tickets_nh MODIFY COLUMN assigned_to INT NULL`).catch((e: any) => console.error("assigned_to:", e?.message))
   schemaMigrated = true
 }
 
@@ -274,13 +274,13 @@ async function findOpenTicketByVehicle(vrn: string) {
 async function createTicket(params: {
   chatId: string; senderPhone: string | null; vehicle: string
   serviceType: string; bank: string | null; isCommercial: boolean
-  details: string | null; leadFrom: string; createdBy: string | null
+  details: string | null; leadFrom: string; createdBy: number | null
 }) {
   const { chatId, senderPhone, vehicle, serviceType, bank, isCommercial, details, leadFrom, createdBy } = params
   const cols = [
     "vehicle_reg_no","subject","details","phone",
     "lead_received_from","status","kyv_status","npci_status",
-    "wa_chat_id","wa_sender","bank","is_commercial","created_by",
+    "wa_chat_id","wa_sender","fastag_bank","is_commercial","created_by",
   ]
   const vals: (string | number | null)[] = [
     vehicle, serviceType, details,
@@ -303,7 +303,7 @@ async function applyTicketUpdate(
   update: ParsedUpdate,
   chatId: string,
   autoReply: boolean,
-  assignedTo: string | null = null
+  assignedTo: number | null = null
 ): Promise<{ action: string; ticketId?: number; blocked?: string }> {
   const { command, paymentAmount } = update
 
@@ -376,18 +376,26 @@ async function getGroupName(groupJid: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Resolve sender display name from users table
+// Resolve sender user ID from users table (UI joins by integer ID)
 // ---------------------------------------------------------------------------
-async function getSenderName(phone10: string): Promise<string | null> {
+async function getUserIdByName(name: string): Promise<number | null> {
   try {
     const [rows]: any = await pool.query(
-      `SELECT name FROM users
+      `SELECT id FROM users WHERE name = ? LIMIT 1`, [name]
+    )
+    return (Array.isArray(rows) && rows.length > 0) ? rows[0].id : null
+  } catch { return null }
+}
+
+async function getUserIdByPhone(phone10: string): Promise<number | null> {
+  try {
+    const [rows]: any = await pool.query(
+      `SELECT id FROM users
        WHERE RIGHT(REPLACE(REPLACE(COALESCE(phone,''),'-',''),' ',''),10) = ?
        LIMIT 1`,
       [phone10]
     )
-    if (Array.isArray(rows) && rows.length > 0 && rows[0].name) return rows[0].name
-    return null
+    return (Array.isArray(rows) && rows.length > 0) ? rows[0].id : null
   } catch { return null }
 }
 
@@ -422,10 +430,15 @@ async function processTextMessage(params: {
   // Extract agent symbol from message (overrides phone-based lookup)
   const { clean: cleanText, agentName } = extractAgent(text)
 
-  // Resolve sender name: symbol takes priority, then users table, then phone
+  // Resolve sender as user ID (UI joins created_by/assigned_to to users.id)
   const senderPhone10 = normalizePhone(senderJid)
-  const senderName    = agentName
-    ?? (senderPhone10 ? ((await getSenderName(senderPhone10)) ?? senderPhone10) : null)
+  let senderId: number | null = null
+  if (agentName) {
+    senderId = await getUserIdByName(agentName)
+  }
+  if (senderId === null && senderPhone10) {
+    senderId = await getUserIdByPhone(senderPhone10)
+  }
 
   // Updates require trailing '-'; creation does not
   if (cleanText.trimEnd().endsWith("-")) {
@@ -433,7 +446,7 @@ async function processTextMessage(params: {
     if (updateParsed) {
       const ticket = await findOpenTicketByVehicle(updateParsed.vrn)
       if (!ticket) return { action: "no_ticket_found" }
-      return applyTicketUpdate(ticket, updateParsed, chatId, autoReply, senderName)
+      return applyTicketUpdate(ticket, updateParsed, chatId, autoReply, senderId)
     }
     return { action: "no_command" }
   }
@@ -461,19 +474,10 @@ async function processTextMessage(params: {
     return { action: "duplicate_skipped" }
   }
 
-  // For DMs: duplicate by chatId
-  if (!isGroup) {
-    const existing = await findOpenTicketByChatId(chatId)
-    if (existing) {
-      if (autoReply) await evoSend(chatId, `Your ticket *${existing.ticket_no}* is already open.`)
-      return { action: "duplicate_skipped" }
-    }
-  }
-
   const ticket = await createTicket({
     chatId, senderPhone: finalPhone, vehicle: vrn,
     serviceType: subject, bank, isCommercial,
-    details: cleanText.slice(0, 500), leadFrom, createdBy: senderName,
+    details: null, leadFrom, createdBy: senderId,
   })
 
   if (autoReply) {

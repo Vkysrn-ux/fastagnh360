@@ -313,7 +313,7 @@ export async function GET(req: NextRequest) {
           SELECT
             t.*,
             COALESCE(u.name, '') AS assigned_to_name${createdBySelect},
-            f.bank_name AS fastag_bank,
+            COALESCE(f.bank_name, t.fastag_bank) AS fastag_bank,
             f.fastag_class,
             f.bank_login_user_id AS fastag_bank_login_user_id,
             COALESCE(blu.name,'') AS fastag_bank_login_user_name,
@@ -361,7 +361,7 @@ export async function GET(req: NextRequest) {
               WHEN t.lead_received_from = 'Shop' AND u.role = 'shop' THEN u.name
               ELSE NULL
             END AS shop_name,
-            f.bank_name AS fastag_bank,
+            COALESCE(f.bank_name, t.fastag_bank) AS fastag_bank,
             f.fastag_class,
             f.bank_login_user_id AS fastag_bank_login_user_id,
             COALESCE(blu.name,'') AS fastag_bank_login_user_name,
@@ -408,7 +408,7 @@ export async function GET(req: NextRequest) {
             WHEN t.lead_received_from = 'Shop' AND u.role = 'shop' THEN u.name
             ELSE NULL
           END AS shop_name,
-          f.bank_name AS fastag_bank,
+          COALESCE(f.bank_name, t.fastag_bank) AS fastag_bank,
           f.fastag_class,
           f.bank_login_user_id AS fastag_bank_login_user_id,
           COALESCE(blu.name,'') AS fastag_bank_login_user_name,
