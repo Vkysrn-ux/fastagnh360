@@ -180,6 +180,9 @@ function parseCreateCommand(text: string): ParsedCreate | null {
   // Message must START with the vehicle number — prevents false matches
   if (!clean.toUpperCase().trimStart().startsWith(vrn)) return null
 
+  // Must have content beyond just the VRN — bare VRN alone does not create a ticket
+  if (!clean.slice(vrn.length).trim()) return null
+
   const lower = clean.toLowerCase()
 
   // Commercial vehicle flag
