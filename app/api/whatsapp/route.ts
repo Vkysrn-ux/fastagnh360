@@ -8,6 +8,29 @@ import Anthropic from "@anthropic-ai/sdk"
 const SERVER_START_SEC = Math.floor(Date.now() / 1000)
 
 // ---------------------------------------------------------------------------
+// Agent symbol map  —  loaded once from WA_AGENTS env var
+// Format: WA_AGENTS="*:Jennifer,#:Ravi,^:Karthik,+:Priya"
+// ---------------------------------------------------------------------------
+const agentMap: Record<string, string> = {}
+for (const pair of (process.env.WA_AGENTS || "").split(",")) {
+  const idx = pair.indexOf(":")
+  if (idx > 0) {
+    const sym  = pair.slice(0, idx).trim()
+    const name = pair.slice(idx + 1).trim()
+    if (sym && name) agentMap[sym] = name
+  }
+}
+
+function extractAgent(text: string): { clean: string; agentName: string | null } {
+  for (const [sym, name] of Object.entries(agentMap)) {
+    if (text.includes(sym)) {
+      return { clean: text.replaceAll(sym, "").replace(/\s{2,}/g, " ").trim(), agentName: name }
+    }
+  }
+  return { clean: text, agentName: null }
+}
+
+// ---------------------------------------------------------------------------
 // Schema migration
 // ---------------------------------------------------------------------------
 let schemaMigrated = false
@@ -33,8 +56,8 @@ async function ensureWaColumns() {
       PRIMARY KEY (msg_id)
     )
   `).catch(() => {})
-  await pool.query(`ALTER TABLE tickets_nh ADD COLUMN created_by  VARCHAR(64) NULL`).catch((e: any) => { if (e?.errno !== 1060) console.error("created_by:", e?.message) })
-  await pool.query(`ALTER TABLE tickets_nh ADD COLUMN assigned_to VARCHAR(64) NULL`).catch((e: any) => { if (e?.errno !== 1060) console.error("assigned_to:", e?.message) })
+  await pool.query(`ALTER TABLE tickets_nh MODIFY COLUMN created_by  VARCHAR(64) NULL`).catch((e: any) => console.error("created_by:",  e?.message))
+  await pool.query(`ALTER TABLE tickets_nh MODIFY COLUMN assigned_to VARCHAR(64) NULL`).catch((e: any) => console.error("assigned_to:", e?.message))
   schemaMigrated = true
 }
 
@@ -154,6 +177,9 @@ function parseCreateCommand(text: string): ParsedCreate | null {
   const vrn   = extractVehicle(clean.toUpperCase())
   if (!vrn) return null
 
+  // Message must START with the vehicle number — prevents false matches
+  if (!clean.toUpperCase().trimStart().startsWith(vrn)) return null
+
   const lower = clean.toLowerCase()
 
   // Commercial vehicle flag
@@ -202,6 +228,9 @@ function parseUpdateCommand(text: string): ParsedUpdate | null {
   const lower = clean.toLowerCase()
   const vrn   = extractVehicle(clean.toUpperCase())
   if (!vrn) return null
+
+  // Message must START with the vehicle number
+  if (!clean.toUpperCase().trimStart().startsWith(vrn)) return null
 
   // Payment with amount: "TN08AT1585 550 received"
   const amtMatch = lower.match(/\b(\d+)\s*received\b/)
@@ -390,15 +419,17 @@ async function processTextMessage(params: {
       .catch(() => {})
   }
 
-  // Resolve sender name (team member lookup by phone)
+  // Extract agent symbol from message (overrides phone-based lookup)
+  const { clean: cleanText, agentName } = extractAgent(text)
+
+  // Resolve sender name: symbol takes priority, then users table, then phone
   const senderPhone10 = normalizePhone(senderJid)
-  const senderName    = senderPhone10
-    ? ((await getSenderName(senderPhone10)) ?? senderPhone10)
-    : null
+  const senderName    = agentName
+    ?? (senderPhone10 ? ((await getSenderName(senderPhone10)) ?? senderPhone10) : null)
 
   // Updates require trailing '-'; creation does not
-  if (text.trimEnd().endsWith("-")) {
-    const updateParsed = parseUpdateCommand(text)
+  if (cleanText.trimEnd().endsWith("-")) {
+    const updateParsed = parseUpdateCommand(cleanText)
     if (updateParsed) {
       const ticket = await findOpenTicketByVehicle(updateParsed.vrn)
       if (!ticket) return { action: "no_ticket_found" }
@@ -408,7 +439,7 @@ async function processTextMessage(params: {
   }
 
   // Creation path (no '-' required)
-  const createParsed = parseCreateCommand(text)
+  const createParsed = parseCreateCommand(cleanText)
   if (!createParsed) return { action: "parse_failed" }
 
   const { vrn, subject, bank, leadFromOverride, phone, isCommercial } = createParsed
@@ -442,7 +473,7 @@ async function processTextMessage(params: {
   const ticket = await createTicket({
     chatId, senderPhone: finalPhone, vehicle: vrn,
     serviceType: subject, bank, isCommercial,
-    details: text.slice(0, 500), leadFrom, createdBy: senderName,
+    details: cleanText.slice(0, 500), leadFrom, createdBy: senderName,
   })
 
   if (autoReply) {
