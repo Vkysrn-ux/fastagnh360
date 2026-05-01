@@ -204,18 +204,27 @@ function parseCreateCommand(text: string): ParsedCreate | null {
     if (lower.includes(b)) { bank = b.toUpperCase(); break }
   }
 
-  // Subject — check multi-word patterns first
-  let subject = "New Fastag"
-  if (/annual[\s-]*pass/i.test(clean))         subject = "Annual Pass"
-  else if (/phone[\s-]*update/i.test(clean))   subject = "Phone Update"
-  else if (/vrn[\s-]*update/i.test(clean))     subject = "VRN Update"
-  else if (/replace|replacement/i.test(clean)) subject = "Replacement Tag"
-  else if (/hotlist|blacklist/i.test(clean))   subject = "Hotlisted Case"
-  else if (/\bkyc\b/i.test(clean))             subject = "KYC Process"
-  else if (/add[\s-]*on|addon/i.test(clean))   subject = "Add-on Tag"
-  else if (/closing|surrender/i.test(clean))   subject = "Tag Closing"
-  else if (/recharge|top[\s-]*up/i.test(clean))subject = "Only Recharge"
-  else if (/\bother\b/i.test(clean))           subject = "Other"
+  // The FIRST word after the VRN must be a recognised subject keyword.
+  // This prevents report-style messages (e.g. "KL07-SBI ... Replacement: 0 KYC ...") from creating tickets.
+  const firstToken = clean.slice(vrn.length).trimStart().split(/[\s-]+/)[0].toLowerCase()
+  const SUBJECT_KEYWORDS: [RegExp, string][] = [
+    [/^new$/i,              "New Fastag"],
+    [/^replace(ment)?$/i,   "Replacement Tag"],
+    [/^annual$/i,           "Annual Pass"],
+    [/^phone$/i,            "Phone Update"],
+    [/^vrn$/i,              "VRN Update"],
+    [/^(hotlist|blacklist)$/i, "Hotlisted Case"],
+    [/^kyc$/i,              "KYC Process"],
+    [/^(add|addon)$/i,      "Add-on Tag"],
+    [/^(closing|surrender)$/i, "Tag Closing"],
+    [/^(recharge|top)$/i,   "Only Recharge"],
+    [/^other$/i,            "Other"],
+  ]
+  let subject: string | null = null
+  for (const [re, label] of SUBJECT_KEYWORDS) {
+    if (re.test(firstToken)) { subject = label; break }
+  }
+  if (!subject) return null
 
   return { vrn, subject, bank, leadFromOverride, phone, isCommercial }
 }
@@ -443,18 +452,18 @@ async function processTextMessage(params: {
     senderId = await getUserIdByPhone(senderPhone10)
   }
 
-  // Updates require trailing '-'; creation does not
-  if (cleanText.trimEnd().endsWith("-")) {
-    const updateParsed = parseUpdateCommand(cleanText)
-    if (updateParsed) {
-      const ticket = await findOpenTicketByVehicle(updateParsed.vrn)
-      if (!ticket) return { action: "no_ticket_found" }
-      return applyTicketUpdate(ticket, updateParsed, chatId, autoReply, senderId)
-    }
-    return { action: "no_command" }
+  // Both create and update require a trailing '-'
+  if (!cleanText.trimEnd().endsWith("-")) return { action: "parse_failed" }
+
+  // Try update first (e.g. "TN39CE0026 done-")
+  const updateParsed = parseUpdateCommand(cleanText)
+  if (updateParsed) {
+    const ticket = await findOpenTicketByVehicle(updateParsed.vrn)
+    if (!ticket) return { action: "no_ticket_found" }
+    return applyTicketUpdate(ticket, updateParsed, chatId, autoReply, senderId)
   }
 
-  // Creation path (no '-' required)
+  // Try create (e.g. "TN39CE0026 new IDFC 9220033456-")
   const createParsed = parseCreateCommand(cleanText)
   if (!createParsed) return { action: "parse_failed" }
 
