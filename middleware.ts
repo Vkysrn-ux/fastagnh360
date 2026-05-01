@@ -125,16 +125,10 @@ export function middleware(req: NextRequest) {
     }
   }
 
-  return NextResponse.next()
+  return NextResponse.next({ request: { headers: reqHeaders } })
 }
 
-// Protect pages under role paths and all API routes
+// Run on all routes so x-pathname is always forwarded to layouts
 export const config = {
-  matcher: [
-    '/admin/:path*',
-    '/agent/:path*',
-    '/employee/:path*',
-    '/user/:path*',
-    '/api/:path*',
-  ]
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml).*)'],
 }
