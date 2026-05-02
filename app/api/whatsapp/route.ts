@@ -9,11 +9,12 @@ const SERVER_START_SEC = Math.floor(Date.now() / 1000)
 
 // ---------------------------------------------------------------------------
 // Agent symbol map  —  loaded once from WA_AGENTS env var
-// Format: WA_AGENTS="*:Jennifer,#:Ravi,^:Karthik,+:Priya"
+// Format: WA_AGENTS="--=Sriram|,,=Lakshman|::=Jenifer|;;=Dhivya|,.=Dharshini|**=Meera|:;=Jerry|.,=Selvi"
+// Pair separator: |   Symbol-name separator: =
 // ---------------------------------------------------------------------------
 const agentMap: Record<string, string> = {}
-for (const pair of (process.env.WA_AGENTS || "").split(",")) {
-  const idx = pair.indexOf(":")
+for (const pair of (process.env.WA_AGENTS || "").split("|")) {
+  const idx = pair.indexOf("=")
   if (idx > 0) {
     const sym  = pair.slice(0, idx).trim()
     const name = pair.slice(idx + 1).trim()
@@ -21,13 +22,17 @@ for (const pair of (process.env.WA_AGENTS || "").split(",")) {
   }
 }
 
+// Symbol must appear at the END of the message (no space before it).
+// Returns clean text (symbol stripped) and the agent name, or null if no symbol found.
 function extractAgent(text: string): { clean: string; agentName: string | null } {
+  const trimmed = text.trimEnd()
   for (const [sym, name] of Object.entries(agentMap)) {
-    if (text.includes(sym)) {
-      return { clean: text.replaceAll(sym, "").replace(/\s{2,}/g, " ").trim(), agentName: name }
+    if (trimmed.endsWith(sym)) {
+      const clean = trimmed.slice(0, -sym.length).trim()
+      return { clean, agentName: name }
     }
   }
-  return { clean: text, agentName: null }
+  return { clean: trimmed.trim(), agentName: null }
 }
 
 // ---------------------------------------------------------------------------
@@ -173,7 +178,7 @@ interface ParsedCreate {
 }
 
 function parseCreateCommand(text: string): ParsedCreate | null {
-  const clean = text.trimEnd().replace(/-+$/, "").trim()
+  const clean = text.trim()
   const vrn   = extractVehicle(clean.toUpperCase())
   if (!vrn) return null
 
@@ -236,7 +241,7 @@ interface ParsedUpdate {
 }
 
 function parseUpdateCommand(text: string): ParsedUpdate | null {
-  const clean = text.trimEnd().replace(/-+$/, "").trim()
+  const clean = text.trim()
   const lower = clean.toLowerCase()
   const vrn   = extractVehicle(clean.toUpperCase())
   if (!vrn) return null
@@ -332,7 +337,7 @@ async function applyTicketUpdate(
   const assignSql = assignedTo ? `, assigned_to = ${pool.escape(assignedTo)}` : ""
 
   if (command === "payment_received") {
-    const amtSql = paymentAmount !== null ? `, payment_amount = ${paymentAmount}` : ""
+    const amtSql = paymentAmount !== null ? `, payment_to_collect = ${paymentAmount}` : ""
     await pool.query(
       `UPDATE tickets_nh SET payment_received = 1${amtSql}${assignSql}, updated_at = NOW() WHERE id = ?`,
       [ticket.id]
@@ -439,8 +444,9 @@ async function processTextMessage(params: {
       .catch(() => {})
   }
 
-  // Extract agent symbol from message (overrides phone-based lookup)
+  // Agent symbol must appear at the END — required, no symbol = reject
   const { clean: cleanText, agentName } = extractAgent(text)
+  if (!agentName) return { action: "parse_failed" }
 
   // Resolve sender as user ID (UI joins created_by/assigned_to to users.id)
   const senderPhone10 = normalizePhone(senderJid)
@@ -452,10 +458,7 @@ async function processTextMessage(params: {
     senderId = await getUserIdByPhone(senderPhone10)
   }
 
-  // Both create and update require a trailing '-'
-  if (!cleanText.trimEnd().endsWith("-")) return { action: "parse_failed" }
-
-  // Try update first (e.g. "TN39CE0026 done-")
+  // Try update first (e.g. "TN07AL2886 done--" → cleanText = "TN07AL2886 done")
   const updateParsed = parseUpdateCommand(cleanText)
   if (updateParsed) {
     const ticket = await findOpenTicketByVehicle(updateParsed.vrn)
