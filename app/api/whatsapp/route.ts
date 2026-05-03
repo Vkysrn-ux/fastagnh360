@@ -260,6 +260,7 @@ function parseUpdateCommand(text: string): ParsedUpdate | null {
   if (/deliver(y|ed)?[\s-]*done|delivered/.test(lower))            return { vrn, command: "delivery_done",  paymentAmount: null }
   if (/deliver(y)?[\s-]*nil/.test(lower))                          return { vrn, command: "delivery_nil",   paymentAmount: null }
   if (/\bdone\b/.test(lower))                                      return { vrn, command: "completed",      paymentAmount: null }
+  if (/\bcancel\b/.test(lower))                                   return { vrn, command: "cancelled",      paymentAmount: null }
 
   return null
 }
@@ -351,6 +352,7 @@ async function applyTicketUpdate(
       activated:     `SET npci_status = 'Activated', kyv_status = 'KYV done'`,
       docs_done:     `SET kyv_status = 'Documents Received'`,
       completed:     `SET status = 'completed'`,
+      cancelled:     `SET status = 'cancelled'`,
     }
     const base = updates[command]
     if (base) await pool.query(
