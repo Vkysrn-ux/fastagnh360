@@ -5,7 +5,7 @@ import { parseIndianMobile } from "@/lib/validators"
 import { debugLog, fetchLog } from "./_log"
 import Anthropic from "@anthropic-ai/sdk"
 
-const SERVER_START_SEC = Math.floor(Date.now() / 1000)
+const SERVER_START_SEC = Math.floor(Date.now() / 1000) - 3600 // 1 hour buffer for serverless cold boots
 
 // ---------------------------------------------------------------------------
 // Agent symbol map  —  loaded once from WA_AGENTS env var
@@ -633,13 +633,21 @@ export async function POST(req: NextRequest) {
               const pan = await extractPanFromImage(b64, mime)
               if (pan) {
                 await evoSend(chatId, `🪪 PAN Number: *${pan}*`, true)
-                return NextResponse.json({ ok: true, action: "pan_extracted", pan })
               }
             }
           }
         }
       }
-      return NextResponse.json({ ok: true, note: "media skipped" })
+      
+      const captionText = (
+        msg?.imageMessage?.caption || msg?.documentMessage?.caption ||
+        msg?.videoMessage?.caption || ""
+      ).toString()
+      
+      // If there is no caption, skip media
+      if (!captionText.trim()) {
+        return NextResponse.json({ ok: true, note: "media skipped" })
+      }
     }
 
     const text = (
