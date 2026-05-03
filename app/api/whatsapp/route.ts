@@ -190,8 +190,8 @@ function parseCreateCommand(text: string): ParsedCreate | null {
 
   const lower = clean.toLowerCase()
 
-  // Commercial vehicle flag
-  const isCommercial = /\bvc7\b/i.test(clean)
+  // Commercial vehicle flag — VC5/6/7/9/10/12/15/16 require KYV before closing
+  const isCommercial = /\bvc(5|6|7|9|10|12|15|16)\b/i.test(clean)
 
   // Phone (10-digit mobile)
   const phoneMatch = clean.match(/\b([6-9]\d{9})\b/)
