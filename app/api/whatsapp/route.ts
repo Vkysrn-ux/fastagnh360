@@ -557,11 +557,15 @@ export async function POST(req: NextRequest) {
     await ensureWaColumns()
     const body: any = await req.json().catch(() => ({}))
 
-    debugLog.unshift({ ts: new Date().toISOString(), body })
-    if (debugLog.length > 20) debugLog.pop()
-
     const event     = String(body?.event || "").toLowerCase()
     const autoReply = String(process.env.WA_AUTOREPLY || "").toLowerCase() === "true"
+
+    // Log every event type (except bulk contacts.update) so we can see what arrives
+    if (event !== "contacts.update" && event !== "contacts_update") {
+      const key0 = body?.data?.key ?? (Array.isArray(body?.data) ? body.data[0]?.key : undefined)
+      debugLog.unshift({ ts: new Date().toISOString(), body: { _event: event, key: key0, sender: body?.sender } })
+      if (debugLog.length > 20) debugLog.pop()
+    }
 
     // LID-group workaround
     if (event === "chats.update" || event === "chats_update") {
