@@ -45,6 +45,11 @@ export function middleware(req: NextRequest) {
     return NextResponse.next({ request: { headers: reqHeaders } })
   }
 
+  // Cron endpoints handle their own auth via CRON_SECRET token
+  if (url.pathname.startsWith('/api/cron')) {
+    return NextResponse.next({ request: { headers: reqHeaders } })
+  }
+
   // If hitting API without a session -> 401 JSON
   if (isApi) {
     // Allow CORS preflight to pass through

@@ -88,10 +88,10 @@ async function evoSend(to: string, text: string, force = false) {
 // ---------------------------------------------------------------------------
 // Admin alert — always fires regardless of WA_AUTOREPLY setting
 // ---------------------------------------------------------------------------
-const ALERT_NUMBERS = ["918667460635", "918667460935"]
+const ALERT_NUMBERS = ["8667460635", "8667460935"]
 
 async function alertAdmins(message: string) {
-  await Promise.allSettled(ALERT_NUMBERS.map(num => evoSend(num, message, true)))
+  await Promise.allSettled(ALERT_NUMBERS.map(num => evoSend("91" + num, message, true)))
 }
 
 // ---------------------------------------------------------------------------
@@ -289,15 +289,6 @@ function parseUpdateCommand(text: string): ParsedUpdate | null {
 // ---------------------------------------------------------------------------
 // DB helpers
 // ---------------------------------------------------------------------------
-async function findOpenTicketByChatId(chatId: string) {
-  const [rows]: any = await pool.query(
-    `SELECT id, ticket_no, phone, wa_chat_id FROM tickets_nh
-     WHERE wa_chat_id = ? AND status NOT IN ('closed','completed','cancelled')
-     ORDER BY created_at DESC LIMIT 1`,
-    [chatId]
-  )
-  return (Array.isArray(rows) && rows.length > 0) ? rows[0] : null
-}
 
 async function findOpenTicketByVehicle(vrn: string) {
   const [rows]: any = await pool.query(
