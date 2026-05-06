@@ -16,13 +16,6 @@ function formatDate(d: Date) {
   })
 }
 
-function formatShortDate(d: Date) {
-  return d.toLocaleDateString("en-IN", {
-    day: "2-digit", month: "short", timeZone: "Asia/Kolkata",
-  })
-}
-
-// Send one message to all report numbers, return any failures
 async function broadcast(text: string): Promise<string[]> {
   const results = await Promise.allSettled(
     REPORT_NUMBERS.map(n => sendTo(n, text, true))
@@ -48,81 +41,25 @@ export async function GET(req: NextRequest) {
 
   const today = formatDate(new Date())
 
-  let rows: any[]
+  let count = 0
   try {
-    const [result]: any = await pool.query(`
-      SELECT
-        t.ticket_no,
-        t.vehicle_reg_no,
-        t.created_at,
-        t.subject,
-        t.phone,
-        COALESCE(ua.name, uc.name, 'Unknown') AS agent_name
-      FROM tickets_nh t
-      LEFT JOIN users ua ON ua.id = t.assigned_to
-      LEFT JOIN users uc ON uc.id = t.created_by
-      WHERE t.status = 'open'
-      ORDER BY t.created_at ASC
-    `)
-    rows = result
+    const [result]: any = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM tickets_nh WHERE status = 'open'`
+    )
+    count = Number(result?.[0]?.cnt ?? 0)
   } catch (e: any) {
     await alertAdmins(`🚨 *Daily Report Failed — DB Error*\n${e?.message || String(e)}`)
     return NextResponse.json({ error: "db_error" }, { status: 500 })
   }
 
-  if (!rows || rows.length === 0) {
-    const msg   = `✅ *Daily Open Tickets — ${today}*\n\nNo open tickets. All clear! 🎉`
-    const fails = await broadcast(msg)
-    if (fails.length) {
-      await alertAdmins(`⚠️ *Daily Report — Delivery Failed*\nDate: ${today}\nFailed numbers:\n${fails.join("\n")}`)
-    }
-    return NextResponse.json({ ok: true, count: 0, failed: fails })
+  const msg = count === 0
+    ? `✅ *NH360 Daily Report — ${today}*\n\nOpen Tickets: *0*\nAll clear! 🎉`
+    : `📋 *NH360 Daily Report — ${today}*\n\nOpen Tickets: *${count}*`
+
+  const fails = await broadcast(msg)
+  if (fails.length) {
+    await alertAdmins(`⚠️ *Daily Report — Delivery Failed*\nDate: ${today}\nFailed numbers:\n${fails.join("\n")}`)
   }
 
-  const lines: string[] = rows.map((r: any, i: number) => {
-    const date  = formatShortDate(new Date(r.created_at))
-    const phone = r.phone || "-"
-    return `${i + 1}. *${r.ticket_no}* | ${r.vehicle_reg_no} | ${date} | ${r.agent_name} | ${r.subject} | ${phone}`
-  })
-
-  // Split into batches — keep under 3500 chars each
-  const header     = `📋 *Open Tickets Report — ${today}*\nTotal: ${rows.length} open ticket${rows.length !== 1 ? "s" : ""}\n\n`
-  const contHeader = `📋 *Open Tickets (continued) — ${today}*\n\n`
-
-  const batches: string[] = []
-  let current = header
-
-  for (const line of lines) {
-    const next = current + line + "\n"
-    if (next.length > 3500) {
-      batches.push(current.trimEnd())
-      current = contHeader + line + "\n"
-    } else {
-      current = next
-    }
-  }
-  if (current.trim()) batches.push(current.trimEnd())
-
-  const allFailed: string[] = []
-
-  for (let i = 0; i < batches.length; i++) {
-    const fails = await broadcast(batches[i])
-    allFailed.push(...fails)
-    if (i < batches.length - 1) await new Promise(r => setTimeout(r, 1500))
-  }
-
-  // Deduplicate failed numbers and alert admins
-  const uniqueFailed = [...new Set(allFailed)]
-  if (uniqueFailed.length) {
-    await alertAdmins(
-      `⚠️ *Daily Report — Delivery Failed*\nDate: ${today}\nTickets: ${rows.length}\nFailed numbers:\n${uniqueFailed.join("\n")}`
-    )
-  }
-
-  return NextResponse.json({
-    ok: true,
-    count: rows.length,
-    batches: batches.length,
-    failed: uniqueFailed,
-  })
+  return NextResponse.json({ ok: true, count, failed: fails })
 }
