@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { pool } from "@/lib/db"
 import { parseIndianMobile } from "@/lib/validators"
 import { debugLog, fetchLog } from "./_log"
+import { evoSend, alertAdmins } from "@/lib/wa-send"
 import Anthropic from "@anthropic-ai/sdk"
 
 const SERVER_START_SEC = Math.floor(Date.now() / 1000) - 3600 // 1 hour buffer for serverless cold boots
@@ -64,34 +65,6 @@ async function ensureWaColumns() {
   await pool.query(`ALTER TABLE tickets_nh MODIFY COLUMN created_by  INT NULL`).catch((e: any) => console.error("created_by:",  e?.message))
   await pool.query(`ALTER TABLE tickets_nh MODIFY COLUMN assigned_to INT NULL`).catch((e: any) => console.error("assigned_to:", e?.message))
   schemaMigrated = true
-}
-
-// ---------------------------------------------------------------------------
-// Evolution API — send text message
-// ---------------------------------------------------------------------------
-async function evoSend(to: string, text: string, force = false) {
-  try {
-    const autoReply = String(process.env.WA_AUTOREPLY || "").toLowerCase() === "true"
-    if (!force && !autoReply) return
-    const base   = process.env.EVO_API_URL
-    const inst   = process.env.EVO_INSTANCE
-    const apikey = process.env.EVO_API_KEY
-    if (!base || !inst || !apikey) return
-    await fetch(`${base}/message/sendText/${inst}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", apikey },
-      body: JSON.stringify({ number: to, text }),
-    }).catch(() => {})
-  } catch {}
-}
-
-// ---------------------------------------------------------------------------
-// Admin alert — always fires regardless of WA_AUTOREPLY setting
-// ---------------------------------------------------------------------------
-const ALERT_NUMBERS = ["8667460635", "8667460935"]
-
-async function alertAdmins(message: string) {
-  await Promise.allSettled(ALERT_NUMBERS.map(num => evoSend("91" + num, message, true)))
 }
 
 // ---------------------------------------------------------------------------
@@ -676,7 +649,7 @@ export async function POST(req: NextRequest) {
             if (b64) {
               const pan = await extractPanFromImage(b64, mime)
               if (pan) {
-                await evoSend(chatId, `🪪 PAN Number: *${pan}*`, true)
+                await evoSend(chatId, `🪪 PAN Number: *${pan}*`, { force: true })
               }
             }
           }
