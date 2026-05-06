@@ -36,8 +36,9 @@ function formatShortDate(d: Date) {
 }
 
 export async function GET(req: NextRequest) {
-  const token = req.nextUrl.searchParams.get("token")
-  if (!token || token !== process.env.CRON_SECRET) {
+  const token    = req.nextUrl.searchParams.get("token")
+  const validKey = process.env.CRON_SECRET || process.env.API_KEY
+  if (!token || !validKey || token !== validKey) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
