@@ -162,6 +162,7 @@ const LEAD_FROM_MAP: [RegExp, string][] = [
 
 const KNOWN_BANKS = [
   "indusind","federal","kotak","icici","hdfc","idfc","axis","bob","pnb","sbi","yes","au","fino","paytm","rbl","equitas",
+  "quickwallet","qw",
 ]
 
 // ---------------------------------------------------------------------------
@@ -249,9 +250,15 @@ function parseUpdateCommand(text: string): ParsedUpdate | null {
   // Message must START with the vehicle number
   if (!clean.toUpperCase().trimStart().startsWith(vrn)) return null
 
-  // Payment with amount: "TN08AT1585 550 received"
-  const amtMatch = lower.match(/\b(\d+)\s*received\b/)
+  // Payment with amount — handles both spellings and amount before/after:
+  // "TN38CE0001 300 received", "TN38CE0001 recieved 300", "TN38CE0001 received 300"
+  const recvRe = /\brecei[ve]{1,2}d\b/
+  const amtBefore = lower.match(/\b(\d+)\s*recei[ve]{1,2}d\b/)
+  const amtAfter  = lower.match(/\brecei[ve]{1,2}d\s*(\d+)\b/)
+  const amtMatch  = amtBefore || amtAfter
   if (amtMatch) return { vrn, command: "payment_received", paymentAmount: parseInt(amtMatch[1]) }
+  // Payment without amount: just "received"
+  if (recvRe.test(lower)) return { vrn, command: "payment_received", paymentAmount: null }
 
   if (/payment[\s-]*nil/.test(lower))                              return { vrn, command: "payment_nil",    paymentAmount: null }
   if (/activated|activation[\s-]*done/.test(lower))                return { vrn, command: "activated",      paymentAmount: null }
@@ -259,6 +266,9 @@ function parseUpdateCommand(text: string): ParsedUpdate | null {
   if (/docs?[\s-]*done|documents?[\s-]*(done|received)/.test(lower)) return { vrn, command: "docs_done",   paymentAmount: null }
   if (/deliver(y|ed)?[\s-]*done|delivered/.test(lower))            return { vrn, command: "delivery_done",  paymentAmount: null }
   if (/deliver(y)?[\s-]*nil/.test(lower))                          return { vrn, command: "delivery_nil",   paymentAmount: null }
+  // "300 done" → close ticket and record payment amount
+  const doneAmt = lower.match(/\b(\d+)\s*done\b/)
+  if (doneAmt) return { vrn, command: "completed", paymentAmount: parseInt(doneAmt[1]) }
   if (/\bdone\b/.test(lower))                                      return { vrn, command: "completed",      paymentAmount: null }
   if (/\bcancel\b/.test(lower))                                   return { vrn, command: "cancelled",      paymentAmount: null }
 
@@ -351,7 +361,9 @@ async function applyTicketUpdate(
       kyc_done:      `SET kyv_status = 'KYV done'`,
       activated:     `SET npci_status = 'Activated', kyv_status = 'KYV done'`,
       docs_done:     `SET kyv_status = 'Documents Received'`,
-      completed:     `SET status = 'completed'`,
+      completed:     paymentAmount !== null
+        ? `SET status = 'completed', payment_received = 1, payment_to_collect = ${paymentAmount}`
+        : `SET status = 'completed'`,
       cancelled:     `SET status = 'cancelled'`,
     }
     const base = updates[command]
@@ -362,7 +374,9 @@ async function applyTicketUpdate(
   }
 
   if (autoReply) {
-    const label = command === "payment_received" && paymentAmount !== null
+    const label = command === "completed" && paymentAmount !== null
+      ? `completed, payment ₹${paymentAmount} received`
+      : command === "payment_received" && paymentAmount !== null
       ? `payment ₹${paymentAmount} received`
       : command.replace(/_/g, " ")
     await evoSend(chatId, `✅ Ticket *${ticket.ticket_no}* updated: ${label}.`)
