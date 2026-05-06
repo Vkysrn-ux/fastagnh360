@@ -86,6 +86,15 @@ async function evoSend(to: string, text: string, force = false) {
 }
 
 // ---------------------------------------------------------------------------
+// Admin alert — always fires regardless of WA_AUTOREPLY setting
+// ---------------------------------------------------------------------------
+const ALERT_NUMBERS = ["918667460635", "918667460935"]
+
+async function alertAdmins(message: string) {
+  await Promise.allSettled(ALERT_NUMBERS.map(num => evoSend(num, message, true)))
+}
+
+// ---------------------------------------------------------------------------
 // Claude Vision — extract PAN number from image
 // ---------------------------------------------------------------------------
 async function extractPanFromImage(base64: string, mime: string): Promise<string | null> {
@@ -480,13 +489,23 @@ async function processTextMessage(params: {
   const updateParsed = parseUpdateCommand(cleanText)
   if (updateParsed) {
     const ticket = await findOpenTicketByVehicle(updateParsed.vrn)
-    if (!ticket) return { action: "no_ticket_found" }
+    if (!ticket) {
+      await alertAdmins(
+        `⚠️ *Update Failed — No Open Ticket*\nAgent: ${agentName}\nVehicle: ${updateParsed.vrn}\nCommand: ${updateParsed.command}\nMessage: ${cleanText}`
+      )
+      return { action: "no_ticket_found" }
+    }
     return applyTicketUpdate(ticket, updateParsed, chatId, autoReply, senderId)
   }
 
   // Try create (e.g. "TN39CE0026 new IDFC 9220033456-")
   const createParsed = parseCreateCommand(cleanText)
-  if (!createParsed) return { action: "parse_failed" }
+  if (!createParsed) {
+    await alertAdmins(
+      `⚠️ *Ticket Creation Failed — Parse Error*\nAgent: ${agentName}\nMessage: ${cleanText}\nHint: Check VRN format and subject keyword (new/replace/recharge/kyc etc.)`
+    )
+    return { action: "parse_failed" }
+  }
 
   const { vrn, subject, bank, leadFromOverride, phone, isCommercial } = createParsed
 
@@ -581,6 +600,18 @@ export async function POST(req: NextRequest) {
       const key0 = body?.data?.key ?? (Array.isArray(body?.data) ? body.data[0]?.key : undefined)
       debugLog.unshift({ ts: new Date().toISOString(), body: { _event: event, key: key0, sender: body?.sender } })
       if (debugLog.length > 20) debugLog.pop()
+    }
+
+    // WhatsApp connection state change
+    if (event === "connection.update" || event === "connection_update") {
+      const state  = String(body?.data?.state || body?.data?.connection || "").toLowerCase()
+      const reason = body?.data?.statusReason ?? body?.data?.lastDisconnect?.error?.output?.statusCode ?? ""
+      if (state === "close" || state === "closed") {
+        await alertAdmins(`🔴 *WhatsApp Disconnected*\nInstance: ${body?.instance || process.env.EVO_INSTANCE}\nState: ${state}\nReason code: ${reason}\nReconnect at your Evolution API panel.`)
+      } else if (state === "open") {
+        await alertAdmins(`🟢 *WhatsApp Connected*\nInstance: ${body?.instance || process.env.EVO_INSTANCE}`)
+      }
+      return NextResponse.json({ ok: true, note: `connection.update: ${state}` })
     }
 
     // LID-group workaround
@@ -685,6 +716,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, ...result })
   } catch (e: any) {
     console.error("[whatsapp webhook]", e)
+    alertAdmins(`🚨 *Webhook Error*\n${e?.message || String(e)}`).catch(() => {})
     return NextResponse.json({ ok: true, note: e?.message || "error" })
   }
 }
