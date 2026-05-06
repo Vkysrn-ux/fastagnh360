@@ -130,7 +130,7 @@ const INDIAN_STATE_CODES = new Set([
   "PB","PY","RJ","SK","TN","TR","TS","UK","UP","WB","AN",
 ])
 
-function extractVehicle(text: string): string | null {
+function extractVehicle(text: string): { vrn: string; raw: string } | null {
   const s = (text || "").toUpperCase()
   const patterns = [
     /\b([A-Z]{2})\s*(\d{1,2})\s*([A-Z]{1,3})\s*(\d{3,4})\b/,
@@ -139,7 +139,7 @@ function extractVehicle(text: string): string | null {
   for (const re of patterns) {
     const m = s.match(re)
     if (m && INDIAN_STATE_CODES.has(m[1])) {
-      return m[0].replace(/\s+/g, "").trim()
+      return { vrn: m[0].replace(/\s+/g, "").trim(), raw: m[0] }
     }
   }
   return null
@@ -179,15 +179,16 @@ interface ParsedCreate {
 }
 
 function parseCreateCommand(text: string): ParsedCreate | null {
-  const clean = text.trim()
-  const vrn   = extractVehicle(clean.toUpperCase())
-  if (!vrn) return null
+  const clean    = text.trim()
+  const extracted = extractVehicle(clean.toUpperCase())
+  if (!extracted) return null
+  const { vrn, raw } = extracted  // raw preserves original spacing, vrn is normalised
 
   // Message must START with the vehicle number — prevents false matches
-  if (!clean.toUpperCase().trimStart().startsWith(vrn)) return null
+  if (!clean.toUpperCase().trimStart().startsWith(raw)) return null
 
   // Must have content beyond just the VRN — bare VRN alone does not create a ticket
-  if (!clean.slice(vrn.length).trim()) return null
+  if (!clean.slice(raw.length).trim()) return null
 
   const lower = clean.toLowerCase()
 
@@ -212,7 +213,7 @@ function parseCreateCommand(text: string): ParsedCreate | null {
 
   // The FIRST word after the VRN must be a recognised subject keyword.
   // This prevents report-style messages (e.g. "KL07-SBI ... Replacement: 0 KYC ...") from creating tickets.
-  const firstToken = clean.slice(vrn.length).trimStart().split(/[\s-]+/)[0].toLowerCase()
+  const firstToken = clean.slice(raw.length).trimStart().split(/[\s-]+/)[0].toLowerCase()
   const SUBJECT_KEYWORDS: [RegExp, string][] = [
     [/^new$/i,              "New Fastag"],
     [/^replace(ment)?$/i,   "Replacement Tag"],
@@ -242,13 +243,14 @@ interface ParsedUpdate {
 }
 
 function parseUpdateCommand(text: string): ParsedUpdate | null {
-  const clean = text.trim()
-  const lower = clean.toLowerCase()
-  const vrn   = extractVehicle(clean.toUpperCase())
-  if (!vrn) return null
+  const clean     = text.trim()
+  const lower     = clean.toLowerCase()
+  const extracted = extractVehicle(clean.toUpperCase())
+  if (!extracted) return null
+  const { vrn, raw } = extracted
 
   // Message must START with the vehicle number
-  if (!clean.toUpperCase().trimStart().startsWith(vrn)) return null
+  if (!clean.toUpperCase().trimStart().startsWith(raw)) return null
 
   // Payment with amount — handles both spellings and amount before/after:
   // "TN38CE0001 300 received", "TN38CE0001 recieved 300", "TN38CE0001 received 300"
