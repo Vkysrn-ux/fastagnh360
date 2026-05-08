@@ -8,15 +8,16 @@ export const pool = mysql.createPool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  // Ensure full Unicode (emoji/symbols) and avoid mojibake
-  // mysql2 expects a character set name, not a collation
   charset: 'utf8mb4',
-  // Improve connection stability under idle/proxy resets
   enableKeepAlive: true,
   keepAliveInitialDelay: 0,
   connectTimeout: 20000,
   waitForConnections: true,
-  connectionLimit: 10,
+  // Vercel runs many serverless instances in parallel — keep per-instance pool small
+  // so total connections (instances × limit) stays under MySQL max_connections (150)
+  connectionLimit: 3,
+  idleTimeout: 30000,   // release idle connections after 30s
+  maxIdle: 1,           // keep at most 1 idle connection per instance
   queueLimit: 0,
 });
 
