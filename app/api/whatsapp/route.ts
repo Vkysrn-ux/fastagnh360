@@ -205,6 +205,7 @@ function parseCreateCommand(text: string): ParsedCreate | null {
     [/^vrn$/i,              "VRN Update"],
     [/^(hotlist|blacklist)$/i, "Hotlisted Case"],
     [/^kyc$/i,              "KYC Process"],
+    [/^kyv$/i,              "KYV Process"],
     [/^(add|addon)$/i,      "Add-on Tag"],
     [/^(closing|surrender)$/i, "Tag Closing"],
     [/^(recharge|top)$/i,   "Only Recharge"],
