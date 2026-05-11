@@ -115,8 +115,9 @@ const INDIAN_STATE_CODES = new Set([
 function extractVehicle(text: string): { vrn: string; raw: string } | null {
   const s = (text || "").toUpperCase()
   const patterns = [
-    /\b([A-Z]{2})\s*(\d{1,2})\s*([A-Z]{1,3})\s*(\d{3,4})\b/,
-    /\b([A-Z]{2})\s*(\d{3,4})\s*([A-Z]{1,2})\b/,
+    /\b([A-Z]{2})\s*(\d{1,2})\s*([A-Z]{1,3})\s*(\d{3,4})\b/,  // new: TN38CE0001
+    /\b([A-Z]{2})\s*(\d{3,4})\s*([A-Z]{1,2})\b/,               // commercial: MH04AK
+    /\b([A-Z]{2})\s*(\d{1,2})\s*(\d{4})\b/,                    // old format: TN705928
   ]
   for (const re of patterns) {
     const m = s.match(re)
