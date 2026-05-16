@@ -64,6 +64,7 @@ async function ensureWaColumns() {
   `).catch(() => {})
   await pool.query(`ALTER TABLE tickets_nh MODIFY COLUMN created_by  INT NULL`).catch((e: any) => console.error("created_by:",  e?.message))
   await pool.query(`ALTER TABLE tickets_nh MODIFY COLUMN assigned_to INT NULL`).catch((e: any) => console.error("assigned_to:", e?.message))
+  await ensureGroupNamesTable()
   schemaMigrated = true
 }
 
@@ -362,27 +363,44 @@ async function applyTicketUpdate(
 }
 
 // ---------------------------------------------------------------------------
-// Evolution API — fetch group name
+// Group name cache — in-memory (warm) + DB (persistent across serverless invocations)
+// Group names come from the chats.update / messages.upsert webhook payload.
+// We no longer call the Evolution API for group info (domain may be parked/expired).
 // ---------------------------------------------------------------------------
 const groupNameCache: Record<string, string> = {}
 
-async function getGroupName(groupJid: string): Promise<string> {
+async function saveGroupName(jid: string, name: string): Promise<void> {
+  if (!jid || !name) return
+  groupNameCache[jid] = name
+  await pool.query(
+    `INSERT INTO wa_group_names (jid, name) VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE name = VALUES(name), updated_at = NOW()`,
+    [jid, name]
+  ).catch(() => {})
+}
+
+async function getGroupName(groupJid: string, hintName?: string): Promise<string> {
+  if (hintName) { await saveGroupName(groupJid, hintName); return hintName }
   if (groupNameCache[groupJid]) return groupNameCache[groupJid]
   try {
-    const base   = process.env.EVO_API_URL
-    const inst   = process.env.EVO_INSTANCE
-    const apikey = process.env.EVO_API_KEY
-    if (!base || !inst || !apikey) return ""
-    const res = await fetch(
-      `${base}/group/findGroupInfos/${inst}?groupJid=${encodeURIComponent(groupJid)}`,
-      { headers: { apikey } }
+    const [rows]: any = await pool.query(
+      `SELECT name FROM wa_group_names WHERE jid = ? LIMIT 1`, [groupJid]
     )
-    if (!res.ok) return ""
-    const json = await res.json()
-    const name = json?.subject || json?.data?.subject || ""
+    const name = rows?.[0]?.name || ""
     if (name) groupNameCache[groupJid] = name
     return name
   } catch { return "" }
+}
+
+async function ensureGroupNamesTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS wa_group_names (
+      jid        VARCHAR(128) NOT NULL,
+      name       VARCHAR(255) NOT NULL,
+      updated_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (jid)
+    )
+  `).catch(() => {})
 }
 
 // ---------------------------------------------------------------------------
@@ -585,7 +603,11 @@ export async function POST(req: NextRequest) {
       const chats = Array.isArray(body?.data) ? body.data : [body?.data].filter(Boolean)
       for (const chat of chats) {
         const jid = String(chat?.remoteJid || chat?.id || "")
-        if (jid.endsWith("@g.us")) await fetchAndProcessGroupMessages(jid, autoReply)
+        if (!jid.endsWith("@g.us")) continue
+        // Evolution API includes group name in chats.update payload — capture it
+        const hint = String(chat?.name || chat?.subject || chat?.pushName || "").trim()
+        if (hint) await saveGroupName(jid, hint)
+        await fetchAndProcessGroupMessages(jid, autoReply)
       }
       return NextResponse.json({ ok: true, note: "chats.update processed" })
     }
@@ -594,6 +616,8 @@ export async function POST(req: NextRequest) {
       const contacts = Array.isArray(body?.data) ? body.data : [body?.data].filter(Boolean)
       for (const c of contacts) {
         const jid = String(c?.remoteJid || "")
+        const hint = String(c?.name || c?.subject || c?.pushName || "").trim()
+        if (jid.endsWith("@g.us") && hint) await saveGroupName(jid, hint)
         if (jid.endsWith("@g.us")) await fetchAndProcessGroupMessages(jid, autoReply)
       }
       return NextResponse.json({ ok: true, note: "contacts.update processed" })
