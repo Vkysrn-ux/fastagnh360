@@ -334,15 +334,15 @@ async function applyTicketUpdate(
   } else {
     const updates: Record<string, string> = {
       payment_nil:   `SET payment_nil = 1, payment_received = 1`,
-      delivery_done: `SET delivery_done = 1, status = 'completed'`,
+      delivery_done: `SET delivery_done = 1, status = 'completed', npci_status = 'Activated'`,
       delivery_nil:  `SET delivery_nil = 1, delivery_done = 1`,
       kyc_done:      `SET kyv_status = 'KYV done'`,
       activated:     `SET npci_status = 'Activated', kyv_status = 'KYV done'`,
       docs_done:     `SET kyv_status = 'Documents Received'`,
       completed:     paymentAmount !== null
-        ? `SET status = 'completed', payment_received = 1, payment_to_collect = ${paymentAmount}`
-        : `SET status = 'completed'`,
-      cancelled:     `SET status = 'cancelled'`,
+        ? `SET status = 'completed', npci_status = 'Activated', payment_received = 1, payment_to_collect = ${paymentAmount}`
+        : `SET status = 'completed', npci_status = 'Activated'`,
+      cancelled:     `SET status = 'cancelled', npci_status = 'Activated'`,
     }
     const base = updates[command]
     if (base) await pool.query(
