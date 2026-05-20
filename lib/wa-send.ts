@@ -1,6 +1,7 @@
 // Shared WhatsApp send utility — used by webhook handler and cron jobs
 
-export const ALERT_NUMBERS = ["8667460635", "8667460935"]
+export const ALERT_NUMBERS  = ["8667460635", "8667460935"]  // personal numbers (91 prefix added)
+export const ALERT_GROUPS   = ["120363407386292652@g.us"]    // ERP TICKETS group
 
 export async function evoSend(
   to: string,
@@ -30,9 +31,10 @@ export async function evoSend(
 
 // Always sends regardless of WA_AUTOREPLY — for system alerts
 export async function alertAdmins(message: string): Promise<void> {
-  await Promise.allSettled(
-    ALERT_NUMBERS.map(n => evoSend("91" + n, message, { force: true }))
-  )
+  await Promise.allSettled([
+    ...ALERT_NUMBERS.map(n  => evoSend("91" + n, message, { force: true })),
+    ...ALERT_GROUPS.map(jid => evoSend(jid,       message, { force: true })),
+  ])
 }
 
 // Send to a 10-digit number (prepends country code 91)
