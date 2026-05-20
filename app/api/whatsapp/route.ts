@@ -434,9 +434,9 @@ const seenMsgIds = new Set<string>()
 
 async function processTextMessage(params: {
   chatId: string; senderJid: string; text: string
-  isGroup: boolean; msgId?: string; autoReply: boolean
+  isGroup: boolean; msgId?: string; autoReply: boolean; groupNameHint?: string
 }): Promise<{ action: string; ticket_no?: string; ticketId?: number; blocked?: string }> {
-  const { chatId, senderJid, text, isGroup, msgId, autoReply } = params
+  const { chatId, senderJid, text, isGroup, msgId, autoReply, groupNameHint } = params
 
   if (msgId) {
     // Fast in-memory check
@@ -495,7 +495,7 @@ async function processTextMessage(params: {
 
   // Group messages always use the group name as lead source
   // Keyword overrides (hq, insta, etc.) only apply in DMs
-  const groupName = isGroup ? await getGroupName(chatId) : ""
+  const groupName = isGroup ? await getGroupName(chatId, groupNameHint || undefined) : ""
   const leadFrom  = isGroup
     ? `Whatsapp - ${groupName || chatId.replace("@g.us", "")}`
     : (leadFromOverride ?? "Whatsapp")
@@ -604,8 +604,8 @@ export async function POST(req: NextRequest) {
       for (const chat of chats) {
         const jid = String(chat?.remoteJid || chat?.id || "")
         if (!jid.endsWith("@g.us")) continue
-        // Evolution API includes group name in chats.update payload — capture it
-        const hint = String(chat?.name || chat?.subject || chat?.pushName || "").trim()
+        // Only name/subject are reliable group name fields — pushName is the sender's display name
+        const hint = String(chat?.name || chat?.subject || "").trim()
         if (hint) await saveGroupName(jid, hint)
         await fetchAndProcessGroupMessages(jid, autoReply)
       }
@@ -616,8 +616,7 @@ export async function POST(req: NextRequest) {
       const contacts = Array.isArray(body?.data) ? body.data : [body?.data].filter(Boolean)
       for (const c of contacts) {
         const jid = String(c?.remoteJid || "")
-        const hint = String(c?.name || c?.subject || c?.pushName || "").trim()
-        if (jid.endsWith("@g.us") && hint) await saveGroupName(jid, hint)
+        // contacts.update carries individual contact names, not group names — never save here
         if (jid.endsWith("@g.us")) await fetchAndProcessGroupMessages(jid, autoReply)
       }
       return NextResponse.json({ ok: true, note: "contacts.update processed" })
@@ -699,7 +698,11 @@ export async function POST(req: NextRequest) {
       msg?.videoMessage?.caption || ""
     ).toString()
 
-    const result = await processTextMessage({ chatId, senderJid, text, isGroup, msgId, autoReply })
+    // Some Evolution API versions include group subject in message metadata
+    const groupNameHint = isGroup
+      ? String(data?.groupMetadata?.subject || "").trim()
+      : ""
+    const result = await processTextMessage({ chatId, senderJid, text, isGroup, msgId, autoReply, groupNameHint: groupNameHint || undefined })
     // Log the outcome alongside the message text so you can debug parse failures
     debugLog.unshift({ ts: new Date().toISOString(), body: { _result: result, text, chatId, senderJid } })
     if (debugLog.length > 20) debugLog.pop()
