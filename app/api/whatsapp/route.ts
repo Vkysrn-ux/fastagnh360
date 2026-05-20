@@ -382,12 +382,28 @@ async function saveGroupName(jid: string, name: string): Promise<void> {
 async function getGroupName(groupJid: string, hintName?: string): Promise<string> {
   if (hintName) { await saveGroupName(groupJid, hintName); return hintName }
   if (groupNameCache[groupJid]) return groupNameCache[groupJid]
+  // Check DB first (persists across serverless invocations)
   try {
     const [rows]: any = await pool.query(
       `SELECT name FROM wa_group_names WHERE jid = ? LIMIT 1`, [groupJid]
     )
-    const name = rows?.[0]?.name || ""
-    if (name) groupNameCache[groupJid] = name
+    const dbName = rows?.[0]?.name || ""
+    if (dbName) { groupNameCache[groupJid] = dbName; return dbName }
+  } catch { /* fall through to API */ }
+  // Fallback: fetch from Evolution API and cache in DB for next time
+  try {
+    const base = process.env.EVO_API_URL
+    const inst = process.env.EVO_INSTANCE
+    const apikey = process.env.EVO_API_KEY
+    if (!base || !inst || !apikey) return ""
+    const res = await fetch(
+      `${base}/group/findGroupInfos/${inst}?groupJid=${encodeURIComponent(groupJid)}`,
+      { headers: { apikey }, signal: AbortSignal.timeout(5000) }
+    )
+    if (!res.ok) return ""
+    const json = await res.json().catch(() => null)
+    const name = String(json?.subject || json?.data?.subject || "").trim()
+    if (name) await saveGroupName(groupJid, name)
     return name
   } catch { return "" }
 }
