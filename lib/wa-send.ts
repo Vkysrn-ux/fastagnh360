@@ -1,6 +1,6 @@
 // Shared WhatsApp send utility — used by webhook handler and cron jobs
 
-export const ALERT_NUMBERS  = ["8667460635", "8667460935"]  // personal numbers (91 prefix added)
+export const ALERT_NUMBERS  = []                             // no personal numbers
 export const ALERT_GROUPS   = ["120363407386292652@g.us"]    // ERP TICKETS group
 
 export async function evoSend(

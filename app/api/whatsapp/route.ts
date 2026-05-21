@@ -608,8 +608,6 @@ export async function POST(req: NextRequest) {
       const reason = body?.data?.statusReason ?? body?.data?.lastDisconnect?.error?.output?.statusCode ?? ""
       if (state === "close" || state === "closed") {
         await alertAdmins(`🔴 *WhatsApp Disconnected*\nInstance: ${body?.instance || process.env.EVO_INSTANCE}\nState: ${state}\nReason code: ${reason}\nReconnect at your Evolution API panel.`)
-      } else if (state === "open") {
-        await alertAdmins(`🟢 *WhatsApp Connected*\nInstance: ${body?.instance || process.env.EVO_INSTANCE}`)
       }
       return NextResponse.json({ ok: true, note: `connection.update: ${state}` })
     }
