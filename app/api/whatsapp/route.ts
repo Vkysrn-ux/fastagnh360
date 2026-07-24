@@ -503,11 +503,6 @@ async function processTextMessage(params: {
   if (!createParsed) {
     // Determine reason to help agent fix the message
     const hasVrn = extractVehicle(cleanText.toUpperCase())
-    const reason = !hasVrn
-      ? "❌ Vehicle number not recognised. Check format:\nNew: *TN38CE0001*\nOld: *TN705928*\nCommercial: *MH04AK*"
-      : "❌ Subject keyword missing or not recognised after VRN.\nUse: *new / replace / annual / phone / vrn / hotlist / kyc / kyv / recharge / other*\n\nExample: `TN38CE0001 new IDFC 9876543210--`"
-    // Reply directly to the group/chat where the message was sent
-    await evoSend(chatId, `${reason}\n\n_Agent: ${agentName}_`, { force: true })
     await alertAdmins(
       `⚠️ *Ticket Creation Failed — Parse Error*\nAgent: ${agentName}\nMessage: ${cleanText}\nReason: ${!hasVrn ? "VRN not found" : "Subject keyword missing"}`
     )
