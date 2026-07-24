@@ -473,7 +473,7 @@ async function processTextMessage(params: {
 
   // Agent symbol must appear at the END — required, no symbol = reject
   const { clean: cleanText, agentName } = extractAgent(text)
-  if (!agentName) return { action: "parse_failed" }
+  if (!agentName) return { action: "no_symbol" }
 
   // Resolve sender as user ID (UI joins created_by/assigned_to to users.id)
   const senderPhone10 = normalizePhone(senderJid)
@@ -501,8 +501,15 @@ async function processTextMessage(params: {
   // Try create (e.g. "TN39CE0026 new IDFC 9220033456-")
   const createParsed = parseCreateCommand(cleanText)
   if (!createParsed) {
+    // Determine reason to help agent fix the message
+    const hasVrn = extractVehicle(cleanText.toUpperCase())
+    const reason = !hasVrn
+      ? "❌ Vehicle number not recognised. Check format:\nNew: *TN38CE0001*\nOld: *TN705928*\nCommercial: *MH04AK*"
+      : "❌ Subject keyword missing or not recognised after VRN.\nUse: *new / replace / annual / phone / vrn / hotlist / kyc / kyv / recharge / other*\n\nExample: `TN38CE0001 new IDFC 9876543210--`"
+    // Reply directly to the group/chat where the message was sent
+    await evoSend(chatId, `${reason}\n\n_Agent: ${agentName}_`, { force: true })
     await alertAdmins(
-      `⚠️ *Ticket Creation Failed — Parse Error*\nAgent: ${agentName}\nMessage: ${cleanText}\nHint: Check VRN format and subject keyword (new/replace/recharge/kyc etc.)`
+      `⚠️ *Ticket Creation Failed — Parse Error*\nAgent: ${agentName}\nMessage: ${cleanText}\nReason: ${!hasVrn ? "VRN not found" : "Subject keyword missing"}`
     )
     return { action: "parse_failed" }
   }
@@ -618,8 +625,8 @@ export async function POST(req: NextRequest) {
       for (const chat of chats) {
         const jid = String(chat?.remoteJid || chat?.id || "")
         if (!jid.endsWith("@g.us")) continue
-        // Only name/subject are reliable group name fields — pushName is the sender's display name
-        const hint = String(chat?.name || chat?.subject || "").trim()
+        // name/subject are the reliable group name fields
+        const hint = String(chat?.name || chat?.subject || chat?.displayName || "").trim()
         if (hint) await saveGroupName(jid, hint)
         await fetchAndProcessGroupMessages(jid, autoReply)
       }
@@ -712,9 +719,14 @@ export async function POST(req: NextRequest) {
       msg?.videoMessage?.caption || ""
     ).toString()
 
-    // Some Evolution API versions include group subject in message metadata
+    // Extract group name from multiple possible fields in the payload
     const groupNameHint = isGroup
-      ? String(data?.groupMetadata?.subject || "").trim()
+      ? String(
+          data?.groupMetadata?.subject ||
+          data?.pushName ||
+          body?.data?.pushName ||
+          ""
+        ).trim()
       : ""
     const result = await processTextMessage({ chatId, senderJid, text, isGroup, msgId, autoReply, groupNameHint: groupNameHint || undefined })
     // Log the outcome alongside the message text so you can debug parse failures
