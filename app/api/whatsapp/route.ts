@@ -473,7 +473,17 @@ async function processTextMessage(params: {
 
   // Agent symbol must appear at the END — required, no symbol = reject
   const { clean: cleanText, agentName } = extractAgent(text)
-  if (!agentName) return { action: "no_symbol" }
+  if (!agentName) {
+    // If message looks like a ticket command (has VRN + keyword) but no symbol → alert admin
+    const looksLikeCommand = extractVehicle(text.toUpperCase()) &&
+      /\b(new|replace|annual|phone|vrn|hotlist|kyc|kyv|recharge|other|received|recieved|done|cancel|activated|delivered)\b/i.test(text)
+    if (looksLikeCommand) {
+      await alertAdmins(
+        `⚠️ *Missing Agent Symbol*\nMessage looks like a ticket command but has no agent symbol at the end.\nChat: ${chatId}\nMessage: ${text}`
+      )
+    }
+    return { action: "no_symbol" }
+  }
 
   // Resolve sender as user ID (UI joins created_by/assigned_to to users.id)
   const senderPhone10 = normalizePhone(senderJid)
