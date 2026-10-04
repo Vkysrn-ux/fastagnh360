@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { ThemeSwitcher } from "@/components/theme-switcher"
-import { LogOut, Menu, Package, Users, Settings, CreditCard, UserCircle, UserCog, BarChart3, X, Ticket } from "lucide-react"
+import { LogOut, Menu, Package, Users, Settings, CreditCard, UserCircle, UserCog, BarChart3, X, Ticket, KanbanSquare } from "lucide-react"
 import { useState, useEffect } from "react"
 // use client-side API calls instead of server actions
 
@@ -62,16 +62,17 @@ export function AdminHeader() {
   const ordersItem    = { href: "/admin/orders", label: "Orders", icon: <Package className="h-4 w-4 xl:mr-2" /> } as const;
   const ticketsItem   = { href: "/admin/tickets", label: "Tickets", icon: <Ticket className="h-4 w-4 xl:mr-2" /> } as const;
   const ecomItem      = { href: "/admin/ecom-updates", label: "Ecom Updates", icon: <BarChart3 className="h-4 w-4 xl:mr-2" /> } as const;
+  const tasksItem     = { href: "/admin/tasks", label: "Task Board", icon: <KanbanSquare className="h-4 w-4 xl:mr-2" /> } as const;
 
   const usersItem     = { href: "/admin/users", label: "Users", icon: <UserCog className="h-4 w-4 xl:mr-2" /> } as const;
   const reportsItem   = { href: "/admin/reports", label: "Reports", icon: <BarChart3 className="h-4 w-4 xl:mr-2" /> } as const;
 
-  const commonItems = [fastagsItem, agentsItem, suppliersItem, ordersItem, ticketsItem, ecomItem] as const;
+  const commonItems = [fastagsItem, agentsItem, suppliersItem, ordersItem, ticketsItem, tasksItem, ecomItem] as const;
   const dashboardItem = { href: "/admin/dashboard", label: "Dashboard", icon: <BarChart3 className="h-4 w-4 xl:mr-2" /> } as const;
 
   // Order for Super Admin keeps Reports visible without scrolling
   const navItems = isSuperAdmin
-    ? [dashboardItem, fastagsItem, agentsItem, suppliersItem, ordersItem, ticketsItem, reportsItem, ecomItem, usersItem]
+    ? [dashboardItem, fastagsItem, agentsItem, suppliersItem, ordersItem, ticketsItem, tasksItem, reportsItem, ecomItem, usersItem]
     : [...commonItems]
 
   const logoHref = isSuperAdmin ? "/admin/dashboard" : "/admin/fastags";

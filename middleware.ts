@@ -50,6 +50,14 @@ export function middleware(req: NextRequest) {
     return NextResponse.next({ request: { headers: reqHeaders } })
   }
 
+  // Staff mobile app: these routes verify the signed bearer token themselves (lib/mobile-auth.ts)
+  if (
+    url.pathname.startsWith('/api/mobile/') ||
+    (url.pathname.startsWith('/api/tasks') && /^Bearer\s/i.test(req.headers.get('authorization') || ''))
+  ) {
+    return NextResponse.next({ request: { headers: reqHeaders } })
+  }
+
   // If hitting API without a session -> 401 JSON
   if (isApi) {
     // Allow CORS preflight to pass through

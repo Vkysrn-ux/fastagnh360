@@ -32,6 +32,7 @@ export function EmployeeHeader() {
 
   const navItems = [
     { href: "/employee/tickets", label: "Tickets", icon: <BarChart3 className="mr-2 h-4 w-4" /> },
+    { href: "/employee/tickets/board", label: "Task Board", icon: <Package className="mr-2 h-4 w-4" /> },
   ]
 
   return (
