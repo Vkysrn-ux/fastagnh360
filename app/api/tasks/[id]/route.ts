@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { CARD_SELECT, cleanPhone, ensureTaskTables, logTaskActivity, requireStaff } from "@/lib/tasks";
 import { ALL_STAGE_KEYS, STUCK_REASONS, TASK_CHECKS, stageLabel } from "@/lib/task-constants";
+import { pushToUser } from "@/lib/push";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -138,6 +139,25 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     const noteUsed = logs.some((l) => l.note);
     if (note && !noteUsed) logs.push({ cardId: id, kind: "note", actorId: s.id, note });
     for (const l of logs) await logTaskActivity(l);
+
+    // Push: new assignee, and the creator when the task is finished (never to the person who did it)
+    const vrn = card.vehicle_reg_no;
+    if (b.assigned_to !== undefined && Number(b.assigned_to) > 0 && Number(b.assigned_to) !== (card.assigned_to ?? null)
+        && Number(b.assigned_to) !== s.id) {
+      await pushToUser(Number(b.assigned_to), {
+        title: `📋 Task assigned to you: ${vrn}`,
+        body: `${card.purpose} · from ${s.name || "staff"}${note ? ` · ${note.slice(0, 80)}` : ""}`,
+        data: { type: "task", id: String(id) },
+      });
+    }
+    if (b.stage !== undefined && (b.stage === "done" || b.stage === "cancelled") && b.stage !== card.stage
+        && card.created_by && card.created_by !== s.id) {
+      await pushToUser(card.created_by, {
+        title: b.stage === "done" ? `✅ Task done: ${vrn}` : `✖ Task cancelled: ${vrn}`,
+        body: `${card.purpose} · by ${s.name || "staff"}${note ? ` · ${note.slice(0, 80)}` : ""}`,
+        data: { type: "task", id: String(id) },
+      });
+    }
 
     return NextResponse.json({ card: await loadCard(id) });
   } catch (e: any) {

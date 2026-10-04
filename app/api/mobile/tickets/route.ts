@@ -12,10 +12,24 @@ export async function GET(req: NextRequest) {
   if (uid instanceof NextResponse) return uid;
   try {
     const sp = new URL(req.url).searchParams;
-    const where = [`(t.assigned_to = ? OR t.created_by = ?)`];
-    const params: any[] = [uid, uid];
+    const where: string[] = [];
+    const params: any[] = [];
 
-    const status = sp.get("status") || "open";
+    // ?id=  one ticket (opened from a push notification): admins any ticket, staff only their own
+    const oneId = Number(sp.get("id"));
+    if (oneId > 0) {
+      where.push(`t.id = ?`);
+      params.push(oneId);
+      if (me.userType !== "admin") {
+        where.push(`(t.assigned_to = ? OR t.created_by = ?)`);
+        params.push(me.id, me.id);
+      }
+    } else {
+      where.push(`(t.assigned_to = ? OR t.created_by = ?)`);
+      params.push(uid, uid);
+    }
+
+    const status = oneId > 0 ? "all" : sp.get("status") || "open";
     if (status === "open") where.push(`NOT ${CLOSED_TICKET_SQL}`);
     else if (status === "closed") where.push(CLOSED_TICKET_SQL);
 

@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { CARD_SELECT, cleanPhone, ensureTaskTables, logTaskActivity, requireStaff } from "@/lib/tasks";
+import { pushToUser } from "@/lib/push";
 import { ALL_STAGE_KEYS, CALLER_TYPES, STALE_HOURS, TASK_PURPOSES, normalizeVrn } from "@/lib/task-constants";
 
 // GET /api/tasks
@@ -113,6 +114,13 @@ export async function POST(req: NextRequest) {
     if (assignedTo) {
       const [u]: any = await pool.query(`SELECT name FROM users WHERE id = ?`, [assignedTo]);
       await logTaskActivity({ cardId: id, kind: "assign", actorId: s.id, to: u?.[0]?.name || String(assignedTo) });
+      if (assignedTo !== s.id) {
+        await pushToUser(assignedTo, {
+          title: `📋 New task assigned: ${vrn}`,
+          body: `${purpose} · from ${s.name || "staff"}${note ? ` · ${note.slice(0, 80)}` : ""}`,
+          data: { type: "task", id: String(id) },
+        });
+      }
     }
     return NextResponse.json({ id });
   } catch (e: any) {
